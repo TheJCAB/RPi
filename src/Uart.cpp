@@ -80,5 +80,78 @@ void Puts(char const* str)
     }
 }
 
+void PutHex(auto value)
+{
+    const char* hexDigits = "0123456789ABCDEF";
+    Putc('0');
+    Putc('x');
+    for (int i = sizeof(value) * 8 - 4; i >= 0; i -= 4)
+    {
+        Putc(hexDigits[(value >> i) & 0xF]);
+        if (i > 0 && i % 16 == 0)
+        {
+            Putc('\''); // Add digit separator for readability
+        }
+    }
+}
+
+void PutBin(auto value)
+{
+    const char* binDigits = "01";
+    Putc('0');
+    Putc('b');
+    for (int i = sizeof(value) * 8 - 1; i >= 0; --i)
+    {
+        Putc('0' + ((value >> i) & 0x1));
+        if (i > 0 && i % 4 == 0)
+        {
+            Putc('\''); // Add digit separator for readability
+        }
+    }
+}
+
+void PutDec(auto value)
+{
+    if (value == 0)
+    {
+        Putc('0');
+        return;
+    }
+
+    char buffer[20]; // Enough for 64-bit integer
+    int index = 0;
+
+    while (value > 0)
+    {
+        buffer[index++] = '0' + (value % 10);
+        value /= 10;
+    }
+
+    // Print in reverse order
+    for (int i = index - 1; i >= 0; --i)
+    {
+        Putc(buffer[i]);
+        if (i > 0 && i % 3 == 0)
+        {
+            Putc('\''); // Add digit separator for readability
+        }
+    }
+}
+
+template void PutHex(uint64_t value);
+template void PutHex(uint32_t value);
+template void PutHex(uint16_t value);
+template void PutHex(uint8_t value);
+
+template void PutBin(uint64_t value);
+template void PutBin(uint32_t value);
+template void PutBin(uint16_t value);
+template void PutBin(uint8_t value);
+
+template void PutDec(uint64_t value);
+template void PutDec(uint32_t value);
+template void PutDec(uint16_t value);
+template void PutDec(uint8_t value);
+
 }
 // namespace Uart

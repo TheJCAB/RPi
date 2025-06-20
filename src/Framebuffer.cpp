@@ -19,7 +19,7 @@ namespace Framebuffer
 // Mailbox property buffer (must be 16-byte aligned)
 alignas(64) uint32_t volatile mbox_l[1024];
 
-#define mbox ((uint32_t volatile*)((uintptr_t)mbox_l /*| 0xC000'0000*/))
+#define mbox ((uint32_t volatile*)((uintptr_t)mbox_l | 0xC000'0000))
 
 // Mailbox call function
 int mailbox_call(unsigned char ch)

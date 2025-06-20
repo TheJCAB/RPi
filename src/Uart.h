@@ -9,6 +9,9 @@ namespace Uart
 void Init();
 void Putc(char c);
 void Puts(char const* str);
+void PutHex(auto value);
+void PutBin(auto value);
+void PutDec(auto value);
 
 }
 // namespace Uart
