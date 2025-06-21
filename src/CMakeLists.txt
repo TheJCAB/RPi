@@ -6,6 +6,8 @@ add_executable(kernel8
 
     Uart.cpp        Uart.h
     Framebuffer.cpp Framebuffer.h
+    Run.cpp         Run.h
+    Mmu.cpp         Mmu.h
 )
 
 set_target_properties(kernel8 PROPERTIES

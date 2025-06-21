@@ -1,12 +1,11 @@
 .section .text
 
 .extern KernelMain
-.extern StackBuffer
 
 .global _start
 _start:
-    adr x0, StackBuffer
-    add sp, x0, #0x10000
+    adr x0, _start // Stack buffer is the 512 KB space before the kernel image.
+    mov sp, x0
     b   KernelMain
 
 .global el2_to_el1_return

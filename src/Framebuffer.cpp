@@ -2,10 +2,14 @@
 
 #include "Mmio.h"
 
+#include "Uart.h"
+
 #include <stddef.h>
 
 namespace Framebuffer
 {
+
+uintptr_t GpuMemBase = 0;
 
 // Mailbox registers (base address for RPi 3B)
 #define MAILBOX_BASE    (MMIO_BASE + 0xB880)
@@ -19,7 +23,7 @@ namespace Framebuffer
 // Mailbox property buffer (must be 16-byte aligned)
 alignas(64) uint32_t volatile mbox_l[1024];
 
-#define mbox ((uint32_t volatile*)((uintptr_t)mbox_l | 0xC000'0000))
+#define mbox ((uint32_t volatile*)((uintptr_t)mbox_l | GpuMemBase))
 
 // Mailbox call function
 int mailbox_call(unsigned char ch)
@@ -28,13 +32,17 @@ int mailbox_call(unsigned char ch)
     while (!(*MAILBOX_RSTATUS & MAILBOX_EMPTY))
     {
         asm volatile ("dmb ish" ::: "memory");
-        *MAILBOX_READ;
+        auto const read = *MAILBOX_READ;
+        Uart::Puts("Mailbox not empty. Read status: ");
+        Uart::PutHex(read);
+        Uart::Puts("\n");
     }
 
     // Wait until mailbox is not full
     asm volatile ("dmb ish" ::: "memory");
     while (*MAILBOX_WSTATUS & MAILBOX_FULL)
     {
+        Uart::Puts("Mailbox full, waiting...\n");
         asm volatile ("dmb ish" ::: "memory");
     }
     asm volatile ("dmb ish" ::: "memory");
@@ -48,7 +56,11 @@ int mailbox_call(unsigned char ch)
             asm volatile ("dmb ish" ::: "memory");
         }
         asm volatile ("dmb ish" ::: "memory");
-        if (*MAILBOX_READ == r)
+        auto const read = *MAILBOX_READ;
+        Uart::Puts("Mailbox read status: ");
+        Uart::PutHex(read);
+        Uart::Puts("\n");
+        if (read == r)
         {
             asm volatile ("dmb ish" ::: "memory");
             return mbox[1] == 0x80000000;
@@ -78,20 +90,24 @@ void Panic(Color565 color, int divisions, int which, int repeat)
 }
 
 // Framebuffer info
-volatile unsigned int fb_width = 1280, fb_height = 720, fb_depth = 16;
+volatile unsigned int fb_depth = 16;
 volatile unsigned int fb_pitch, fb_addr;
+
+
+uint32_t Width;
+uint32_t Height;
 
 void Init(uint32_t width, uint32_t height)
 {
-    fb_width  = width;
-    fb_height = height;
+    Uart::Puts("Framebuffer initialization started...\n");
+    Uart::Puts("GPU memory base: "); Uart::PutHex(GpuMemBase); Uart::Puts("\n");
 
     int i = 0;
     mbox[i++] = 0; // Size
     mbox[i++] = 0; // Request
 
-    mbox[i++] = 0x48003; mbox[i++] = 8; int m1 = i; mbox[i++] = 0; mbox[i++] = fb_width; mbox[i++] = fb_height; // Set phys size
-    mbox[i++] = 0x48004; mbox[i++] = 8; int m2 = i; mbox[i++] = 0; mbox[i++] = fb_width; mbox[i++] = fb_height; // Set virt size
+    mbox[i++] = 0x48003; mbox[i++] = 8; int m1 = i; mbox[i++] = 0; mbox[i++] = width; mbox[i++] = height; // Set phys size
+    mbox[i++] = 0x48004; mbox[i++] = 8; int m2 = i; mbox[i++] = 0; int w = i; mbox[i++] = width; int h = i; mbox[i++] = height; // Set virt size
     mbox[i++] = 0x48005; mbox[i++] = 4; int m3 = i; mbox[i++] = 0; mbox[i++] = fb_depth; // Set depth
     mbox[i++] = 0x48006; mbox[i++] = 4; int m4 = i; mbox[i++] = 0; mbox[i++] = 0; // Set pixel order
     mbox[i++] = 0x40001; mbox[i++] = 8; int m5 = i; mbox[i++] = 0; int addr = i; mbox[i++] = 16; mbox[i++] = 0; // Allocate buffer
@@ -125,11 +141,31 @@ void Init(uint32_t width, uint32_t height)
     asm volatile ("dsb ish; isb" ::: "memory");
 
     if (mailbox_call(8)) {
-        fb_addr  = mbox[addr] & 0x3FFF'FFFF; // Convert to ARM address
+        fb_addr  = (mbox[addr] & 0x3FFF'FFFF) + GpuMemBase; // Convert to ARM address
         fb_pitch = mbox[pitch];
+        Width = mbox[w];
+        Height = mbox[h];
+
         // Framebuffer is now accessible at fb_addr
+        Uart::Puts("Framebuffer address: "); Uart::PutHex(fb_addr); Uart::Puts("\n");
+        Uart::Puts("Framebuffer pitch: "); Uart::PutDec(fb_pitch); Uart::Puts("\n");
+        Uart::Puts("Framebuffer width: "); Uart::PutDec(Width); Uart::Puts("\n");
+        Uart::Puts("Framebuffer height: "); Uart::PutDec(Height); Uart::Puts("\n");
     }
-    else{
+    else
+    {
+        Uart::Puts("Framebuffer initialization failed.\n");
+        Uart::Puts("Mbox size: "); Uart::PutDec(mbox[0]); Uart::Puts("\n");
+        Uart::Puts("Mbox status: "); Uart::PutHex(mbox[1]); Uart::Puts("\n");
+        Uart::Puts("Mbox m1: "); Uart::PutHex(mbox[m1]); Uart::Puts("\n");
+        Uart::Puts("Mbox m2: "); Uart::PutHex(mbox[m2]); Uart::Puts("\n");
+        Uart::Puts("Mbox m3: "); Uart::PutHex(mbox[m3]); Uart::Puts("\n");
+        Uart::Puts("Mbox m4: "); Uart::PutHex(mbox[m4]); Uart::Puts("\n");
+        Uart::Puts("Mbox m5: "); Uart::PutHex(mbox[m5]); Uart::Puts("\n");
+        Uart::Puts("Mbox m6: "); Uart::PutHex(mbox[m6]); Uart::Puts("\n");
+        Uart::Puts("Framebuffer address: "); Uart::PutHex(fb_addr); Uart::Puts("\n");
+        Uart::Puts("Framebuffer pitch: "); Uart::PutDec(fb_pitch); Uart::Puts("\n");
+
         // Error?
         while (true) {
             //int const k = (255 * 4 + 2) * 4 + 3;
@@ -163,7 +199,8 @@ void Init(uint32_t width, uint32_t height)
 
 void WritePixel(uint32_t x, uint32_t y, Color565 color)
 {
-    if (x < fb_width && y < fb_height) {
+    if (x < Width && y < Height)
+    {
         *((uint16_t volatile*)((uintptr_t)fb_addr + (y * fb_pitch) + (x * 2))) = reinterpret_cast<uint16_t const&>(color);
     }
 }
