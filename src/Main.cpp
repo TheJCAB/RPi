@@ -1,6 +1,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
+//#include <span>
+//#include <array>
+//#include <format>
+
 #include "Mmio.h"
 #include "Uart.h"
 #include "Framebuffer.h"
@@ -174,6 +178,7 @@ void KernelMain()
 
     Framebuffer::Init(w, h);
 
+    // STL              Some via LLVM's libc++
     // Timers           Delay() and GetPerformanceCounter()
     // Remote boot for development :-)
     // Interrupts

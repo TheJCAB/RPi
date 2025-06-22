@@ -16,12 +16,23 @@ set_target_properties(kernel8 PROPERTIES
 
 target_compile_options(kernel8 PRIVATE
     -Wno-builtin-macro-redefined
+    #-H
 )
 
 # Specify the linker script
 set(LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/kernel.ld")
 set_target_properties(kernel8 PROPERTIES LINK_DEPENDS "${LINKER_SCRIPT}")
 target_link_options(kernel8 PRIVATE "-T${LINKER_SCRIPT}")
+target_link_libraries(kernel8 PRIVATE
+    cxx-headers
+)
+
+#add_custom_command(
+#    TARGET kernel8
+#    PRE_BUILD
+#    COMMAND clang -IC:/repos/RPi/libcxxinc/. -E -x c++ - -v < nul
+#    COMMAND cmd /c set
+#)
 
 # Convert the elf file to a binary image and generate assembly listing
 add_custom_command(
