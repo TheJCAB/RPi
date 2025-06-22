@@ -3,11 +3,16 @@ cmake_minimum_required(VERSION 3.24)
 add_executable(kernel8
     Boot.S
     Main.cpp
+    Crt.cpp
 
     Uart.cpp        Uart.h
     Framebuffer.cpp Framebuffer.h
+    Exception.cpp   Exception.h
     Run.cpp         Run.h
     Mmu.cpp         Mmu.h
+    Timer.cpp       Timer.h
+
+    Processor.h
 )
 
 set_target_properties(kernel8 PROPERTIES
@@ -16,6 +21,7 @@ set_target_properties(kernel8 PROPERTIES
 
 target_compile_options(kernel8 PRIVATE
     -Wno-builtin-macro-redefined
+    -O3
     #-H
 )
 

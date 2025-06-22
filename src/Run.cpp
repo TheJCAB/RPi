@@ -1,5 +1,6 @@
 #include "Run.h"
 #include "Uart.h"
+#include "Timer.h"
 #include "Framebuffer.h"
 
 void Run()
@@ -31,6 +32,7 @@ void Run()
                     //Uart::PutHex((uint8_t)c);
                 }
             }
+            Timer::Delay(16'000); // Delay for 16 ms (60 FPS)
             for (uint32_t x = 0; x < Framebuffer::Width; ++x)
             {
                 for (uint32_t y = 0; y < Framebuffer::Width; ++y)

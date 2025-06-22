@@ -28,3 +28,64 @@ el2_to_el1_return:
     msr elr_el2, lr
 
     eret
+
+    // important, code has to be properly aligned
+    .align 11
+.global ExceptionVectors
+ExceptionVectors:
+
+    // synchronous
+    .align  7
+SPEL0SynchronousExceptionVector:
+    mov     x0, #0
+    bl       MainExceptionHandler
+    eret
+
+    // IRQ
+    .align  7
+SPEL0IrqExceptionVector:
+    mov     x0, #1
+    bl       MainExceptionHandler
+    eret
+
+    // FIQ
+    .align  7
+SPEL0FiqExceptionVector:
+    mov     x0, #2
+    bl       MainExceptionHandler
+    eret
+
+    // SError
+    .align  7
+SPEL0ErrorExceptionVector:
+    mov     x0, #3
+    bl       MainExceptionHandler
+    eret
+
+    // synchronous
+    .align  7
+SynchronousExceptionVector:
+    mov     x0, #0x10
+    bl       MainExceptionHandler
+    eret
+
+    // IRQ
+    .align  7
+IrqExceptionVector:
+    mov     x0, #0x11
+    bl       MainExceptionHandler
+    eret
+
+    // FIQ
+    .align  7
+FiqExceptionVector:
+    mov     x0, #0x12
+    bl       MainExceptionHandler
+    eret
+
+    // SError
+    .align  7
+ErrorExceptionVector:
+    mov     x0, #0x13
+    bl       MainExceptionHandler
+    eret

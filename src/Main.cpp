@@ -8,51 +8,27 @@
 #include "Mmio.h"
 #include "Uart.h"
 #include "Framebuffer.h"
+#include "Exception.h"
+#include "Processor.h"
 #include "Mmu.h"
+#include "Timer.h"
 #include "Run.h"
 
 uintptr_t MMIO_BASE = 0x3F00'0000u;
 
-extern "C" uint64_t _bss_start;
-extern "C" uint64_t _bss_end;
-
-extern "C" uint64_t _data_start;
-extern "C" uint64_t _data_end;
-
-extern "C" void (*_init_array_start[])(void);
-extern "C" void (*_init_array_end[])(void);
-
 extern "C"
 {
 
-extern "C" void el2_to_el1_return();
+extern uint64_t _bss_start;
+extern uint64_t _bss_end;
 
-uint64_t GetPerformanceFrequency()
-{
-    uint64_t freq = 0;
-    asm volatile ("mrs %0, cntfrq_el0" : "=r"(freq));
-    return freq;
-}
+extern uint64_t _data_start;
+extern uint64_t _data_end;
 
-uint64_t const PerformanceFrequency = GetPerformanceFrequency();
+extern void (*_init_array_start[])();
+extern void (*_init_array_end[])();
 
-uint64_t GetPerformanceCounter()
-{
-    uint64_t counter = 0;
-    asm volatile ("mrs %0, cntvct_el0" : "=r"(counter));
-    return counter;
-}
-
-void Delay(uint64_t us)
-{
-    uint64_t const freq = GetPerformanceFrequency();
-    uint64_t start = GetPerformanceCounter();
-    uint64_t end = start + (us * freq / 1'000'000u);
-    while (GetPerformanceCounter() < end) {
-        //asm volatile ("wfe"); // This is bad unless we know there will be some event.
-        asm volatile ("yield");
-    }
-}
+void el2_to_el1_return();
 
 void KernelMain()
 {
@@ -109,10 +85,10 @@ void KernelMain()
     Uart::Puts("\n");
 
     Uart::Puts("Initial performance Frequency: ");
-    Uart::PutDec(PerformanceFrequency);
+    Uart::PutDec(Timer::PerformanceFrequency);
     Uart::Puts("\n");
     Uart::Puts("Current performance Frequency: ");
-    Uart::PutDec(GetPerformanceFrequency());
+    Uart::PutDec(Timer::GetPerformanceFrequency());
     Uart::Puts("\n");
 
     uint64_t el = 0;
@@ -129,11 +105,7 @@ void KernelMain()
 
     if (((el >> 2) & 0b11) == 2)
     {
-        uint64_t spsr = 0;
-        asm volatile ("mrs %0, spsr_el2" : "=r"(spsr));
-        Uart::Puts("SPSR_EL2: ");
-        Uart::PutBin(spsr);
-        Uart::Puts("\n");
+        Exception::InitEL2();
 
         el2_to_el1_return();
 
@@ -145,7 +117,7 @@ void KernelMain()
         Uart::Puts("\n");
 
         Uart::Puts("Performance Frequency: ");
-        Uart::PutDec(GetPerformanceFrequency());
+        Uart::PutDec(Timer::GetPerformanceFrequency());
         Uart::Puts("\n");
 
         Mmu::Init();
@@ -156,22 +128,34 @@ void KernelMain()
         Uart::Puts("MMU enabled\n");
 
         Uart::Puts("Performance Frequency: ");
-        Uart::PutDec(GetPerformanceFrequency());
+        Uart::PutDec(Timer::GetPerformanceFrequency());
         Uart::Puts("\n");
     }
 
-    Uart::Puts("Waiting...\n");
-    Delay(1000'000);
-    Uart::Puts("Waiting...\n");
-    Delay(1000'000);
-    Uart::Puts("Waiting...\n");
-    Delay(1000'000);
+    Exception::Init();
 
-    uint64_t spsr = 0;
-    asm volatile ("mrs %0, spsr_el1" : "=r"(spsr));
-    Uart::Puts("SPSR_EL1: ");
-    Uart::PutBin(spsr);
-    Uart::Puts("\n");
+    uint64_t sctlr = 0;
+    asm volatile ("mrs %0, sctlr_el1" : "=r"(sctlr));
+    sctlr |= (1 << 1); // Set A (Alignment check enable) bit
+    sctlr |= (1 << 3); // Set SA (Stack Alignment Check Enable) bit
+    asm volatile ("msr sctlr_el1, %0" :: "r"(sctlr));
+    asm volatile ("isb"); // Ensure changes take effect
+
+    uint64_t daif = 0;
+    asm volatile ("mrs %0, daif" : "=r"(daif));
+    daif &= ~(1 << 7); // Clear the SError (S) mask bit to enable synchronous exceptions
+    asm volatile ("msr daif, %0" :: "r"(daif));
+
+    Uart::Puts("Waiting...\n");
+    Timer::Delay(1000'000);
+    
+    //asm volatile ("svc #42"); // Trigger a software interrupt to test exception handling
+    //asm volatile ("hvc #42"); // Trigger a software interrupt to test exception handling
+
+    Uart::Puts("Waiting...\n");
+    Timer::Delay(1000'000);
+    Uart::Puts("Waiting...\n");
+    Timer::Delay(1000'000);
 
     uint32_t const w = 1280;
     uint32_t const h =  720;
