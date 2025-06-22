@@ -5,7 +5,7 @@ ENTRY(_start)
 SECTIONS
 {
     . = 0x80000; /* Kernel load address for RPi */
-    _start = .;
+
     .text : {
         KEEP(*(.text.boot))
         *(.text*)
@@ -13,6 +13,11 @@ SECTIONS
 
     .rodata : {
         *(.rodata*)
+        . = ALIGN(8);
+        _init_array_start = .;
+        KEEP(*(.init_array))
+        _init_array_end = .;
+        *(.eh_frame*)
     }
 
     . = ALIGN(4096);
@@ -32,4 +37,6 @@ SECTIONS
 
     . = ALIGN(4096);
     _data_end = .;
+
+    /DISCARD/ : { *(.debug*) *(.comment) *(.gnu*) *(.note*) }
 }

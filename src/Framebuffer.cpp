@@ -122,23 +122,7 @@ void Init(uint32_t width, uint32_t height)
 
     mbox[0] = 1024 * 4;
 
-    asm volatile (
-        "dc cvau, %0\n"
-        "dsb ish\n"
-        "isb\n"
-        :
-        : "r"(mbox)
-        : "memory"
-    );
-    for (size_t off = 0; off < i * 4; off += 64) {
-        asm volatile (
-            "dc cvau, %0\n"
-            :
-            : "r"(((char*)mbox) + off)
-            : "memory"
-        );
-    }
-    asm volatile ("dsb ish; isb" ::: "memory");
+    asm volatile ("dsb osh" ::: "memory");
 
     if (mailbox_call(8)) {
         fb_addr  = (mbox[addr] & 0x3FFF'FFFF) + GpuMemBase; // Convert to ARM address

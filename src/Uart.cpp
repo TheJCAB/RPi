@@ -72,6 +72,25 @@ void Putc(char c)
     *AUX_MU_IO_REG = c;
 }
 
+char Getc()
+{
+    // Wait until data is ready in receiver FIFO
+    while (!(*AUX_MU_LSR_REG & 0x01))
+    {
+        // Bit 0 == Data ready
+    }
+    return static_cast<char>(*AUX_MU_IO_REG & 0xFF);
+}
+
+char TryGetc()
+{
+    if (!(*AUX_MU_LSR_REG & 0x01))
+    {
+        return (char)0; // No data available
+    }
+    return static_cast<char>(*AUX_MU_IO_REG & 0xFF);
+}
+
 void Puts(char const* str)
 {
     while (*str)

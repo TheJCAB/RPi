@@ -264,6 +264,15 @@ alignas(0x1000) static constinit L1PageTable l1_page_table
     // Remaining entries are invalid
 }};
 
+//uint64_t GetMairEl1()
+//{
+//    uint64_t mair;
+//    asm volatile ("mrs %0, mair_el1" : "=r"(mair));
+//    return mair;
+//}
+//
+//uint64_t const MairEl1 = GetMairEl1();
+
 static void InitPageTablesAndMMU()
 {
     //l1_page_table.entries[0] = TableDescriptor((uint64_t)&l2_page_table);
@@ -297,9 +306,8 @@ static void EnableCachesAndMMU()
     sctlr |= (1 << 12) | (1 << 2) | (1 << 0);
     asm volatile ("msr sctlr_el1, %0" : : "r"(sctlr));
     // Flush TLBs (optional, but recommended)
-    //asm volatile ("tlbi alle1");
-    //asm volatile ("dsb ish");
-    asm volatile ("isb");
+    //asm volatile ("tlbi alle1"); This one can only be done at EL2 or EL3
+    asm volatile ("dsb ish; isb" ::: "memory");
     // L2 cache is enabled automatically with L1 on Cortex-A53 (Pi 3B)
 }
 
