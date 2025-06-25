@@ -2,14 +2,33 @@
 #include "Uart.h"
 #include "Timer.h"
 #include "Framebuffer.h"
+#include "UsbDevices.h"
 
-void Run()
+#include "emb-stdio.h"
+
+void Run(uint8_t firstKbd)
 {
     Color565 background = Magenta;
     for (;;)
     {
         for (int i = 0; i < 2; ++i)
         {
+            if (firstKbd) {
+                HIDSetIdle(firstKbd, 0);
+
+                uint16_t const USB_HID_REPORT_TYPE_INPUT = 1;
+                uint8_t buf[8];
+                auto const status = HIDReadReport(firstKbd, 0, USB_HID_REPORT_TYPE_INPUT << 8 | 1, &buf[0], 8);
+                if (status == OK)
+                {
+                    //GotoXY(x, y);
+                    printf("HID KBD REPORT: %08b %02X %02X %02X %02X %02X %02X\n",
+                        buf[0],         buf[2], buf[3],
+                        buf[4], buf[5], buf[6], buf[7]);
+                }
+                else printf("Status error: %08x\n", status);
+            }
+
             if (auto c = Uart::TryGetc())
             {
                 //Uart::Puts("Got character: ");
@@ -32,7 +51,7 @@ void Run()
                     //Uart::PutHex((uint8_t)c);
                 }
             }
-            Timer::Delay(16'000); // Delay for 16 ms (60 FPS)
+            Timer::Delay(33'333); // Delay for 33.333 ms (30 FPS)
             for (uint32_t x = 0; x < Framebuffer::Width; ++x)
             {
                 for (uint32_t y = 0; y < Framebuffer::Width; ++y)

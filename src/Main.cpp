@@ -14,7 +14,9 @@
 #include "Mmu.h"
 #include "Timer.h"
 #include "Run.h"
-#include "rpi-usb.h"
+#include "UsbDevices.h"
+
+#include "emb-stdio.h"
 
 uintptr_t MMIO_BASE = 0x3F00'0000u;
 
@@ -180,7 +182,7 @@ void KernelMain()
 
 	/* Detect the first keyboard on USB bus */
 	uint8_t firstKbd = 0;
-	for (int i = 1; i <= MaximumDevices; i++) {
+	for (int i = 1; i <= 32 /*MaximumDevices*/; i++) {
 		if (IsKeyboard(i)) {
 			firstKbd = i;
 			break;
@@ -191,25 +193,6 @@ void KernelMain()
 
     Uart::Puts("Waiting...\n");
     Timer::Delay(1000'000);
-
-    for (int i = 0; i < 100; ++i)
-    {
-		if (firstKbd) {
-			RESULT status;
-			uint8_t buf[8];
-			status = HIDReadReport(firstKbd, 0, (uint16_t)USB_HID_REPORT_TYPE_INPUT << 8 | 0, &buf[0], 8);
-			if (status == OK)
-			{
-				//GotoXY(x, y);
-				printf("HID KBD REPORT: Byte1: 0x%02x Byte2: 0x%02x, Byte3: 0x%02x, Byte4: 0x%02x\n",
-					buf[0], buf[1], buf[2], buf[3]);
-				printf("                Byte5: 0x%02x Byte6: 0x%02x, Byte7: 0x%02x, Byte8: 0x%02x\n",
-					buf[4], buf[5], buf[6], buf[7]);
-			}
-			else printf("Status error: %08x\n", status);
-		}
-		Timer::Delay(100'000);
-    }
 
     uint32_t const w = 1280;
     uint32_t const h =  720;
@@ -228,7 +211,7 @@ void KernelMain()
     // USB
     // Networking?
 
-    Run();
+    Run(firstKbd);
 }
 
 }

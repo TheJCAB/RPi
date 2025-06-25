@@ -1,3 +1,5 @@
 #pragma once
 
-void Run();
+#include <stdint.h>
+
+void Run(uint8_t firstKbd);

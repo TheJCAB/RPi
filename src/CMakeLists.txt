@@ -12,9 +12,11 @@ add_executable(kernel8
     Run.cpp         Run.h
     Mmu.cpp         Mmu.h
     Timer.cpp       Timer.h
+    UsbDevices.cpp  UsbDevices.h
 
     emb-stdio.cpp   emb-stdio.h
     rpi-usb.cpp     rpi-usb.h
+    #rpi-usb-hw.cpp  rpi-usb-hw.h
 
     Processor.h
 )
