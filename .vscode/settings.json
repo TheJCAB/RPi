@@ -72,6 +72,13 @@
         "xutility": "cpp",
         "__bit_reference": "cpp",
         "__locale": "cpp",
-        "__split_buffer": "cpp"
+        "__split_buffer": "cpp",
+        "chrono": "cpp",
+        "deque": "cpp",
+        "functional": "cpp",
+        "stack": "cpp",
+        "__hash_table": "cpp",
+        "hash_set": "cpp",
+        "string_view": "cpp"
     }
 }

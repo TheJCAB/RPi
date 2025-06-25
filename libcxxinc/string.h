@@ -20,6 +20,15 @@ Macros:
 Types:
 
     size_t
+*/
+
+#ifndef restrict
+#define restrict __restrict
+#endif
+
+#if __cplusplus
+extern "C" {
+#endif
 
 void* memcpy(void* restrict s1, const void* restrict s2, size_t n);
 void* memmove(void* s1, const void* s2, size_t n);
@@ -32,24 +41,28 @@ int strcmp (const char* s1, const char* s2);
 int strncmp(const char* s1, const char* s2, size_t n);
 int strcoll(const char* s1, const char* s2);
 size_t strxfrm(char* restrict s1, const char* restrict s2, size_t n);
-const void* memchr(const void* s, int c, size_t n);
+//const void* memchr(const void* s, int c, size_t n);
       void* memchr(      void* s, int c, size_t n);
-const char* strchr(const char* s, int c);
+//const char* strchr(const char* s, int c);
       char* strchr(      char* s, int c);
 size_t strcspn(const char* s1, const char* s2);
-const char* strpbrk(const char* s1, const char* s2);
+//const char* strpbrk(const char* s1, const char* s2);
       char* strpbrk(      char* s1, const char* s2);
-const char* strrchr(const char* s, int c);
+//const char* strrchr(const char* s, int c);
       char* strrchr(      char* s, int c);
 size_t strspn(const char* s1, const char* s2);
-const char* strstr(const char* s1, const char* s2);
+//const char* strstr(const char* s1, const char* s2);
       char* strstr(      char* s1, const char* s2);
 char* strtok(char* restrict s1, const char* restrict s2);
 void* memset(void* s, int c, size_t n);
 char* strerror(int errnum);
 size_t strlen(const char* s);
 
-*/
+#if __cplusplus
+}
+// extern "C"
+#endif
+
 
 #if defined(__cplusplus) && __cplusplus < 201103L && defined(_LIBCPP_USE_FROZEN_CXX03_HEADERS)
 #  include <__cxx03/string.h>

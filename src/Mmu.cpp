@@ -166,35 +166,22 @@ constexpr uint64_t MAIR_ATTR = 0xFF | (0x04 << 8) | (0x33 << 16);
 /*
 TCR_EL1 (Translation Control Register, EL1) format (AArch64):
 
-Bits | Name      | Description
------|-----------|---------------------------------------------------------------
-  5:0   T0SZ     | Size offset for TTBR0_EL1 region (VA size = 64 - T0SZ bits)
+Bits  | Name      | Description
+------|-----------|---------------------------------------------------------------
+  5:0    T0SZ     | Size offset for TTBR0_EL1 region (VA size = 64 - T0SZ bits)
   6      RES0     | Reserved
   7      EPD0     | Disable translation table walks using TTBR0_EL1 (0=enable)
   9:8    IRGN0    | Inner cacheability for TTBR0_EL1 (0b00=NC, 0b01=WBWA, 0b10=WT, 0b11=WB)
  11:10   ORGN0    | Outer cacheability for TTBR0_EL1 (same encoding as IRGN0)
  13:12   SH0      | Shareability for TTBR0_EL1 (0b00=Non-shareable, 0b10=Inner, 0b11=Outer)
  15:14   TG0      | Granule size for TTBR0_EL1 (0b00=4KB, 0b01=64KB, 0b10=16KB)
- the following are bogus (Copilot nonsense)
- 17:16   RES0     | Reserved
- 18      ASID16   | ASID size (0=8 bits, 1=16 bits)
- 19      TBI0     | Top Byte Ignore for TTBR0_EL1 (0=disabled, 1=enabled)
- 20      RES0     | Reserved
- 21      HDB      | Hardware update of DBM (0=disabled, 1=enabled)
- 22      HD       | Hardware update of Dirty bit (0=disabled, 1=enabled)
- 23      HA       | Hardware Access flag update (0=disabled, 1=enabled)
- 25:24   DS       | Default shareability (0b00=Non-shareable, 0b10=Inner, 0b11=Outer)
- 27:26   IPS      | Intermediate Physical Address Size (0b000=32b, 0b001=36b, 0b010=40b, 0b011=42b, 0b100=44b, 0b101=48b)
- 28      RES0     | Reserved
- 29      TBI1     | Top Byte Ignore for TTBR1_EL1
- 30      RES0     | Reserved
- 31      EPD1     | Disable translation table walks using TTBR1_EL1
- 37:32   T1SZ     | Size offset for TTBR1_EL1 region (VA size = 64 - T1SZ bits)
- 39:38   RES0     | Reserved
- 41:40   IRGN1    | Inner cacheability for TTBR1_EL1
- 43:42   ORGN1    | Outer cacheability for TTBR1_EL1
- 45:44   SH1      | Shareability for TTBR1_EL1
- 47:46   TG1      | Granule size for TTBR1_EL1 (0b10=16KB, 0b01=64KB, 0b11=4KB)
+ 21:16   T1SZ     | Size offset for TTBR1_EL1 region (VA size = 64 - T1SZ bits)
+ 22      RES0     | Reserved
+ 23      EPD1     | Disable translation table walks using TTBR1_EL1 (0=enable)
+ 25:24   IRGN1    | Inner cacheability for TTBR1_EL1 (0b00=NC, 0b01=WBWA, 0b10=WT, 0b11=WB)
+ 27:26   ORGN1    | Outer cacheability for TTBR1_EL1 (same encoding as IRGN0)
+ 29:28   SH1      | Shareability for TTBR1_EL1 (0b00=Non-shareable, 0b10=Inner, 0b11=Outer)
+ 31:30   TG1      | Granule size for TTBR1_EL1 (0b00=4KB, 0b01=64KB, 0b10=16KB)
  ...     ...      | (See ARM ARM DDI0487 for further fields and details)
 
 Common encodings:
@@ -256,11 +243,10 @@ alignas(0x1000) static constinit L2PageTable l2_page_table = []() constexpr
 
 alignas(0x1000) static constinit L1PageTable l1_page_table
 {{
-    L1NormalMem(0x00000000ULL), // 0x00000000 - 0x3FFFFFFF: 1 GB RAM (normal memory)
-    L1GpuMem(0x00000000ULL),    // 0x40000000 - 0x7FFFFFFF: 1 GB RAM (transient, WT memory)
-    //InvalidDescriptor(),        // 0x40000000 - 0x7FFFFFFF: (unused)
-    InvalidDescriptor(),        // 0x80000000 - 0xBFFFFFFF: (unused)
-    L1DeviceMem(0),             // 0xC0000000 - 0xFFFFFFFF: 1 GB RAM, including the MMIO (device)
+    L1NormalMem(0),        // 0x00000000 - 0x3FFFFFFF: 1 GB RAM (normal memory)
+    L1DeviceMem(0),        // 0x40000000 - 0x7FFFFFFF: 1 GB RAM, including the MMIO (device)
+    InvalidDescriptor(),   // 0x80000000 - 0xBFFFFFFF: (unused)
+    L1GpuMem(0),           // 0xC0000000 - 0xFFFFFFFF: 1 GB RAM (transient, WT memory for GPU (and devices) data)
     // Remaining entries are invalid
 }};
 

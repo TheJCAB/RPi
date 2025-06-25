@@ -25,7 +25,11 @@ void DataAbortException(uint8_t ec, uint32_t iss, uint32_t iss2)
     }
     else
     {
-        Uart::Puts("No address given.\n");
+        Uart::Puts("No address given, FAR = ");
+        uint64_t far = 0;
+        asm volatile ("mrs %0, far_el1" : "=r"(far));
+        Uart::PutHex(far);
+        Uart::Puts("\n");
     }
     uint8_t const dfsc = iss & 0b11'1111;
     switch (dfsc)

@@ -12,22 +12,26 @@
 
 Macros:
 
-    BUFSIZ
-    EOF
-    FILENAME_MAX
-    FOPEN_MAX
-    L_tmpnam
-    NULL
-    SEEK_CUR
-    SEEK_END
-    SEEK_SET
-    TMP_MAX
-    _IOFBF
-    _IOLBF
-    _IONBF
-    stderr
-    stdin
-    stdout
+*/
+
+//#define BUFSIZ
+#define EOF -1
+//#define FILENAME_MAX
+//#define FOPEN_MAX
+//#define L_tmpnam
+//#define NULL 0
+//#define SEEK_CUR
+//#define SEEK_END
+//#define SEEK_SET
+//#define TMP_MAX
+//#define _IOFBF
+//#define _IOLBF
+//#define _IONBF
+//#define stderr
+//#define stdin
+//#define stdout
+
+/*
 
 Types:
 

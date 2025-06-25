@@ -1,72 +1,21 @@
 #include "Framebuffer.h"
 
 #include "Mmio.h"
+#include "Mailbox.h"
 
 #include "Uart.h"
 
 #include <stddef.h>
 
+extern uintptr_t GpuMemBase;
+
 namespace Framebuffer
 {
-
-uintptr_t GpuMemBase = 0;
-
-// Mailbox registers (base address for RPi 3B)
-#define MAILBOX_BASE    (MMIO_BASE + 0xB880)
-#define MAILBOX_READ    ((uint32_t volatile*)(MAILBOX_BASE + 0x00))
-#define MAILBOX_RSTATUS ((uint32_t volatile*)(MAILBOX_BASE + 0x18))
-#define MAILBOX_WRITE   ((uint32_t volatile*)(MAILBOX_BASE + 0x20))
-#define MAILBOX_WSTATUS ((uint32_t volatile*)(MAILBOX_BASE + 0x38))
-#define MAILBOX_FULL    0x80000000
-#define MAILBOX_EMPTY   0x40000000
-
+    
 // Mailbox property buffer (must be 16-byte aligned)
-alignas(64) uint32_t volatile mbox_l[1024];
+alignas(64) uint32_t volatile mbox_l[64];
 
 #define mbox ((uint32_t volatile*)((uintptr_t)mbox_l | GpuMemBase))
-
-// Mailbox call function
-int mailbox_call(unsigned char ch)
-{
-    uint32_t const r = (static_cast<uint32_t>(reinterpret_cast<uintptr_t>(mbox)) & ~0xFu) | (ch & 0xFu) | 0xC000'0000u;
-    while (!(*MAILBOX_RSTATUS & MAILBOX_EMPTY))
-    {
-        asm volatile ("dmb ish" ::: "memory");
-        auto const read = *MAILBOX_READ;
-        Uart::Puts("Mailbox not empty. Read status: ");
-        Uart::PutHex(read);
-        Uart::Puts("\n");
-    }
-
-    // Wait until mailbox is not full
-    asm volatile ("dmb ish" ::: "memory");
-    while (*MAILBOX_WSTATUS & MAILBOX_FULL)
-    {
-        Uart::Puts("Mailbox full, waiting...\n");
-        asm volatile ("dmb ish" ::: "memory");
-    }
-    asm volatile ("dmb ish" ::: "memory");
-    *MAILBOX_WRITE = r;
-    asm volatile ("dmb ish" ::: "memory");
-    // Wait for response
-    while (true) {
-        asm volatile ("dmb ish" ::: "memory");
-        while (*MAILBOX_RSTATUS & MAILBOX_EMPTY)
-        {
-            asm volatile ("dmb ish" ::: "memory");
-        }
-        asm volatile ("dmb ish" ::: "memory");
-        auto const read = *MAILBOX_READ;
-        Uart::Puts("Mailbox read status: ");
-        Uart::PutHex(read);
-        Uart::Puts("\n");
-        if (read == r)
-        {
-            asm volatile ("dmb ish" ::: "memory");
-            return mbox[1] == 0x80000000;
-        }
-    }
-}
 
 void Panic(Color565 color, int divisions, int which, int repeat)
 {
@@ -102,16 +51,16 @@ void Init(uint32_t width, uint32_t height)
     Uart::Puts("Framebuffer initialization started...\n");
     Uart::Puts("GPU memory base: "); Uart::PutHex(GpuMemBase); Uart::Puts("\n");
 
-    int i = 0;
+    size_t i = 0;
     mbox[i++] = 0; // Size
     mbox[i++] = 0; // Request
 
-    mbox[i++] = 0x48003; mbox[i++] = 8; int m1 = i; mbox[i++] = 0; mbox[i++] = width; mbox[i++] = height; // Set phys size
-    mbox[i++] = 0x48004; mbox[i++] = 8; int m2 = i; mbox[i++] = 0; int w = i; mbox[i++] = width; int h = i; mbox[i++] = height; // Set virt size
-    mbox[i++] = 0x48005; mbox[i++] = 4; int m3 = i; mbox[i++] = 0; mbox[i++] = fb_depth; // Set depth
-    mbox[i++] = 0x48006; mbox[i++] = 4; int m4 = i; mbox[i++] = 0; mbox[i++] = 0; // Set pixel order
-    mbox[i++] = 0x40001; mbox[i++] = 8; int m5 = i; mbox[i++] = 0; int addr = i; mbox[i++] = 16; mbox[i++] = 0; // Allocate buffer
-    mbox[i++] = 0x40008; mbox[i++] = 4; int m6 = i; mbox[i++] = 0; int pitch = i; mbox[i++] = 0; // Get pitch
+    mbox[i++] = 0x48003; mbox[i++] = 8; size_t m1 = i; mbox[i++] = 0; mbox[i++] = width; mbox[i++] = height; // Set phys size
+    mbox[i++] = 0x48004; mbox[i++] = 8; size_t m2 = i; mbox[i++] = 0; size_t w = i; mbox[i++] = width; size_t h = i; mbox[i++] = height; // Set virt size
+    mbox[i++] = 0x48005; mbox[i++] = 4; size_t m3 = i; mbox[i++] = 0; mbox[i++] = fb_depth; // Set depth
+    mbox[i++] = 0x48006; mbox[i++] = 4; size_t m4 = i; mbox[i++] = 0; mbox[i++] = 0; // Set pixel order
+    mbox[i++] = 0x40001; mbox[i++] = 8; size_t m5 = i; mbox[i++] = 0; size_t addr = i; mbox[i++] = 16; mbox[i++] = 0; // Allocate buffer
+    mbox[i++] = 0x40008; mbox[i++] = 4; size_t m6 = i; mbox[i++] = 0; size_t pitch = i; mbox[i++] = 0; // Get pitch
     mbox[i++] = 0; // End tag
 
     // Pad to 16-byte alignment
@@ -120,11 +69,8 @@ void Init(uint32_t width, uint32_t height)
         mbox[i++] = 0;
     }
 
-    mbox[0] = 1024 * 4;
-
-    asm volatile ("dsb osh" ::: "memory");
-
-    if (mailbox_call(8)) {
+    if (Mailbox::SendTags(std::span{ mbox, i }))
+    {
         fb_addr  = (mbox[addr] & 0x3FFF'FFFF) + GpuMemBase; // Convert to ARM address
         fb_pitch = mbox[pitch];
         Width = mbox[w];

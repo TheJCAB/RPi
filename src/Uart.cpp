@@ -54,7 +54,7 @@ void Init()
     // Clear FIFO
     *AUX_MU_IIR_REG = 0xC6;
 
-    // Set baud rate to 115200 (assuming 250 MHz system clock)
+    // Set baud rate to 115200 (assuming 400 MHz system clock for the Pi 3B)
     *AUX_MU_BAUD_REG = (400'000'000 / (8 * 115'200)) - 1;
 
     // Enable TX/RX

@@ -7,6 +7,12 @@
 //
 //===----------------------------------------------------------------------===//
 
+extern "C"
+{
+
+typedef unsigned long long wint_t;
+#define WEOF ((wint_t)-1)
+
 /*
     wchar.h synopsis
 
@@ -82,7 +88,9 @@ wchar_t* wmemset(wchar_t* s, wchar_t c, size_t n);
 size_t wcsftime(wchar_t* restrict s, size_t maxsize, const wchar_t* restrict format,
                 const tm* restrict timeptr);
 wint_t btowc(int c);
+*/
 int wctob(wint_t c);
+/*
 int mbsinit(const mbstate_t* ps);
 size_t mbrlen(const char* restrict s, size_t n, mbstate_t* restrict ps);
 size_t mbrtowc(wchar_t* restrict pwc, const char* restrict s, size_t n, mbstate_t* restrict ps);
@@ -93,6 +101,9 @@ size_t wcsrtombs(char* restrict dst, const wchar_t** restrict src, size_t len,
                  mbstate_t* restrict ps);
 
 */
+
+}
+// extern "C"
 
 #if defined(__cplusplus) && __cplusplus < 201103L && defined(_LIBCPP_USE_FROZEN_CXX03_HEADERS)
 #  include <__cxx03/wchar.h>

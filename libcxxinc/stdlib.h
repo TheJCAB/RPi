@@ -82,6 +82,9 @@ void *aligned_alloc(size_t alignment, size_t size);                       // C11
 #    pragma GCC system_header
 #  endif
 
+#include <stdint.h>
+#include <stddef.h>
+
 // The inclusion of the system's <stdlib.h> is intentionally done once outside of any include
 // guards because some code expects to be able to include the underlying system header multiple
 // times to get different definitions based on the macros that are set before inclusion.

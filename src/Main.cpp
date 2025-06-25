@@ -7,12 +7,14 @@
 
 #include "Mmio.h"
 #include "Uart.h"
+#include "Mailbox.h"
 #include "Framebuffer.h"
 #include "Exception.h"
 #include "Processor.h"
 #include "Mmu.h"
 #include "Timer.h"
 #include "Run.h"
+#include "rpi-usb.h"
 
 uintptr_t MMIO_BASE = 0x3F00'0000u;
 
@@ -47,6 +49,8 @@ void KernelMain()
     {
         *p = 0; // Clear BSS
     }
+
+    Mailbox::Send(0, 0x80); // UART 1 and USB enabled
 
     Uart::Init();
 
@@ -122,8 +126,8 @@ void KernelMain()
 
         Mmu::Init();
 
-        MMIO_BASE = 0xFF00'0000u; // Update MMIO base to the new aperture.
-        Framebuffer::GpuMemBase = 0x4000'0000u; // Update the GPU memory base to the new aperture.
+        MMIO_BASE = 0x7F00'0000u; // Update MMIO base to the new aperture.
+        GpuMemBase = 0xC000'0000u; // Update the GPU memory base to the new aperture.
 
         Uart::Puts("MMU enabled\n");
 
@@ -136,7 +140,7 @@ void KernelMain()
 
     uint64_t sctlr = 0;
     asm volatile ("mrs %0, sctlr_el1" : "=r"(sctlr));
-    sctlr |= (1 << 1); // Set A (Alignment check enable) bit
+    //sctlr |= (1 << 1); // Set A (Alignment check enable) bit
     sctlr |= (1 << 3); // Set SA (Stack Alignment Check Enable) bit
     asm volatile ("msr sctlr_el1, %0" :: "r"(sctlr));
     asm volatile ("isb"); // Ensure changes take effect
@@ -146,16 +150,66 @@ void KernelMain()
     daif &= ~(1 << 7); // Clear the SError (S) mask bit to enable synchronous exceptions
     asm volatile ("msr daif, %0" :: "r"(daif));
 
+    uint64_t cpacr = 0;
+    asm volatile ("mrs %0, cpacr_el1" : "=r"(cpacr));
+    cpacr |= (3 << 20); // Set CPACR_EL1.FP
+    asm volatile ("msr cpacr_el1, %0" :: "r"(cpacr));
+
     Uart::Puts("Waiting...\n");
     Timer::Delay(1000'000);
     
     //asm volatile ("svc #42"); // Trigger a software interrupt to test exception handling
     //asm volatile ("hvc #42"); // Trigger a software interrupt to test exception handling
 
+    asm volatile("msr daifclr,#2"); // Clear the IRQ mask bit to enable IRQs
+
+    UsbInitialise();
+    Timer::Delay(10'000);
+    Uart::Init();
+
     Uart::Puts("Waiting...\n");
     Timer::Delay(1000'000);
+
+    UsbCheckForChange();
+    Uart::Init();
+
+	/* Display the USB tree */
+	printf2("\n");
+	UsbShowTree(UsbGetRootHub(), 1, '+');
+	printf2("\n");
+
+	/* Detect the first keyboard on USB bus */
+	uint8_t firstKbd = 0;
+	for (int i = 1; i <= MaximumDevices; i++) {
+		if (IsKeyboard(i)) {
+			firstKbd = i;
+			break;
+		}
+	}
+	if (firstKbd) printf2("Keyboard detected\r\n");
+
+
     Uart::Puts("Waiting...\n");
     Timer::Delay(1000'000);
+
+    for (int i = 0; i < 100; ++i)
+    {
+		if (firstKbd) {
+			RESULT status;
+			uint8_t buf[8];
+			status = HIDReadReport(firstKbd, 0, (uint16_t)USB_HID_REPORT_TYPE_INPUT << 8 | 0, &buf[0], 8);
+			if (status == OK)
+			{
+				//GotoXY(x, y);
+				printf("HID KBD REPORT: Byte1: 0x%02x Byte2: 0x%02x, Byte3: 0x%02x, Byte4: 0x%02x\n",
+					buf[0], buf[1], buf[2], buf[3]);
+				printf("                Byte5: 0x%02x Byte6: 0x%02x, Byte7: 0x%02x, Byte8: 0x%02x\n",
+					buf[4], buf[5], buf[6], buf[7]);
+			}
+			else printf("Status error: %08x\n", status);
+		}
+		Timer::Delay(100'000);
+    }
 
     uint32_t const w = 1280;
     uint32_t const h =  720;
@@ -164,11 +218,12 @@ void KernelMain()
 
     // STL              Some via LLVM's libc++
     // Timers           Delay() and GetPerformanceCounter()
-    // Remote boot for development :-)
-    // Interrupts
+    // Remote boot for development :-)      Done!
     // UART input       Done
+    // Exceptions       Done
+    // VSync/flip
+    // Interrupts
     // Multicore
-    // Exceptions
     // Storage
     // USB
     // Networking?

@@ -6,11 +6,15 @@ add_executable(kernel8
     Crt.cpp
 
     Uart.cpp        Uart.h
+    Mailbox.cpp     Mailbox.h
     Framebuffer.cpp Framebuffer.h
     Exception.cpp   Exception.h
     Run.cpp         Run.h
     Mmu.cpp         Mmu.h
     Timer.cpp       Timer.h
+
+    emb-stdio.cpp   emb-stdio.h
+    rpi-usb.cpp     rpi-usb.h
 
     Processor.h
 )
