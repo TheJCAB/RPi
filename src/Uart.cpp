@@ -5,17 +5,16 @@
 namespace Uart
 {
 
-#define AUX_BASE        (MMIO_BASE + 0x215000)
+#define PL011_BASE      (MMIO_BASE + 0x201000)
 
-#define AUX_ENABLES     ((volatile unsigned int*)(AUX_BASE + 0x04))
-#define AUX_MU_IO_REG   ((volatile unsigned int*)(AUX_BASE + 0x40))
-#define AUX_MU_IER_REG  ((volatile unsigned int*)(AUX_BASE + 0x44))
-#define AUX_MU_IIR_REG  ((volatile unsigned int*)(AUX_BASE + 0x48))
-#define AUX_MU_LCR_REG  ((volatile unsigned int*)(AUX_BASE + 0x4C))
-#define AUX_MU_MCR_REG  ((volatile unsigned int*)(AUX_BASE + 0x50))
-#define AUX_MU_LSR_REG  ((volatile unsigned int*)(AUX_BASE + 0x54))
-#define AUX_MU_CNTL_REG ((volatile unsigned int*)(AUX_BASE + 0x60))
-#define AUX_MU_BAUD_REG ((volatile unsigned int*)(AUX_BASE + 0x68))
+#define UART_DR         ((volatile unsigned int*)(PL011_BASE + 0x00))
+#define UART_FR         ((volatile unsigned int*)(PL011_BASE + 0x18))
+#define UART_IBRD       ((volatile unsigned int*)(PL011_BASE + 0x24))
+#define UART_FBRD       ((volatile unsigned int*)(PL011_BASE + 0x28))
+#define UART_LCRH       ((volatile unsigned int*)(PL011_BASE + 0x2C))
+#define UART_CR         ((volatile unsigned int*)(PL011_BASE + 0x30))
+#define UART_IMSC       ((volatile unsigned int*)(PL011_BASE + 0x38))
+#define UART_ICR        ((volatile unsigned int*)(PL011_BASE + 0x44))
 
 #define GPFSEL1         ((volatile unsigned int*)(MMIO_BASE + 0x200004))
 #define GPPUD           ((volatile unsigned int*)(MMIO_BASE + 0x200094))
@@ -23,72 +22,63 @@ namespace Uart
 
 void Init()
 {
-    // Disable pull-ups/downs
+    // Disable UART0
+    *UART_CR = 0;
+
+    // Setup GPIO14 and GPIO15 to ALT0 (UART0 TX/RX)
+    unsigned int r = *GPFSEL1;
+    r &= ~((7 << 12) | (7 << 15)); // clear bits for GPIO14, GPIO15
+    r |= (4 << 12) | (4 << 15);    // set ALT0
+    *GPFSEL1 = r;
+
+    // Disable pull-up/down for pins 14 and 15
     *GPPUD = 0;
     for (volatile int i = 0; i < 1500; i = i + 1) {}
     *GPPUDCLK0 = (1 << 14) | (1 << 15);
     for (volatile int i = 0; i < 1500; i = i + 1) {}
     *GPPUDCLK0 = 0;
 
-    // Configure GPIO14 & 15 to ALT5
-    unsigned int r = *GPFSEL1;
-    r &= ~((7 << 12) | (7 << 15)); // clear bits for GPIO14, GPIO15
-    r |= 2 << 12 | 2 << 15;        // set ALT5
-    *GPFSEL1 = r;
+    // Clear pending interrupts
+    *UART_ICR = 0x7FF;
 
-    // Enable Mini UART
-    *AUX_ENABLES |= 1;
+    // Set integer & fractional part of baud rate
+    // Baud = 115200, UARTCLK = 48 MHz (default for Pi 3)
+    // Divider = UARTCLK / (16 * Baud) = 48,000,000 / (16*115200) = 26.0416
+    *UART_IBRD = 26;
+    *UART_FBRD = 3;
 
-    // Disable TX/RX
-    *AUX_MU_CNTL_REG = 0;
+    // Enable FIFO & 8 bit data transmission (1 stop bit, no parity)
+    *UART_LCRH = (1 << 4) | (3 << 5); // FIFO enable, 8 bit
 
-    // Disable interrupts
-    *AUX_MU_IER_REG = 0;
+    // Mask all interrupts
+    *UART_IMSC = (1 << 1) | (1 << 4) | (1 << 5) | (1 << 6) |
+                 (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10);
 
-    // Enable 8-bit mode
-    *AUX_MU_LCR_REG = 3;
-
-    // RTS line high
-    *AUX_MU_MCR_REG = 0;
-
-    // Clear FIFO
-    *AUX_MU_IIR_REG = 0xC6;
-
-    // Set baud rate to 115200 (assuming 400 MHz system clock for the Pi 3B)
-    *AUX_MU_BAUD_REG = (400'000'000 / (8 * 115'200)) - 1;
-
-    // Enable TX/RX
-    *AUX_MU_CNTL_REG = 3;
+    // Enable UART0, receive & transmit
+    *UART_CR = (1 << 0) | (1 << 8) | (1 << 9);
 }
 
 void Putc(char c)
 {
     // Wait until transmitter FIFO has space
-    while (!(*AUX_MU_LSR_REG & (1 << 5)))
-    {
-        // Bit 5 == Transmitter FIFO can accept data
-    }
-
-    *AUX_MU_IO_REG = c;
+    while (*UART_FR & (1 << 5)) {}
+    *UART_DR = c;
 }
 
 char Getc()
 {
     // Wait until data is ready in receiver FIFO
-    while (!(*AUX_MU_LSR_REG & 0x01))
-    {
-        // Bit 0 == Data ready
-    }
-    return static_cast<char>(*AUX_MU_IO_REG & 0xFF);
+    while (*UART_FR & 0x10) {}
+    return static_cast<char>(*UART_DR & 0xFF);
 }
 
 char TryGetc()
 {
-    if (!(*AUX_MU_LSR_REG & 0x01))
+    if (*UART_FR & 0x10)
     {
         return (char)0; // No data available
     }
-    return static_cast<char>(*AUX_MU_IO_REG & 0xFF);
+    return static_cast<char>(*UART_DR & 0xFF);
 }
 
 void Puts(char const* str)

@@ -7,13 +7,14 @@ fixup_file=fixup.dat
 arm_64bit=1
 
 # Specify the custom kernel image (must be in the boot partition)
-kernel=kernel8.img
+kernel=kernelloader.img
 
 # Set GPU memory (adjust as needed)
-gpu_mem=16
+gpu_mem=64
 
 # Enable UART for serial console (optional)
 enable_uart=1
+core_freq_fixed=1
 uart_2ndstage=1
 
 # Screen settings
