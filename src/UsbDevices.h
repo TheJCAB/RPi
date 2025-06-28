@@ -2,9 +2,11 @@
 
 #include <stdint.h>
 
+#include "UsbSpec.h"
+
 
 enum RESULT {
-    OK = 0,
+    Ok = 0,
     ErrorGeneral = -1,
     ErrorArgument = -2,
     ErrorRetry = -3,
@@ -24,6 +26,11 @@ enum RESULT {
 };
 
 struct UsbDevice;
+struct HidDevice;
+
+#define MaximumDevices 32											// Max number of devices with a USB node we will allow 
+
+#define ControlMessageTimeout 10
 
 /***************************************************************************}
 {					      PUBLIC INTERFACE ROUTINES			                }
@@ -103,7 +110,13 @@ UsbDevice *UsbGetRootHub (void);
  structure. If the address is not actually in use it will return NULL.
  11Apr17 LdB
  --------------------------------------------------------------------------*/
-UsbDevice *UsbDeviceAtAddress (uint8_t devNumber);
+UsbDevice* UsbDeviceAtAddress (uint8_t devNumber);
+
+uint32_t   GetDeviceNumber(UsbDevice*);
+HidDevice* GetHidDevice   (UsbDevice*);
+
+UsbInterfaceDescriptor GetInterfaceDescriptor(UsbDevice* device, uint8_t interfaceIndex);
+UsbEndpointDescriptor  FindEndpoint(UsbDevice* device, uint8_t interfaceIndex, usb_transfer_type type, UsbDirection direction);
 
 
 /*--------------------------------------------------------------------------}
@@ -137,54 +150,56 @@ const char* UsbGetDescription (UsbDevice *device);
  --------------------------------------------------------------------------*/
 void UsbShowTree (UsbDevice *root, const int level, const char tee);
 
-
 /*--------------------------------------------------------------------------}
-{						 PUBLIC HID INTERFACE ROUTINES						}
-{---------------------------------------------------------------------------}*/
+{						 PUBLIC USB DESCRIPTOR ROUTINES						}
+{--------------------------------------------------------------------------*/
 
-/*- HIDReadDescriptor ------------------------------------------------------
- Reads the HID descriptor from the given device. The call will error if the
- device is not a HID device, you can always check that by the use of IsHID.
- 23Mar17 LdB
+/*-HCDGetDescriptor ---------------------------------------------------------
+ Has the ability to fetches all the different descriptors from the device if
+ you provide the right parameters. It is a marshal call that many internal
+ descriptor reads will use and it has no checking on parameters. So if you
+ provide invalid parameters it will most likely fail and return with error.
+ The descriptor is read in two calls first the header is read to check the
+ type matches and it provides the descriptor size. If the buffer length is
+ longer than the descriptor the second call shortens the length to just the
+ descriptor length. So the call provides the length of data requested or
+ shorter if the descriptor is shorter than the buffer space provided.
+ 24Feb17 LdB
  --------------------------------------------------------------------------*/
-RESULT HIDReadDescriptor (uint8_t devNumber,						// Device number (address) of the device to read 
-                           uint8_t hidIndex,							// Which hid configuration information is requested from
-                          uint8_t* Buffer,							// Pointer to a buffer to receive the descriptor
-                          uint16_t Length);							// Maxium length of the buffer 
+RESULT HCDGetDescriptor (UsbDevice* device,
+                         usb_descriptor_type type,				// The type of descriptor
+                         uint8_t index,								// The index of the type descriptor
+                         uint16_t langId,							// The language id
+                         void* buffer,								// Buffer to recieve descriptor
+                         uint32_t length,							// Maximumlength of descriptor
+                         uint8_t recipient,							// Recipient flags									 
+                         uint32_t *bytesTransferred,     			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)								
+                         bool runHeaderCheck);						// Whether to run header check
 
-/*- HIDReadReport ----------------------------------------------------------
- Reads the HID report from the given device. The call will error if device
- is not a HID device, you can always check that by the use of IsHID.
- 23Mar17 LdB
+/*-HCDSumbitControlMessage --------------------------------------------------
+ Sends a control message to a device. Handles all necessary channel creation
+ and other processing. The sequence of a control transfer is defined in the
+ USB 2.0 manual section 5.5.  Success is indicated by return of Ok (0) all
+ other codes indicate an error.
+ 24Feb17 LdB
  --------------------------------------------------------------------------*/
-RESULT HIDReadReport (uint8_t devNumber,							// Device number (address) of the device to read
-                      uint8_t hidIndex,								// Which hid configuration information is requested from
-                      uint16_t reportValue,							// Hi byte = enum HidReportType  Lo Byte = Report Index (0 = default)  
-                      uint8_t* Buffer,								// Pointer to a buffer to recieve the report
-                      uint16_t Length);								// Length of the report
+RESULT HCDSumbitControlMessageOUT(
+    UsbDevice* device,
+    uint8_t* buffer,					// Data buffer both send and recieve				 
+    uint32_t bufferLength,				// Buffer length for send or recieve
+    UsbDeviceRequest&& request,	// USB request message
+    uint32_t timeout,					// Timeout in microseconds on message
+    uint32_t* bytesTransferred			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)				
+);
 
-/*- HIDWriteReport ----------------------------------------------------------
- Writes the HID report located in buffer to the given device. This call will 
- error if device is not a HID device, you can always check that by the use of 
- IsHID.
- 23Mar17 LdB
- --------------------------------------------------------------------------*/
-RESULT HIDWriteReport (uint8_t devNumber,							// Device number (address) of the device to write report to
-                       uint8_t hidIndex,							// Which hid configuration information is writing to
-                       uint16_t reportValue,						// Hi byte = enum HidReportType  Lo Byte = Report Index (0 = default) 
-                       uint8_t* Buffer,								// Pointer to a buffer containing the report
-                       uint16_t Length);							// Length of the report
+RESULT HCDSumbitControlMessageIN(
+    UsbDevice* device,
+    uint8_t* buffer,					// Data buffer both send and recieve				 
+    uint32_t bufferLength,				// Buffer length for send or recieve
+    UsbDeviceRequest&& request,	// USB request message
+    uint32_t timeout,					// Timeout in microseconds on message
+    uint32_t* bytesTransferred			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)				
+);
 
-/*- HIDSetProtocol ----------------------------------------------------------
- Many USB HID devices support multiple low level protocols. For example most
- mice and keyboards have a BIOS Boot mode protocol that makes them look like
- an old DOS keyboard. They also have another protocol which is more advanced.
- This call enables the switch between protocols. What protocols are available
- and what interface is retrieved and parsed from Descriptors from the device.
- 23Mar17 LdB
- --------------------------------------------------------------------------*/
-RESULT HIDSetProtocol (uint8_t devNumber,							// Device number (address) of the device
-                       uint8_t interface,							// Interface number to change protocol on
-                       uint16_t protocol);							// The protocol number request
-
-RESULT HIDSetIdle (uint8_t devNumber, uint8_t hidIndex);
+// Sends/recieves data from/to the given buffer to/from the given endpoint.
+RESULT HCDEndpointTransfer(UsbDevice* device, UsbEndpointDescriptor endpoint, uint8_t* buffer, uint32_t& bufferLength);

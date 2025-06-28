@@ -2,31 +2,34 @@
 #include "Uart.h"
 #include "Timer.h"
 #include "Framebuffer.h"
-#include "UsbDevices.h"
+#include "HidUsbDevices.h"
 
 #include "emb-stdio.h"
 
 void Run(uint8_t firstKbd)
 {
+    HIDEnableInterruptINSimple(firstKbd, 0);
+
     Color565 background = Magenta;
     for (;;)
     {
         for (int i = 0; i < 2; ++i)
         {
             if (firstKbd) {
-                HIDSetIdle(firstKbd, 0);
-
                 uint16_t const USB_HID_REPORT_TYPE_INPUT = 1;
                 uint8_t buf[8];
-                auto const status = HIDReadReport(firstKbd, 0, USB_HID_REPORT_TYPE_INPUT << 8 | 1, &buf[0], 8);
-                if (status == OK)
+                auto const status = HIDReadInterruptReport(firstKbd, 0, buf, sizeof(buf), nullptr);
+                //auto const status = HIDReadReport(firstKbd, 0, USB_HID_REPORT_TYPE_INPUT << 8 | 1, &buf[0], 8);
+                if (status == RESULT::Ok)
                 {
                     //GotoXY(x, y);
                     printf("HID KBD REPORT: %08b %02X %02X %02X %02X %02X %02X\n",
                         buf[0],         buf[2], buf[3],
                         buf[4], buf[5], buf[6], buf[7]);
+
+                    //HIDSetIdle(firstKbd, 0);
                 }
-                else printf("Status error: %08x\n", status);
+                else printf("Status error: %d\n", status);
             }
 
             if (auto c = Uart::TryGetc())

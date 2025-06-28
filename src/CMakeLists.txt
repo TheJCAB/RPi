@@ -5,20 +5,21 @@ add_executable(kernel8
     Main.cpp
     Crt.cpp
 
-    Uart.cpp        Uart.h
-    Mailbox.cpp     Mailbox.h
-    Framebuffer.cpp Framebuffer.h
-    Exception.cpp   Exception.h
-    Run.cpp         Run.h
-    Mmu.cpp         Mmu.h
-    Timer.cpp       Timer.h
-    UsbDevices.cpp  UsbDevices.h
+    Uart.cpp            Uart.h
+    Mailbox.cpp         Mailbox.h
+    Framebuffer.cpp     Framebuffer.h
+    Exception.cpp       Exception.h
+    Run.cpp             Run.h
+    Mmu.cpp             Mmu.h
+    Timer.cpp           Timer.h
+    UsbDevices.cpp      UsbDevices.h
+    HidUsbDevices.cpp   HidUsbDevices.h
 
-    emb-stdio.cpp   emb-stdio.h
-    rpi-usb.cpp     rpi-usb.h
-    #rpi-usb-hw.cpp  rpi-usb-hw.h
+    emb-stdio.cpp       emb-stdio.h
+    DesignWareUsb.cpp   DesignWareUsb.h
 
     Processor.h
+    Task.h
 )
 
 set_target_properties(kernel8 PROPERTIES

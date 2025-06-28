@@ -1,105 +1,8 @@
-// Taken from: https://github.com/LdB-ECM/Raspberry-Pi/tree/master/Arm32_64_USB
-/***************************************************************}
-{  Complete redux of CSUD (Chadderz's Simple USB Driver) by		}
-{  Alex Chadwick by Leon de Boer(LdB) 2017, 2018				}
-{																}
-{  Version 2.0  (AARCH64 & AARCH32 compilation supported)		}
-{																}
-{  CSUD was overly complex in both it's coding and especially   }
-{  implementation for what it actually did. At it's heart CSUD  }
-{  simply provides the CONTROL pipe operation of a USB bus.That }
-{  provides all the functionality to enumerate the USB bus and  }
-{  control devices on the BUS. It is the start point for a real }
-{  driver or access layer to the USB.							}
-{                                                               }
-{******************[ THIS CODE IS FREEWARE ]********************}
-{																}
-{     This sourcecode is released for the purpose to promote	}
-{   programming on the Raspberry Pi. You may redistribute it    }
-{   and/or modify with the following disclaimer.                }
-{																}
-{   The SOURCE CODE is distributed "AS IS" WITHOUT WARRANTIES	}
-{   AS TO PERFORMANCE OF MERCHANTABILITY WHETHER EXPRESSED OR   }
-{   IMPLIED. Redistributions of source code must retain the     }
-{   copyright notices.                                          }
-{																}
-{++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
-#ifndef _RPI_USB_					// Check RPI_USB guard
-#define _RPI_USB_
-
-#include <array>
+#pragma once
 
 #include <stdint.h>
-#include "emb-stdio.h"				// Needed for printf
+#include <stddef.h>
 
-//#define LOG(...)
-#define LOG(...) printf2(__VA_ARGS__)
-#define LOG_DEBUG(...)
-//#define LOG_DEBUG(...) printf2(__VA_ARGS__)
-
-
-enum UsbPacketSize {
-    Bits8 = 0,
-    Bits16 = 1,
-    Bits32 = 2,
-    Bits64 = 3,
-};
-
-
-static inline UsbPacketSize SizeFromNumber(uint32_t size) {
-    if (size <= 8) return Bits8;
-    else if (size <= 16) return Bits16;
-    else if (size <= 32) return Bits32;
-    else return Bits64;
-}
-
-static inline uint32_t SizeToNumber(UsbPacketSize size) {
-    if (size == Bits8) return 8;
-    else if (size == Bits16) return 16;
-    else if (size == Bits32) return 32;
-    else return 64;
-}
-
-#define MaximumDevices 32											// Max number of devices with a USB node we will allow 
-
-
-    /**
-    \brief The maximum number of children a device could have, by implication, this is
-    the maximum number of ports a hub supports.
-
-    This is theoretically 255, as 8 bits are used to transfer the port count in
-    a hub descriptor. Practically, no hub has more than 10, so we instead allow
-    that many. Increasing this number will waste space, but will not have
-    adverse consequences up to 255. Decreasing this number will save a little
-    space in the HubDevice structure, at the risk of removing support for an
-    otherwise valid hub.
-    */
-#define MaxChildrenPerDevice 10
-    /**
-    \brief The maximum number of interfaces a device configuration could have.
-
-    This is theoretically 255 as one byte is used to transfer the interface
-    count in a configuration descriptor. In practice this is unlikely, so we
-    allow an arbitrary 8. Increasing this number wastes (a lot) of space in
-    every device structure, but should not have other consequences up to 255.
-    Decreasing this number reduces the overheads of the UsbDevice structure, at
-    the cost of possibly rejecting support for an otherwise supportable device.
-    */
-#define MaxInterfacesPerDevice 8
-    /**
-    \brief The maximum number of endpoints a device could have (per interface).
-
-    This is theoretically 16, as four bits are used to transfer the endpoint
-    number in certain device requests. This is possible in practice, so we
-    allow that many. Decreasing this number reduces the space in each device
-    structure considerably, while possible removing support for otherwise valid
-    devices. This number should not be greater than 16.
-    */
-#define MaxEndpointsPerDevice 16
-
-#define MaxHIDPerDevice 4
-
-    
 /***************************************************************************}
 {           PUBLIC USB 2.0 STRUCTURE DEFINITIONS AS PER THE MANUAL          }
 ****************************************************************************/
@@ -115,12 +18,12 @@ enum UsbDirection {
 /*--------------------------------------------------------------------------}
 {	 Many parts of USB2.0 standard use this 2 bit field for speed control   }
 {---------------------------------------------------------------------------}*/
-enum UsbSpeed {
+enum UsbSpeed : uint8_t {
     USB_SPEED_HIGH = 0,												// USB high speed
     USB_SPEED_FULL = 1,												// USB full speed
     USB_SPEED_LOW = 2,												// USB low speed
 };
-extern const char* SpeedString[3];	// Speed strings High, Low, Full provided as constants 
+constexpr char const* SpeedString[3] = { "High", "Full", "Low" };
 
 /*--------------------------------------------------------------------------}
 {			 Transfer types as layed out in USB 2.0 standard			    }
@@ -163,7 +66,7 @@ enum usb_descriptor_type : uint8_t {
 /*--------------------------------------------------------------------------}
 {		 Enumeration Status defined in 9.1 of USB 2.0 standard			    }
 {---------------------------------------------------------------------------}*/
-enum UsbDeviceStatus {
+enum UsbDeviceStatus : uint8_t {
     USB_STATUS_ATTACHED = 0,										// USB status is attached
     USB_STATUS_POWERED = 1,											// USB status is powered
     USB_STATUS_DEFAULT = 2,											// USB status is default
@@ -319,7 +222,7 @@ static_assert(sizeof(ConfigurationDescriptor) == 9, "ConfigurationDescriptor mus
 /*--------------------------------------------------------------------------}
 {      USB interface descriptor structure as per 9.6.5 of USB2.0 manual     }
 {---------------------------------------------------------------------------}*/
-enum class InterfaceClass : uint8_t{
+enum class InterfaceClass : uint8_t {
     Reserved            = 0x00,
     Audio               = 0x01,
     Communications      = 0x02,
@@ -358,9 +261,9 @@ struct __attribute__((__packed__)) UsbInterfaceDescriptor {
 struct __attribute__((__packed__)) UsbEndpointDescriptor {
     UsbDescriptorHeader Header;								// +0x0 Length of this descriptor, +0x1 DEVICE descriptor type (enum DescriptorType)
     struct __attribute__((__packed__, aligned(1))) {
-        unsigned Number : 4;							// @0
-        unsigned _reserved4_6 : 3;						// @4
-        unsigned Direction : 1;							// @7
+        uint8_t Number : 4;					    		// @0
+        uint8_t _reserved4_6 : 3;						// @4
+        uint8_t Direction : 1;							// @7
     } EndpointAddress;												// +0x2  Endpoint address. Bit 7 indicates direction (0=OUT, 1=IN).
     struct __attribute__((__packed__, aligned(1))) {
         enum usb_transfer_type Type : 2;				// @0
@@ -378,13 +281,13 @@ struct __attribute__((__packed__)) UsbEndpointDescriptor {
         unsigned _reserved6_7 : 2;						// @6
     } Attributes;													// +0x3 Endpoint transfer type
     struct __attribute__((__packed__, aligned(1))) {
-        unsigned MaxSize : 11;							// @0
-        enum {
+        uint16_t MaxSize : 11;							// @0
+        enum : uint16_t {
             None = 0,
             Extra1 = 1,
             Extra2 = 2,
         } Transactions : 2;								// @11
-        unsigned _reserved13_15 : 3;					// @13
+        uint16_t _reserved13_15 : 3;					// @13
     } Packet;														// +0x4 Maximum packet size.
     uint8_t Interval;												// +0x6 Polling interval in frames
 };
@@ -544,81 +447,6 @@ struct __attribute__((__packed__)) HubPortFullStatus {
 };
 
 
-/***************************************************************************}
-{          PUBLIC HID 1.11 STRUCTURE DEFINITIONS AS PER THE MANUAL          }
-****************************************************************************/
-
-/*--------------------------------------------------------------------------}
-{ 					 USB HID 1.11 defined report types						}
-{---------------------------------------------------------------------------}*/
-enum HidReportType {
-    USB_HID_REPORT_TYPE_INPUT = 1,									// Input HID report
-    USB_HID_REPORT_TYPE_OUTPUT = 2,									// Output HID report
-    USB_HID_REPORT_TYPE_FEATURE = 3,								// Feature HID report
-};
-
-/*--------------------------------------------------------------------------}
-{ 		 USB HID 1.11 descriptor structure as per manual in 6.2.1		    }
-{---------------------------------------------------------------------------}*/
-struct __attribute__((__packed__)) HidDescriptor {
-    struct UsbDescriptorHeader Header;								// +0x0 Length of this descriptor, +0x1 DEVICE descriptor type (enum DescriptorType)
-    union {															// Place a union over BCD version .. alignment issues on ARM7/8
-        struct __attribute__((__packed__, aligned(1))) {
-            uint8_t HidVersionLo;									// Lo of BCD version
-            uint8_t HidVersionHi;									// Hi of BCD version
-        };
-        uint16_t HidVersion;										// (bcd version) +0x2 
-    };
-    enum HidCountry {
-        CountryNotSupported = 0,
-        Arabic = 1,
-        Belgian = 2,
-        CanadianBilingual = 3,
-        CanadianFrench = 4,
-        CzechRepublic = 5,
-        Danish = 6,
-        Finnish = 7,
-        French = 8,
-        German = 9,
-        Greek = 10,
-        Hebrew = 11,
-        Hungary = 12,
-        International = 13,
-        Italian = 14,
-        Japan = 15,
-        Korean = 16,
-        LatinAmerican = 17,
-        Dutch = 18,
-        Norwegian = 19,
-        Persian = 20,
-        Poland = 21,
-        Portuguese = 22,
-        Russian = 23,
-        Slovakian = 24,
-        Spanish = 25,
-        Swedish = 26,
-        SwissFrench = 27,
-        SwissGerman = 28,
-        Switzerland = 29,
-        Taiwan = 30,
-        TurkishQ = 31,
-        EnglishUk = 32,
-        EnglishUs = 33,
-        Yugoslavian = 34,
-        TurkishF = 35,
-    } Countrycode : 8;												// +0x4
-    uint8_t DescriptorCount;										// +0x5
-    enum usb_descriptor_type Type : 8;								// +0x6
-    union {															// Place a union over length .. alignment issues on ARM7/8
-        struct __attribute__((__packed__, aligned(1))) {
-            uint8_t LengthLo;										// Lo of Length
-            uint8_t LengthHi;										// Hi of Length
-        };
-        uint16_t Length;											// +0x7 
-    };
-};
-
-
 /*--------------------------------------------------------------------------}
 { USB struct UsbDeviceRequest .Type Bit masks to use to make full bitmask   }
 {---------------------------------------------------------------------------}*/
@@ -660,119 +488,3 @@ enum PacketId {
     USB_PID_SETUP = 3,
     USB_MDATA = 3,
 };
-
-/***************************************************************************}
-{             PUBLIC USB STRUCTURES DEFINITIONS DEFINED BY US				}
-****************************************************************************/
-
-/*--------------------------------------------------------------------------}
-{ 	USB pipe our own special structure encompassing a pipe in the USB spec	}
-{---------------------------------------------------------------------------}*/
-struct __attribute__((__packed__)) UsbPipe {
-    UsbPacketSize MaxSize : 2;										// @0		Maximum packet size
-    UsbSpeed Speed : 2;												// @2		Speed of device
-    unsigned EndPoint : 4;											// @4		Endpoint address
-    unsigned Number : 8;											// @8		Unique device number sometimes called address or id
-    unsigned _reserved : 2;											// @16-17
-    unsigned lowSpeedNodePort : 7;									// @18-24		In low speed transfers it is port device is on closest parent high speed hub
-    unsigned lowSpeedNodePoint : 7;									// @25-31	In low speed transfers it is closest parent high speed hub
-};
-
-/*--------------------------------------------------------------------------}
-{ 			USB pipe control used mainly by internal routines				}
-{---------------------------------------------------------------------------}*/
-struct __attribute__((__packed__)) UsbPipeControl {
-    unsigned _reserved : 14;										// @0-13	
-    enum usb_transfer_type	Type : 2;								// @14-15	Packet type
-    unsigned Channel : 8;											// @16-23   Channel to use
-    unsigned Direction : 1;											// @24		Direction  1=IN, 0=OUT
-    unsigned _reserved1 : 7;										// @25-31	
-};
-
-/*--------------------------------------------------------------------------}
-{ 	USB parent used mainly by internal routines (details of parent hub)		}
-{---------------------------------------------------------------------------}*/
-struct __attribute__((__packed__)) UsbParent {
-    unsigned Number : 8;											// @0	Unique device number of our parent sometimes called address or id
-    unsigned PortNumber : 8;										// @8	This is the port we are connected to on our parent hub
-    unsigned reserved : 16;											// @16  Reserved 16 bits
-};
-
-/*--------------------------------------------------------------------------}
-{ 			USB config control used mainly by internal routines				}
-{---------------------------------------------------------------------------}*/
-struct __attribute__((__packed__)) UsbConfigControl {
-    unsigned ConfigIndex : 8;										// @0 Current set config index
-    unsigned ConfigStringIndex : 8;									// @8 Current config string index
-    enum UsbDeviceStatus Status : 8;								// @16 Device enumeration status .. USB_ATTACHED, USB_POWERED, USB_ADDRESSED, etc
-    unsigned reserved : 8;											// @24-31
-};
-
-/*--------------------------------------------------------------------------}
-{	  Forward declare our USB device types which form our device tree		}
-{---------------------------------------------------------------------------}*/
-struct UsbDevice;			// Single device endpoint
-struct HubDevice;			// Hub connects to multiple other devices so we get a tree as well as being an endpoint itself
-struct HidDevice;			// Single device endpoint which is a human interface 
-struct MassStorageDevice;	// Single device endpoint which is a mass storage device 
-
-/*--------------------------------------------------------------------------}
-{	  To a standard USB device we can add a payload this is the type id		}
-{---------------------------------------------------------------------------}*/
-enum PayLoadType {
-    ErrorPayload = 0,								// Device is not even active so can't have a payload							
-    NoPayload = 1,									// Device is active but no payload attached
-    HubPayload = 2,									// Device has hub payload attached
-    HidPayload = 3,									// Device has Hid payload attached
-    MassStoragePayload = 4,							// Device has Mass storage payload attached
-};
-
-#define ALIGN4 __attribute__((aligned(4)))			// Alignment attribute shortcut macro .. I hate the attribute text length nothing tricky
-
-/*--------------------------------------------------------------------------}
-{  Our structure that hold details about any USB device we have detected    }
-{---------------------------------------------------------------------------}*/
-struct UsbDevice {
-    UsbParent ParentHub;						// Details of our parent hub
-    UsbPipe Pipe0;							// Usb device pipe AKA pipe0	
-    UsbPipeControl PipeCtrl0;				// Usb device pipe control AKA pipectrl0
-    UsbConfigControl Config;					// Usb config control
-    uint8_t MaxInterface ALIGN4;					// Maxiumum interface in array (varies with config and usually a lot less than the max array size) 
-    UsbInterfaceDescriptor Interfaces[MaxInterfacesPerDevice] ALIGN4; // These are available interfaces on this device
-    UsbEndpointDescriptor Endpoints[MaxInterfacesPerDevice][MaxEndpointsPerDevice] ALIGN4; // These are available endpoints on this device
-    DeviceDescriptor Descriptor ALIGN4;	// Device descriptor it's accessed a bit so we have a copy to save USB bus ... align it for ARM7/8
-
-    PayLoadType PayLoadId;						// Payload type being carried
-    union {											// It can only be any of the different payloads
-        HubDevice* HubPayload;				// If this is a USB gateway node of a hub this pointer will be set to the hub data which is about the ports
-        HidDevice* HidPayload;				// If this node has a HID function this pointer will be to the HID payload
-        MassStorageDevice* MassPayload;		// If this node has a MASS STORAGE function this pointer will be to the Mass Storage payload
-    };
-};
-
-/*--------------------------------------------------------------------------}
-{	 USB hub structure which is just extra data attached to a USB node	    }
-{---------------------------------------------------------------------------}*/
-struct HubDevice {
-    uint32_t MaxChildren;
-    UsbDevice *Children[MaxChildrenPerDevice];
-    HubDescriptor Descriptor ALIGN4;				// Hub descriptor it's accessed a bit so we have a copy to save USB bus ... align it for ARM7/8
-};
-
-/*--------------------------------------------------------------------------}
-{	 USB hid structure which is just extra data attached to a USB node	    }
-{---------------------------------------------------------------------------}*/
-struct HidDevice {
-    HidDescriptor Descriptor[MaxHIDPerDevice];	// HID descriptor of this device
-    uint8_t HIDInterface[MaxHIDPerDevice];				// The interface the HID descriptor is on
-    uint8_t MaxHID ALIGN4;								// Maxiumum HID in array (usually less than the max array size) .. align it for ARM7/8
-};
-
-/*--------------------------------------------------------------------------}
-{	USB mass storage structure which is extra data attached to a USB node   }
-{---------------------------------------------------------------------------}*/
-struct MassStorageDevice {
-    uint8_t SCSI;
-};
-
-#endif						// end RPI_USB guard

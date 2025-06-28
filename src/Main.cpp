@@ -182,7 +182,7 @@ void KernelMain()
 
 	/* Detect the first keyboard on USB bus */
 	uint8_t firstKbd = 0;
-	for (int i = 1; i <= 32 /*MaximumDevices*/; i++) {
+	for (int i = 1; i <= MaximumDevices; i++) {
 		if (IsKeyboard(i)) {
 			firstKbd = i;
 			break;
