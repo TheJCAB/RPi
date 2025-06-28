@@ -5,6 +5,8 @@
 //#include <array>
 //#include <format>
 
+#include <atomic>
+
 #include "Mmio.h"
 #include "Uart.h"
 #include "Mailbox.h"
@@ -234,6 +236,8 @@ void Core0()
     //asm volatile ("hvc #42"); // Trigger a software interrupt to test exception handling
 
     asm volatile("msr daifclr,#2"); // Clear the IRQ mask bit to enable IRQs
+
+    Uart::useMutex = true;
 
     Uart::Puts("Spinning up the cores...\n");
 

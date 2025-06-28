@@ -6,6 +6,8 @@
 namespace Uart
 {
 
+extern bool useMutex;
+
 void Init();
 void Putc(char c);
 char Getc();

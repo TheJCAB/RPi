@@ -2,6 +2,8 @@
 
 #include "Mmio.h"
 
+#include <atomic>
+
 namespace Uart
 {
 
@@ -19,6 +21,10 @@ namespace Uart
 #define GPFSEL1         ((volatile unsigned int*)(MMIO_BASE + 0x200004))
 #define GPPUD           ((volatile unsigned int*)(MMIO_BASE + 0x200094))
 #define GPPUDCLK0       ((volatile unsigned int*)(MMIO_BASE + 0x200098))
+
+bool useMutex = false;
+
+std::atomic<bool> Mutex;
 
 void Init()
 {
@@ -58,12 +64,8 @@ void Init()
     *UART_CR = (1 << 0) | (1 << 8) | (1 << 9);
 }
 
-void Putc(char c)
+namespace Raw
 {
-    // Wait until transmitter FIFO has space
-    while (*UART_FR & (1 << 5)) {}
-    *UART_DR = c;
-}
 
 char Getc()
 {
@@ -81,17 +83,56 @@ char TryGetc()
     return static_cast<char>(*UART_DR & 0xFF);
 }
 
+void Putc(char c)
+{
+    // Wait until transmitter FIFO has space
+    while (*UART_FR & (1 << 5)) {}
+    *UART_DR = c;
+}
+
+} // namespace Raw
+
+
+
+void Putc(char c)
+{
+    if (useMutex) while (Mutex.exchange(true)) {} // Spin until mutex is available
+    Raw::Putc(c);
+    if (useMutex) Mutex.store(false); // Release mutex
+}
+
+char Getc()
+{
+    if (useMutex) while (Mutex.exchange(true)) {} // Spin until mutex is available
+    char c = Raw::Getc();
+    if (useMutex) Mutex.store(false); // Release mutex
+    return c;
+}
+
+char TryGetc()
+{
+    if (useMutex && Mutex.exchange(true)) return 0;
+    char c = Raw::TryGetc();
+    if (useMutex) Mutex.store(false); // Release mutex
+    return c;
+}
+
 void Puts(char const* str)
 {
+    if (useMutex) while (Mutex.exchange(true)) {} // Spin until mutex is available
     while (*str)
     {
-        Putc(*str++);
+        Raw::Putc(*str++);
     }
+    if (useMutex) Mutex.store(false); // Release mutex
 }
 
 void PutHex(auto value)
 {
-    const char* hexDigits = "0123456789ABCDEF";
+    if (useMutex) while (Mutex.exchange(true)) {} // Spin until mutex is available
+
+    char const* hexDigits = "0123456789ABCDEF";
+
     Putc('0');
     Putc('x');
     for (int i = sizeof(value) * 8 - 4; i >= 0; i -= 4)
@@ -102,10 +143,14 @@ void PutHex(auto value)
             Putc('\''); // Add digit separator for readability
         }
     }
+
+    if (useMutex) Mutex.store(false); // Release mutex
 }
 
 void PutBin(auto value)
 {
+    if (useMutex) while (Mutex.exchange(true)) {} // Spin until mutex is available
+
     const char* binDigits = "01";
     Putc('0');
     Putc('b');
@@ -117,13 +162,18 @@ void PutBin(auto value)
             Putc('\''); // Add digit separator for readability
         }
     }
+
+    if (useMutex) Mutex.store(false); // Release mutex
 }
 
 void PutDec(auto value)
 {
+    if (useMutex) while (Mutex.exchange(true)) {} // Spin until mutex is available
+
     if (value == 0)
     {
         Putc('0');
+        if (useMutex) Mutex.store(false); // Release mutex
         return;
     }
 
@@ -145,6 +195,8 @@ void PutDec(auto value)
             Putc('\''); // Add digit separator for readability
         }
     }
+
+    if (useMutex) Mutex.store(false); // Release mutex
 }
 
 template void PutHex(uint64_t value);
