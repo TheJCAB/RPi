@@ -7,7 +7,7 @@
 namespace Exception
 {
 
-void DataAbortException(uint8_t ec, uint32_t iss, uint32_t iss2)
+void DataAbortException(uint8_t ec, uint32_t iss, uint32_t iss2, uint32_t far)
 {
     Uart::Puts("Data ");
     bool isWrite = ((iss >> 6) & 1) == 1;;
@@ -18,16 +18,12 @@ void DataAbortException(uint8_t ec, uint32_t iss, uint32_t iss2)
     if (iss & (1 << 10))
     {
         Uart::Puts("Accessing address: ");
-        uint64_t far = 0;
-        asm volatile ("mrs %0, far_el1" : "=r"(far));
         Uart::PutHex(far);
         Uart::Puts("\n");
     }
     else
     {
         Uart::Puts("No address given, FAR = ");
-        uint64_t far = 0;
-        asm volatile ("mrs %0, far_el1" : "=r"(far));
         Uart::PutHex(far);
         Uart::Puts("\n");
     }
@@ -35,6 +31,9 @@ void DataAbortException(uint8_t ec, uint32_t iss, uint32_t iss2)
     switch (dfsc)
     {
         case 0b00'0100:
+        case 0b00'0101:
+        case 0b00'0110:
+        case 0b00'0111:
             Uart::Puts("Translation fault, level ");
             Uart::PutDec((uint8_t)(dfsc & 3));
             Uart::Puts(".\n");
@@ -105,7 +104,11 @@ void PutRawSynchronousExceptionInfo(uint32_t code, uint8_t ec, uint32_t iss, uin
 
 extern "C" void MainExceptionHandler(uint32_t code)
 {
-    Uart::Puts("Main Exception Handler\n");
+    uint64_t core = 0;
+    asm volatile ("mrs %0, mpidr_el1" : "=r"(core));
+    Uart::Puts("Main Exception Handler on core");
+    Uart::PutDec(core & 3);
+    Uart::Puts("\n");
     uint64_t el = 0;
     uint64_t esr = 0;
     uint64_t elr = 0;
@@ -114,6 +117,7 @@ extern "C" void MainExceptionHandler(uint32_t code)
     asm volatile ("mrs %0, CurrentEL" : "=r"(el));
     if (((el >> 2) & 0b11) == 1)
     {
+        Uart::Puts("Handling in EL1\n");
         asm volatile ("mrs %0, esr_el1" : "=r"(esr));
         asm volatile ("mrs %0, elr_el1" : "=r"(elr));
         asm volatile ("mrs %0, spsr_el1" : "=r"(spsr));
@@ -121,6 +125,7 @@ extern "C" void MainExceptionHandler(uint32_t code)
     }
     else if (((el >> 2) & 0b11) == 2)
     {
+        Uart::Puts("Handling in EL2\n");
         asm volatile ("mrs %0, esr_el2" : "=r"(esr));
         asm volatile ("mrs %0, elr_el2" : "=r"(elr));
         asm volatile ("mrs %0, spsr_el2" : "=r"(spsr));
@@ -132,6 +137,10 @@ extern "C" void MainExceptionHandler(uint32_t code)
         Uart::PutDec((el >> 2) & 3);
         Processor::Halt();
     }
+
+    Uart::Puts("Faulting instruction: ");
+    Uart::PutHex(elr);
+    Uart::Puts("\n");
 
     switch (code & 3)
     {
@@ -145,7 +154,7 @@ extern "C" void MainExceptionHandler(uint32_t code)
                 case 0b00'0000: Uart::Puts("Unknown exception class\n"); break;
                 case 0b01'0101: return SvcException((uint16_t)iss, elr);
                 case 0b10'0100: [[fallthrough]];
-                case 0b10'0101: return DataAbortException(ec, iss, iss2);
+                case 0b10'0101: return DataAbortException(ec, iss, iss2, far);
                 default: Uart::Puts("Other synchronous exception class\n"); break;
             }
             PutRawSynchronousExceptionInfo(code, ec, iss, iss2, elr, spsr, far); 

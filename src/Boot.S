@@ -1,12 +1,29 @@
 .section .text
 
-.extern KernelMain
+.extern Core0
+.extern Core1
+.extern Core2
+.extern Core3
 
 .global _start
 _start:
-    adr x0, _start // Stack buffer is the 512 KB space before the kernel image.
-    mov sp, x0
-    b   KernelMain
+    mrs x0, mpidr_el1
+
+    adr x1, _start // Stack buffer is the 512 KB space before the kernel image.
+    and x0, x0, #3
+    sub x1, x1, x0, LSL #16
+    mov sp, x1
+
+    adr x1, CoreFunctionTable
+    ldr x0, [x1, w0, UXTW #3]
+    br x0
+
+CoreFunctionTable:
+    .quad Core0
+    .quad Core1
+    .quad Core2
+    .quad Core3
+
 
 .global el2_to_el1_return
 el2_to_el1_return:

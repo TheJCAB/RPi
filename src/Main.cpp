@@ -32,21 +32,95 @@ extern uint64_t _data_end;
 extern void (*_init_array_start[])();
 extern void (*_init_array_end[])();
 
+void _start();
 void el2_to_el1_return();
 
-void KernelMain()
+void InitCore()
 {
-    uint64_t core_id = 0; // _ReadStatusReg(MPIDR_EL1);
-    asm volatile ("mrs %0, mpidr_el1" : "=r"(core_id));
+    uint64_t el = 0;
+    asm volatile ("mrs %0, CurrentEL" : "=r"(el));
 
-    if ((core_id & 3) != 0) {
-        // Only core 0 should initialize the framebuffer
-        for (;;)
-        {
-            asm volatile ("wfe"); // Wait for event
-        }
+    if (((el >> 2) & 0b11) == 2)
+    {
+        Exception::InitEL2();
+        el2_to_el1_return();
     }
 
+    Mmu::Init();
+}
+
+volatile bool Core1Ready = false;
+volatile bool Core2Ready = false;
+volatile bool Core3Ready = false;
+
+void Core1()
+{
+    InitCore();
+
+    Uart::Puts("Core 1 says hello\n");
+    Core1Ready = true; // Signal that core 1 is ready
+
+    asm volatile ("dmb ish"); // Release barrier
+    asm volatile ("sev");
+
+    while (true)
+    {
+        asm volatile ("wfe" ::: "memory"); // Wait for event
+    }
+}
+
+void Core2()
+{
+    InitCore();
+
+    Uart::Puts("Core 2 says hello\n");
+    Core2Ready = true; // Signal that core 2 is ready
+
+    asm volatile ("dmb ish"); // Release barrier
+    asm volatile ("sev");
+
+    while (true)
+    {
+        asm volatile ("wfe" ::: "memory"); // Wait for event
+    }
+}
+
+void Core3()
+{
+    InitCore();
+
+    Uart::Puts("Core 3 says hello\n");
+    Core3Ready = true; // Signal that core 3 is ready
+
+    asm volatile ("dmb ish"); // Release barrier
+    asm volatile ("sev");
+
+    while (true)
+    {
+        asm volatile ("wfe" ::: "memory"); // Wait for event
+    }
+}
+
+inline uint32_t AtomicAdd(uint32_t volatile& value, uint32_t increment)
+{
+    uint32_t old_value;
+    uint32_t new_value;
+    uint32_t status;
+    asm volatile (
+        "1:     ldxr %w0, [%3]\n"        // Load exclusive
+        "       add %w1, %w0, %w4\n"     // Add increment
+        "       stxr %w2, %w1, [%3]\n"   // Store exclusive  
+        "       cbnz %w2, 1b\n"          // Retry if store failed
+        : "=&r"(old_value), "=&r"(new_value), "=&r"(status)
+        : "r"(&value), "r"(increment)
+        : "memory"
+    );
+    return old_value;
+}
+
+void Core0()
+{
+    // Clear the BSS.
     for (auto p = &_bss_start; p < &_bss_end; ++p)
     {
         *p = 0; // Clear BSS
@@ -57,10 +131,6 @@ void KernelMain()
     Uart::Init();
 
     Uart::Puts("\r\n\nHello!\n");
-
-    Uart::Puts("Core ID: ");
-    Uart::PutDec(core_id & 0b11);
-    Uart::Puts("\n");
 
     Uart::Puts("Init array start: ");
     Uart::PutHex(reinterpret_cast<uintptr_t>(_init_array_start));
@@ -125,18 +195,18 @@ void KernelMain()
         Uart::Puts("Performance Frequency: ");
         Uart::PutDec(Timer::GetPerformanceFrequency());
         Uart::Puts("\n");
-
-        Mmu::Init();
-
-        MMIO_BASE = 0x7F00'0000u; // Update MMIO base to the new aperture.
-        GpuMemBase = 0xC000'0000u; // Update the GPU memory base to the new aperture.
-
-        Uart::Puts("MMU enabled\n");
-
-        Uart::Puts("Performance Frequency: ");
-        Uart::PutDec(Timer::GetPerformanceFrequency());
-        Uart::Puts("\n");
     }
+
+    Mmu::Init();
+    
+    MMIO_BASE = 0x7F00'0000u; // Update MMIO base to the new aperture.
+    GpuMemBase = 0xC000'0000u; // Update the GPU memory base to the new aperture.
+
+    Uart::Puts("MMU enabled\n");
+
+    Uart::Puts("Performance Frequency: ");
+    Uart::PutDec(Timer::GetPerformanceFrequency());
+    Uart::Puts("\n");
 
     Exception::Init();
 
@@ -164,6 +234,23 @@ void KernelMain()
     //asm volatile ("hvc #42"); // Trigger a software interrupt to test exception handling
 
     asm volatile("msr daifclr,#2"); // Clear the IRQ mask bit to enable IRQs
+
+    Uart::Puts("Spinning up the cores...\n");
+
+    ((void* volatile*)(0xD8 + GpuMemBase))[1] = (void*)_start;
+    asm volatile ("dmb ish;sev");
+    while (!Core1Ready) asm volatile ("dmb ish;sev" ::: "memory");
+    Uart::Puts("Core 1 is going\n");
+    
+    ((void* volatile*)(0xD8 + GpuMemBase))[2] = (void*)_start;
+    asm volatile ("dmb ish;sev");
+    while (!Core2Ready) asm volatile ("wfe;dmb ish;sev" ::: "memory");
+    Uart::Puts("Core 2 is going\n");
+    
+    ((void* volatile*)(0xD8 + GpuMemBase))[3] = (void*)_start;
+    asm volatile ("dmb ish;sev");
+    while (!Core3Ready) asm volatile ("wfe;dmb ish;sev" ::: "memory");
+    Uart::Puts("Core 3 is going\n");
 
     UsbInitialise();
     Timer::Delay(10'000);

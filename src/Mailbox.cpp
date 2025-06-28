@@ -23,7 +23,7 @@ void Send(uint8_t ch, uint32_t data)
 {
     if (data & 0xFu)
     {
-        Uart::Puts("Oh, noes! Mailbox data must keep the bottom 4 bits empty for the channel.\n");
+        //Uart::Puts("Oh, noes! Mailbox data must keep the bottom 4 bits empty for the channel.\n");
         Processor::Halt();
     }
 
@@ -32,16 +32,16 @@ void Send(uint8_t ch, uint32_t data)
     {
         asm volatile ("dmb ish" ::: "memory");
         auto const read = *MAILBOX_READ;
-        Uart::Puts("Mailbox not empty. Read status: ");
-        Uart::PutHex(read);
-        Uart::Puts("\n");
+        //Uart::Puts("Mailbox not empty. Read status: ");
+        //Uart::PutHex(read);
+        //Uart::Puts("\n");
     }
 
     // Wait until mailbox is not full
     asm volatile ("dmb ish" ::: "memory");
     while (*MAILBOX_WSTATUS & MAILBOX_FULL)
     {
-        Uart::Puts("Mailbox full, waiting...\n");
+        //Uart::Puts("Mailbox full, waiting...\n");
         asm volatile ("dmb ish" ::: "memory");
     }
     asm volatile ("dmb ish" ::: "memory");
@@ -56,14 +56,14 @@ void Send(uint8_t ch, uint32_t data)
         }
         asm volatile ("dmb ish" ::: "memory");
         auto const read = *MAILBOX_READ;
-        Uart::Puts("Mailbox read status: ");
-        Uart::PutHex(read);
-        Uart::Puts("\n");
+        //Uart::Puts("Mailbox read status: ");
+        //Uart::PutHex(read);
+        //Uart::Puts("\n");
         if ((read & 0xF) == ch)
         {
             if ((read & 0xFFFF'FFF0) != data)
             {
-                Uart::Puts("Mailbox call failed.\n");
+                //Uart::Puts("Mailbox call failed.\n");
                 Processor::Halt();
             }
             asm volatile ("dmb ish" ::: "memory");

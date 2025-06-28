@@ -284,7 +284,7 @@ static void InitPageTablesAndMMU()
     asm volatile ("isb");
 }
 
-static void EnableCachesAndMMU()
+void EnableCachesAndMMU()
 {
     uint64_t sctlr;
     asm volatile ("mrs %0, sctlr_el1" : "=r"(sctlr));
