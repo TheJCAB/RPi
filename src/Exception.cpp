@@ -12,25 +12,25 @@ void HandlePeriodicInterrupt();
 namespace Exception
 {
 
-void DataAbortException(uint8_t ec, uint32_t iss, uint32_t iss2, uint32_t far)
+void DataAbortException(Uart::LockedStream& stream, uint8_t ec, uint32_t iss, uint32_t iss2, uint32_t far)
 {
-    Uart::Puts("Data ");
+    stream.Puts("Data ");
     bool isWrite = ((iss >> 6) & 1) == 1;;
-    Uart::Puts(isWrite ? "(write)" : "(read)");
-    Uart::Puts(" Abort exception, ");
-    Uart::Puts(ec & 1 ? "same" : "lower");
-    Uart::Puts(" level\n");
+    stream.Puts(isWrite ? "(write)" : "(read)");
+    stream.Puts(" Abort exception, ");
+    stream.Puts(ec & 1 ? "same" : "lower");
+    stream.Puts(" level\n");
     if (iss & (1 << 10))
     {
-        Uart::Puts("Accessing address: ");
-        Uart::PutHex(far);
-        Uart::Puts("\n");
+        stream.Puts("Accessing address: ");
+        stream.PutHex(far);
+        stream.Puts("\n");
     }
     else
     {
-        Uart::Puts("No address given, FAR = ");
-        Uart::PutHex(far);
-        Uart::Puts("\n");
+        stream.Puts("No address given, FAR = ");
+        stream.PutHex(far);
+        stream.Puts("\n");
     }
     uint8_t const dfsc = iss & 0b11'1111;
     switch (dfsc)
@@ -39,83 +39,85 @@ void DataAbortException(uint8_t ec, uint32_t iss, uint32_t iss2, uint32_t far)
         case 0b00'0101:
         case 0b00'0110:
         case 0b00'0111:
-            Uart::Puts("Translation fault, level ");
-            Uart::PutDec((uint8_t)(dfsc & 3));
-            Uart::Puts(".\n");
+            stream.Puts("Translation fault, level ");
+            stream.PutDec((uint8_t)(dfsc & 3));
+            stream.Puts(".\n");
             Processor::Halt();
         case 0b10'0001:
-            Uart::Puts("Alignment fault.\n");
+            stream.Puts("Alignment fault.\n");
             Processor::Halt();
         default:
-            Uart::Puts("Unknown data fault status code: ");
-            Uart::PutBin(dfsc);
-            Uart::Puts("\n");
+            stream.Puts("Unknown data fault status code: ");
+            stream.PutBin(dfsc);
+            stream.Puts("\n");
             Processor::Halt();
     }
 }
 
-void SvcException(uint16_t imm, uint64_t lr)
+void SvcException(Uart::LockedStream& stream, uint16_t imm, uint64_t lr)
 {
-    Uart::Puts("Supervisor Call (SVC) exception\n");
-    Uart::Puts("Imm: ");
-    Uart::PutDec(imm);
-    Uart::Puts("\n");
-    Uart::Puts("From address: ");
-    Uart::PutHex(lr);
-    Uart::Puts("\n");
+    stream.Puts("Supervisor Call (SVC) exception\n");
+    stream.Puts("Imm: ");
+    stream.PutDec(imm);
+    stream.Puts("\n");
+    stream.Puts("From address: ");
+    stream.PutHex(lr);
+    stream.Puts("\n");
 
     // Handle SVC here
 }
 
-void PutRawExceptionInfo(uint32_t code, uint64_t esr, uint64_t elr, uint64_t spsr, uint64_t far)
+void PutRawExceptionInfo(Uart::LockedStream& stream, uint32_t code, uint64_t esr, uint64_t elr, uint64_t spsr, uint64_t far)
 {
-    Uart::Puts("Panic Exception Handler\n");
-    Uart::Puts("Code: ");
-    Uart::PutDec(code);
-    Uart::Puts("\nESR : ");
-    Uart::PutHex(esr);
-    Uart::Puts("\nELR : ");
-    Uart::PutHex(elr);
-    Uart::Puts("\nSPSR: ");
-    Uart::PutHex(spsr);
-    Uart::Puts("\nFAR : ");
-    Uart::PutHex(far);
-    Uart::Puts("\n");
+    stream.Puts("Panic Exception Handler\n");
+    stream.Puts("Code: ");
+    stream.PutDec(code);
+    stream.Puts("\nESR : ");
+    stream.PutHex(esr);
+    stream.Puts("\nELR : ");
+    stream.PutHex(elr);
+    stream.Puts("\nSPSR: ");
+    stream.PutHex(spsr);
+    stream.Puts("\nFAR : ");
+    stream.PutHex(far);
+    stream.Puts("\n");
 
 }
 
-void PutRawSynchronousExceptionInfo(uint32_t code, uint8_t ec, uint32_t iss, uint32_t iss2, uint64_t elr, uint64_t spsr, uint64_t far)
+void PutRawSynchronousExceptionInfo(Uart::LockedStream& stream, uint32_t code, uint8_t ec, uint32_t iss, uint32_t iss2, uint64_t elr, uint64_t spsr, uint64_t far)
 {
-    Uart::Puts("Synchronous exception\n");
-    Uart::Puts("Code: ");
-    Uart::PutDec(code);
-    Uart::Puts("Exception class: ");
-    Uart::PutBin(ec);
-    Uart::Puts("\n");
-    Uart::Puts("ISS: ");
-    Uart::PutBin(iss);
-    Uart::Puts("\n");
-    Uart::Puts("ISS2: ");
-    Uart::PutBin(iss2);
-    Uart::Puts("\n");
-    Uart::Puts("\nELR : ");
-    Uart::PutHex(elr);
-    Uart::Puts("\nSPSR: ");
-    Uart::PutHex(spsr);
-    Uart::Puts("\nFAR : ");
-    Uart::PutHex(far);
-    Uart::Puts("\n");
+    stream.Puts("Synchronous exception\n");
+    stream.Puts("Code: ");
+    stream.PutDec(code);
+    stream.Puts("Exception class: ");
+    stream.PutBin(ec);
+    stream.Puts("\n");
+    stream.Puts("ISS: ");
+    stream.PutBin(iss);
+    stream.Puts("\n");
+    stream.Puts("ISS2: ");
+    stream.PutBin(iss2);
+    stream.Puts("\n");
+    stream.Puts("\nELR : ");
+    stream.PutHex(elr);
+    stream.Puts("\nSPSR: ");
+    stream.PutHex(spsr);
+    stream.Puts("\nFAR : ");
+    stream.PutHex(far);
+    stream.Puts("\n");
 }
 
 extern "C" void MainExceptionHandler(uint32_t code)
 {
-    if (code == 0x11) return Timer::HandlePeriodicInterrupt();
-    
+    Uart::LockedStream stream(true);
+
+    //if (code == 0x11) return Timer::HandlePeriodicInterrupt();
+
     uint64_t core = 0;
     asm volatile ("mrs %0, mpidr_el1" : "=r"(core));
-    Uart::Puts("Main Exception Handler on core");
-    Uart::PutDec(core & 3);
-    Uart::Puts("\n");
+    stream.Puts("Main Exception Handler on core");
+    stream.PutDec(core & 3);
+    stream.Puts("\n");
     uint64_t el = 0;
     uint64_t esr = 0;
     uint64_t elr = 0;
@@ -124,7 +126,7 @@ extern "C" void MainExceptionHandler(uint32_t code)
     asm volatile ("mrs %0, CurrentEL" : "=r"(el));
     if (((el >> 2) & 0b11) == 1)
     {
-        Uart::Puts("Handling in EL1\n");
+        stream.Puts("Handling in EL1\n");
         asm volatile ("mrs %0, esr_el1" : "=r"(esr));
         asm volatile ("mrs %0, elr_el1" : "=r"(elr));
         asm volatile ("mrs %0, spsr_el1" : "=r"(spsr));
@@ -132,7 +134,7 @@ extern "C" void MainExceptionHandler(uint32_t code)
     }
     else if (((el >> 2) & 0b11) == 2)
     {
-        Uart::Puts("Handling in EL2\n");
+        stream.Puts("Handling in EL2\n");
         asm volatile ("mrs %0, esr_el2" : "=r"(esr));
         asm volatile ("mrs %0, elr_el2" : "=r"(elr));
         asm volatile ("mrs %0, spsr_el2" : "=r"(spsr));
@@ -140,14 +142,14 @@ extern "C" void MainExceptionHandler(uint32_t code)
     }
     else
     {
-        Uart::Puts("Unknown exception level ");
-        Uart::PutDec((el >> 2) & 3);
+        stream.Puts("Unknown exception level ");
+        stream.PutDec((el >> 2) & 3);
         Processor::Halt();
     }
 
-    Uart::Puts("Faulting instruction: ");
-    Uart::PutHex(elr);
-    Uart::Puts("\n");
+    stream.Puts("Faulting instruction: ");
+    stream.PutHex(elr);
+    stream.Puts("\n");
 
     switch (code & 3)
     {
@@ -158,31 +160,31 @@ extern "C" void MainExceptionHandler(uint32_t code)
             uint32_t const iss2 = (esr >> 32) & 0x00FF'FFFF;
             switch ((esr >> 26) & 0b11'1111)
             {
-                case 0b00'0000: Uart::Puts("Unknown exception class\n"); break;
-                case 0b01'0101: return SvcException((uint16_t)iss, elr);
+                case 0b00'0000: stream.Puts("Unknown exception class\n"); break;
+                case 0b01'0101: return SvcException(stream, (uint16_t)iss, elr);
                 case 0b10'0100: [[fallthrough]];
-                case 0b10'0101: return DataAbortException(ec, iss, iss2, far);
-                default: Uart::Puts("Other synchronous exception class\n"); break;
+                case 0b10'0101: return DataAbortException(stream, ec, iss, iss2, far);
+                default: stream.Puts("Other synchronous exception class\n"); break;
             }
-            PutRawSynchronousExceptionInfo(code, ec, iss, iss2, elr, spsr, far); 
-            Uart::Puts("\n");
+            PutRawSynchronousExceptionInfo(stream, code, ec, iss, iss2, elr, spsr, far); 
+            stream.Puts("\n");
             break;
         }
         case 1: // IRQ
-            Uart::Puts("IRQ exception\n");
-            PutRawExceptionInfo(code, esr, elr, spsr, far);
-            Uart::Puts("\n");
+            stream.Puts("IRQ exception\n");
+            //PutRawExceptionInfo(code, esr, elr, spsr, far);
+            stream.Puts("\n");
             Timer::HandlePeriodicInterrupt();
             return;
         case 2: // FIQ
-            Uart::Puts("FIQ exception\n");
-            PutRawExceptionInfo(code, esr, elr, spsr, far);
-            Uart::Puts("\n");
+            stream.Puts("FIQ exception\n");
+            PutRawExceptionInfo(stream, code, esr, elr, spsr, far);
+            stream.Puts("\n");
             break;
         case 3: // SError
-            Uart::Puts("SError exception\n");
-            PutRawExceptionInfo(code, esr, elr, spsr, far);
-            Uart::Puts("\n");
+            stream.Puts("SError exception\n");
+            PutRawExceptionInfo(stream, code, esr, elr, spsr, far);
+            stream.Puts("\n");
             break;
     }
 
@@ -205,7 +207,7 @@ void InitEL2()
 // On baremetal systems, stack unwinding is not supported, so just print a message and halt.
 extern "C" void _Unwind_Resume(void* exception_object)
 {
-    Uart::Puts("_Unwind_Resume called - not implemented\n");
+    Uart::Raw::Puts("_Unwind_Resume called - not implemented\n");
     Processor::Halt();
 }
 

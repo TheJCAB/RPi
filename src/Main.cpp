@@ -49,6 +49,8 @@ void InitCore()
     }
 
     Mmu::Init();
+
+    asm volatile("msr daifclr,#2"); // Clear the IRQ mask bit to enable IRQs
 }
 
 volatile bool Core1Ready = false;
@@ -264,7 +266,7 @@ void Core0()
     Uart::Puts("Core 3 is going\n");
 
     Timer::SetPeriodicInterrupt(1000'000); // Set a periodic interrupt every second
-    Timer::Delay(10'000'000);
+    Timer::Delay(3'000'000);
 
     UsbInitialise();
     Timer::Delay(10'000);
@@ -306,7 +308,7 @@ void Core0()
     // UART input       Done
     // Exceptions       Done
     // VSync/flip       According to documentation, this is not doable from ARM, outside of the HW rendering.
-    // Interrupts
+    // Interrupts       Done
     // Multicore        Done
     // Storage
     // USB              Done

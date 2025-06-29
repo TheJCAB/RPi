@@ -245,7 +245,7 @@ alignas(0x1000) static constinit L1PageTable l1_page_table
 {{
     L1NormalMem(0),        // 0x00000000 - 0x3FFFFFFF: 1 GB RAM (normal memory)
     L1DeviceMem(0),        // 0x40000000 - 0x7FFFFFFF: 1 GB RAM, including the MMIO (device)
-    InvalidDescriptor(),   // 0x80000000 - 0xBFFFFFFF: (unused)
+    L1DeviceMem(0x40000000),   // 0x80000000 - 0xBFFFFFFF: (unused)
     L1GpuMem(0),           // 0xC0000000 - 0xFFFFFFFF: 1 GB RAM (transient, WT memory for GPU (and devices) data)
     // Remaining entries are invalid
 }};
