@@ -83,6 +83,13 @@ void Core2()
 
     while (true)
     {
+        //{
+        //    Uart::LockedStream stream;
+        //    stream.Puts("Core ");
+        //    stream.PutDec(2u);
+        //    stream.Puts(" is running\n");
+        //}
+        //Timer::Delay(1000);
         asm volatile ("wfe" ::: "memory"); // Wait for event
     }
 }
@@ -256,6 +263,9 @@ void Core0()
     while (!Core3Ready) asm volatile ("wfe;dmb ish;sev" ::: "memory");
     Uart::Puts("Core 3 is going\n");
 
+    Timer::SetPeriodicInterrupt(1000'000); // Set a periodic interrupt every second
+    Timer::Delay(10'000'000);
+
     UsbInitialise();
     Timer::Delay(10'000);
     Uart::Init();
@@ -295,11 +305,11 @@ void Core0()
     // Remote boot for development :-)      Done!
     // UART input       Done
     // Exceptions       Done
-    // VSync/flip
+    // VSync/flip       According to documentation, this is not doable from ARM, outside of the HW rendering.
     // Interrupts
-    // Multicore
+    // Multicore        Done
     // Storage
-    // USB
+    // USB              Done
     // Networking?
 
     Run(firstKbd);

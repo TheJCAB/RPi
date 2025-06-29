@@ -4,6 +4,11 @@
 #include "Uart.h"
 #include "Processor.h"
 
+namespace Timer
+{
+void HandlePeriodicInterrupt();
+}
+
 namespace Exception
 {
 
@@ -104,6 +109,8 @@ void PutRawSynchronousExceptionInfo(uint32_t code, uint8_t ec, uint32_t iss, uin
 
 extern "C" void MainExceptionHandler(uint32_t code)
 {
+    if (code == 0x11) return Timer::HandlePeriodicInterrupt();
+    
     uint64_t core = 0;
     asm volatile ("mrs %0, mpidr_el1" : "=r"(core));
     Uart::Puts("Main Exception Handler on core");
@@ -165,7 +172,8 @@ extern "C" void MainExceptionHandler(uint32_t code)
             Uart::Puts("IRQ exception\n");
             PutRawExceptionInfo(code, esr, elr, spsr, far);
             Uart::Puts("\n");
-            break;
+            Timer::HandlePeriodicInterrupt();
+            return;
         case 2: // FIQ
             Uart::Puts("FIQ exception\n");
             PutRawExceptionInfo(code, esr, elr, spsr, far);
@@ -192,6 +200,20 @@ void InitEL2()
 {
     asm volatile ("msr vbar_el2, %0" :: "r"((uint64_t)&ExceptionVectors));
 }
+
+// Called by the C++ exception handling mechanism to continue unwinding after a cleanup.
+// On baremetal systems, stack unwinding is not supported, so just print a message and halt.
+extern "C" void _Unwind_Resume(void* exception_object)
+{
+    Uart::Puts("_Unwind_Resume called - not implemented\n");
+    Processor::Halt();
+}
+
+// This line defines a symbol for the C++ exception handling personality function.
+// By setting '__gxx_personality_v0' to 0, it disables the default C++ exception handling
+// mechanism for this translation unit. This is sometimes used in low-level or embedded
+// environments where exception handling is not supported or desired.
+extern "C" void* __gxx_personality_v0 = 0;
 
 }
 // namespace Exception

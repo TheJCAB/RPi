@@ -79,6 +79,7 @@
         "stack": "cpp",
         "__hash_table": "cpp",
         "hash_set": "cpp",
-        "string_view": "cpp"
+        "string_view": "cpp",
+        "condition_variable": "cpp"
     }
 }

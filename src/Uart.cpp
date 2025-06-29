@@ -90,6 +90,73 @@ void Putc(char c)
     *UART_DR = c;
 }
 
+void Puts(char const* str)
+{
+    while (*str)
+    {
+        Raw::Putc(*str++);
+    }
+}
+
+void PutHex(auto value)
+{
+    char const* hexDigits = "0123456789ABCDEF";
+
+    Putc('0');
+    Putc('x');
+    for (int i = sizeof(value) * 8 - 4; i >= 0; i -= 4)
+    {
+        Putc(hexDigits[(value >> i) & 0xF]);
+        if (i > 0 && i % 16 == 0)
+        {
+            Putc('\''); // Add digit separator for readability
+        }
+    }
+}
+
+void PutBin(auto value)
+{
+    const char* binDigits = "01";
+    Putc('0');
+    Putc('b');
+    for (int i = sizeof(value) * 8 - 1; i >= 0; --i)
+    {
+        Putc('0' + ((value >> i) & 0x1));
+        if (i > 0 && i % 4 == 0)
+        {
+            Putc('\''); // Add digit separator for readability
+        }
+    }
+}
+
+void PutDec(auto value)
+{
+    if (value == 0)
+    {
+        Putc('0');
+        return;
+    }
+
+    char buffer[20]; // Enough for 64-bit integer
+    int index = 0;
+
+    while (value > 0)
+    {
+        buffer[index++] = '0' + (value % 10);
+        value /= 10;
+    }
+
+    // Print in reverse order
+    for (int i = index - 1; i >= 0; --i)
+    {
+        Putc(buffer[i]);
+        if (i > 0 && i % 3 == 0)
+        {
+            Putc('\''); // Add digit separator for readability
+        }
+    }
+}
+
 } // namespace Raw
 
 
@@ -120,82 +187,28 @@ char TryGetc()
 void Puts(char const* str)
 {
     if (useMutex) while (Mutex.exchange(true)) {} // Spin until mutex is available
-    while (*str)
-    {
-        Raw::Putc(*str++);
-    }
+    Raw::Puts(str);
     if (useMutex) Mutex.store(false); // Release mutex
 }
 
 void PutHex(auto value)
 {
     if (useMutex) while (Mutex.exchange(true)) {} // Spin until mutex is available
-
-    char const* hexDigits = "0123456789ABCDEF";
-
-    Putc('0');
-    Putc('x');
-    for (int i = sizeof(value) * 8 - 4; i >= 0; i -= 4)
-    {
-        Putc(hexDigits[(value >> i) & 0xF]);
-        if (i > 0 && i % 16 == 0)
-        {
-            Putc('\''); // Add digit separator for readability
-        }
-    }
-
+    Raw::PutHex(value);
     if (useMutex) Mutex.store(false); // Release mutex
 }
 
 void PutBin(auto value)
 {
     if (useMutex) while (Mutex.exchange(true)) {} // Spin until mutex is available
-
-    const char* binDigits = "01";
-    Putc('0');
-    Putc('b');
-    for (int i = sizeof(value) * 8 - 1; i >= 0; --i)
-    {
-        Putc('0' + ((value >> i) & 0x1));
-        if (i > 0 && i % 4 == 0)
-        {
-            Putc('\''); // Add digit separator for readability
-        }
-    }
-
+    Raw::PutBin(value);
     if (useMutex) Mutex.store(false); // Release mutex
 }
 
 void PutDec(auto value)
 {
     if (useMutex) while (Mutex.exchange(true)) {} // Spin until mutex is available
-
-    if (value == 0)
-    {
-        Putc('0');
-        if (useMutex) Mutex.store(false); // Release mutex
-        return;
-    }
-
-    char buffer[20]; // Enough for 64-bit integer
-    int index = 0;
-
-    while (value > 0)
-    {
-        buffer[index++] = '0' + (value % 10);
-        value /= 10;
-    }
-
-    // Print in reverse order
-    for (int i = index - 1; i >= 0; --i)
-    {
-        Putc(buffer[i]);
-        if (i > 0 && i % 3 == 0)
-        {
-            Putc('\''); // Add digit separator for readability
-        }
-    }
-
+    Raw::PutDec(value);
     if (useMutex) Mutex.store(false); // Release mutex
 }
 
@@ -213,6 +226,79 @@ template void PutDec(uint64_t value);
 template void PutDec(uint32_t value);
 template void PutDec(uint16_t value);
 template void PutDec(uint8_t value);
+
+LockedStream::LockedStream(bool tryOnly)
+{
+    if (useMutex)
+    {
+        // Spin until mutex is available
+        while (Mutex.exchange(true))
+        {
+            if (tryOnly) return;
+        }
+    }
+    locked = true;
+}
+
+LockedStream::~LockedStream()
+{
+    if (locked && useMutex)
+    {
+        Mutex.store(false); // Release mutex
+    }
+}
+
+void LockedStream::Putc(char c)
+{
+    if (locked) Raw::Putc(c);
+}
+
+char LockedStream::Getc()
+{
+    if (!locked) return 0;
+    return Raw::Getc();
+}
+
+char LockedStream::TryGetc()
+{
+    if (!locked) return 0;
+    return Raw::TryGetc();
+}
+
+void LockedStream::Puts(char const* str)
+{
+    if (locked) Raw::Puts(str);
+}
+
+void LockedStream::PutHex(auto value)
+{
+    if (locked) Raw::PutHex(value);
+}
+
+void LockedStream::PutBin(auto value)
+{
+    if (locked) Raw::PutBin(value);
+}
+
+void LockedStream::PutDec(auto value)
+{
+    if (locked) Raw::PutDec(value);
+}
+
+template void LockedStream::PutHex(uint64_t value);
+template void LockedStream::PutHex(uint32_t value);
+template void LockedStream::PutHex(uint16_t value);
+template void LockedStream::PutHex(uint8_t value);
+
+template void LockedStream::PutBin(uint64_t value);
+template void LockedStream::PutBin(uint32_t value);
+template void LockedStream::PutBin(uint16_t value);
+template void LockedStream::PutBin(uint8_t value);
+
+template void LockedStream::PutDec(uint64_t value);
+template void LockedStream::PutDec(uint32_t value);
+template void LockedStream::PutDec(uint16_t value);
+template void LockedStream::PutDec(uint8_t value);
 
 }
 // namespace Uart

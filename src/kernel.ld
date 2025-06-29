@@ -18,6 +18,7 @@ SECTIONS
         KEEP(*(.init_array))
         _init_array_end = .;
         *(.eh_frame*)
+        *(.gcc_except_table*)
     }
 
     . = ALIGN(4096);

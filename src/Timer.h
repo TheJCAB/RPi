@@ -17,5 +17,8 @@ inline uint64_t GetPerformanceTicksForUs(uint64_t us)
 
 void Delay(uint64_t us);
 
+void SetPeriodicInterrupt(uint64_t us);
+void HandlePeriodicInterrupt();
+
 }
 // namespace Timer
