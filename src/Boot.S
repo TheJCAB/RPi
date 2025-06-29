@@ -1,19 +1,31 @@
 .section .text
 
+// Each core gets its function. This simplifies things a bit.
+
 .extern Core0
 .extern Core1
 .extern Core2
 .extern Core3
 
+// This is where our code starts running.
+// Note that it must be located/loaded at a specific address. 0x8'0000 on the Raspberry Pi 3.
+// Upon boot, core zero starts here in EL2.
+// The MMU is not configured so all the core sees is physical memory in "device" mode.
+// Code runs quite slowly. Carefully, one could say :-).
+//
+// When the Core0 code spins up the other three cores, they also start here.
+// This code just sets the stack pointer and dispatches to one of the Core# functions,
+// depending on which core is running at the time.
 .global _start
 _start:
     mrs x0, mpidr_el1
 
-    adr x1, _start // Stack buffer is the 512 KB space before the kernel image.
-    and x0, x0, #3
-    sub x1, x1, x0, LSL #16
+    adr x1, _start          // Stack buffers will use the 512 KB of space before the kernel image.
+    and x0, x0, #3          // x0 now contains the core number.
+    sub x1, x1, x0, LSL #16 // Each core takes 64 KB of stack space. That's enough room to get comfortably started.
     mov sp, x1
 
+    // And dispatch straight into C++.
     adr x1, CoreFunctionTable
     ldr x0, [x1, w0, UXTW #3]
     br x0
@@ -24,7 +36,7 @@ CoreFunctionTable:
     .quad Core2
     .quad Core3
 
-
+// Goes down from EL2 to EL1 and returns straight to the calling code.
 .global el2_to_el1_return
 el2_to_el1_return:
     //set up el1 to AARCH64
@@ -46,12 +58,13 @@ el2_to_el1_return:
 
     eret
 
+// Push the entire set of float/SIMD registers onto the stack.
 PreserveSimd:
-    stp     q0, q1, [sp, #-32]!
-    stp     q2, q3, [sp, #-32]!
-    stp     q4, q5, [sp, #-32]!
-    stp     q6, q7, [sp, #-32]!
-    stp     q8, q9, [sp, #-32]!
+    stp      q0,  q1, [sp, #-32]!
+    stp      q2,  q3, [sp, #-32]!
+    stp      q4,  q5, [sp, #-32]!
+    stp      q6,  q7, [sp, #-32]!
+    stp      q8,  q9, [sp, #-32]!
     stp     q10, q11, [sp, #-32]!
     stp     q12, q13, [sp, #-32]!
     stp     q14, q15, [sp, #-32]!
@@ -65,6 +78,7 @@ PreserveSimd:
     stp     q30, q31, [sp, #-32]!
     ret
 
+// Pop the entire set of float/SIMD registers onto the stack.
 RestoreSimd:
     ldp     q30, q31, [sp], #32
     ldp     q28, q29, [sp], #32
@@ -77,14 +91,16 @@ RestoreSimd:
     ldp     q14, q15, [sp], #32
     ldp     q12, q13, [sp], #32
     ldp     q10, q11, [sp], #32
-    ldp     q8, q9, [sp], #32
-    ldp     q6, q7, [sp], #32
-    ldp     q4, q5, [sp], #32
-    ldp     q2, q3, [sp], #32
-    ldp     q0, q1, [sp], #32
+    ldp      q8,  q9, [sp], #32
+    ldp      q6,  q7, [sp], #32
+    ldp      q4,  q5, [sp], #32
+    ldp      q2,  q3, [sp], #32
+    ldp      q0,  q1, [sp], #32
     ret
 
-    // important, code has to be properly aligned
+    // Exception vectors must be properly aligned to 2048 bytes.
+    // Each vector must be aligned to 128 bytes, leaving room for up to 32 instructions per vector.
+    // Vectors are organized of four groups of four vectors each for a total of 16.
     .align 11
 .global ExceptionVectors
 ExceptionVectors:

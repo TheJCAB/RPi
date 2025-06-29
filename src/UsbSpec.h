@@ -1,3 +1,33 @@
+// USB 2.0 type definitions.
+//
+// Based on the code from: https://github.com/LdB-ECM/Raspberry-Pi/tree/master/Arm32_64_USB
+//
+// Original banner:
+//    /***************************************************************}
+//    {  Complete redux of CSUD (Chadderz's Simple USB Driver) by     }
+//    {  Alex Chadwick by Leon de Boer(LdB) 2017, 2018                }
+//    {                                                               }
+//    {  Version 2.0  (AARCH64 & AARCH32 compilation supported)       }
+//    {                                                               }
+//    {  CSUD was overly complex in both it's coding and especially   }
+//    {  implementation for what it actually did. At it's heart CSUD  }
+//    {  simply provides the CONTROL pipe operation of a USB bus.That }
+//    {  provides all the functionality to enumerate the USB bus and  }
+//    {  control devices on the BUS. It is the start point for a real }
+//    {  driver or access layer to the USB.                           }
+//    {                                                               }
+//    {******************[ THIS CODE IS FREEWARE ]********************}
+//    {                                                               }
+//    {     This sourcecode is released for the purpose to promote    }
+//    {   programming on the Raspberry Pi. You may redistribute it    }
+//    {   and/or modify with the following disclaimer.                }
+//    {                                                               }
+//    {   The SOURCE CODE is distributed "AS IS" WITHOUT WARRANTIES   }
+//    {   AS TO PERFORMANCE OF MERCHANTABILITY WHETHER EXPRESSED OR   }
+//    {   IMPLIED. Redistributions of source code must retain the     }
+//    {   copyright notices.                                          }
+//    {                                                               }
+//    {++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 #pragma once
 
 #include <stdint.h>
@@ -133,6 +163,9 @@ struct UsbDeviceRequest {
     uint16_t Length;												// +0x6
 };
 
+static_assert(sizeof(UsbDeviceRequest) == 0x08, "Structure should be 8 bytes");
+
+
 /*--------------------------------------------------------------------------}
 {	         USB description header as per 9.6 of the USB2.0				}
 {---------------------------------------------------------------------------}*/
@@ -140,6 +173,9 @@ struct UsbDescriptorHeader {
     uint8_t DescriptorLength;										// +0x0
     usb_descriptor_type DescriptorType;								// +0x1
 };
+
+static_assert(sizeof(UsbDescriptorHeader) == 0x02, "Structure should be 2 bytes");
+
 
 /*--------------------------------------------------------------------------}
 {	         USB class id as per 9.6.1 of USB2.0 manual enumerated			}
@@ -255,6 +291,9 @@ struct __attribute__((__packed__)) UsbInterfaceDescriptor {
     uint8_t             StringIndex;						// +x08 Index of String Descriptor describing the interface
 };
 
+static_assert(sizeof(UsbInterfaceDescriptor) == 0x09, "Structure should be 9 bytes");
+
+
 /*--------------------------------------------------------------------------}
 { USB endpoint descriptor structure (7 Bytes) as per 9.6.6 of USB2.0 manual }
 {---------------------------------------------------------------------------}*/
@@ -291,6 +330,9 @@ struct __attribute__((__packed__)) UsbEndpointDescriptor {
     } Packet;														// +0x4 Maximum packet size.
     uint8_t Interval;												// +0x6 Polling interval in frames
 };
+
+static_assert(sizeof(UsbEndpointDescriptor) == 0x07, "Structure should be 7 bytes");
+
 
 /*--------------------------------------------------------------------------}
 {       USB string descriptor structure as per 9.6.7 of USB2.0 manual       }
@@ -359,6 +401,9 @@ struct __attribute__((__packed__)) HubDescriptor {
     uint8_t PortPowerCtrlMask;										// +0x8
 };
 
+static_assert(sizeof(HubDescriptor) == 0x09, "Structure should be 9 bytes");
+
+
 /*--------------------------------------------------------------------------}
 { 	     USB HUB status (16 bits) as per 11.24.2.6 of USB2.0 manual			}
 {---------------------------------------------------------------------------}*/
@@ -395,6 +440,9 @@ struct __attribute__((__packed__)) HubFullStatus {
         uint32_t Raw32;												// Both status joined as one raw 32 bits
     };
 };
+
+static_assert(sizeof(HubFullStatus) == 0x04, "Structure should be 32bits (4 bytes)");
+
 
 /*--------------------------------------------------------------------------}
 { 	USB HUB status structure (16 bits) as per 11.24.2.7.1 of USB2.0 manual  }
@@ -445,6 +493,8 @@ struct __attribute__((__packed__)) HubPortFullStatus {
         uint32_t Raw32;												// Both status joined as one raw 32 bits
     };
 };
+
+static_assert(sizeof(HubPortFullStatus) == 0x04, "Structure should be 32bits (4 bytes)");
 
 
 /*--------------------------------------------------------------------------}
