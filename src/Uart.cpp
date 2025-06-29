@@ -7,7 +7,7 @@
 namespace Uart
 {
 
-#define PL011_BASE      (MMIO_BASE + 0x201000)
+#define PL011_BASE      (Mmio::Base + 0x201000)
 
 #define UART_DR         ((volatile unsigned int*)(PL011_BASE + 0x00))
 #define UART_FR         ((volatile unsigned int*)(PL011_BASE + 0x18))
@@ -18,9 +18,9 @@ namespace Uart
 #define UART_IMSC       ((volatile unsigned int*)(PL011_BASE + 0x38))
 #define UART_ICR        ((volatile unsigned int*)(PL011_BASE + 0x44))
 
-#define GPFSEL1         ((volatile unsigned int*)(MMIO_BASE + 0x200004))
-#define GPPUD           ((volatile unsigned int*)(MMIO_BASE + 0x200094))
-#define GPPUDCLK0       ((volatile unsigned int*)(MMIO_BASE + 0x200098))
+#define GPFSEL1         ((volatile unsigned int*)(Mmio::Base + 0x200004))
+#define GPPUD           ((volatile unsigned int*)(Mmio::Base + 0x200094))
+#define GPPUDCLK0       ((volatile unsigned int*)(Mmio::Base + 0x200098))
 
 bool useMutex = false;
 

@@ -10,7 +10,7 @@ namespace Mailbox
 {
     
 // Mailbox registers (base address for RPi 3B)
-#define MAILBOX_BASE    (MMIO_BASE + 0xB880)
+#define MAILBOX_BASE    (Mmio::Base + 0xB880)
 #define MAILBOX_READ    ((uint32_t volatile*)(MAILBOX_BASE + 0x00))
 #define MAILBOX_RSTATUS ((uint32_t volatile*)(MAILBOX_BASE + 0x18))
 #define MAILBOX_WRITE   ((uint32_t volatile*)(MAILBOX_BASE + 0x20))

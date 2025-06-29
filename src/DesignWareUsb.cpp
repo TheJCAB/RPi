@@ -31,7 +31,7 @@
 
 
 
-#define RPi_IO_Base_Addr MMIO_BASE
+#define RPi_IO_Base_Addr Mmio::Base
 
 #define ReceiveFifoSize 20480 /* 16 to 32768 */
 #define NonPeriodicFifoSize 20480 /* 16 to 32768 */
@@ -660,70 +660,39 @@ struct __attribute__((__packed__, aligned(4))) UsbSendControl {
 
 #define USB_CORE_OFFSET  0x980000	// USB CORE OFFSET FROM PERIPHERAL IO BASE ADDRESS
 
-template < typename T > requires (sizeof(T) == 4)
-struct RegisterProxy
-{
-    uint32_t Offset;
-
-    constexpr RegisterProxy(uint32_t offs) : Offset(offs) {}
-
-    void operator=(std::integral auto value) const requires (!std::is_const_v<T>) && (sizeof(value) <= 4)
-    {
-        *reinterpret_cast<volatile uint32_t*>(RPi_IO_Base_Addr + Offset) = static_cast<uint32_t>(value);
-    }
-
-    void operator=(const T& value) const requires (!std::is_const_v<T>)
-    {
-        *reinterpret_cast<volatile uint32_t*>(RPi_IO_Base_Addr + Offset) = reinterpret_cast<uint32_t const&>(value);
-    }
-
-    void operator=(std::invocable<T&> auto&& modify) const requires (!std::is_const_v<T>)
-    {
-        T value = **this;
-        modify(value);
-        *this = value;
-    }
-
-    const T operator*() const
-    {
-        uint32_t const result = *reinterpret_cast<volatile uint32_t*>(RPi_IO_Base_Addr + Offset);
-        return reinterpret_cast<T const&>(result);
-    }
-};
-
 /*--------------------------------------------------------------------------}
 {					 DWC USB CORE REGISTER POINTERS						    }
 {--------------------------------------------------------------------------*/
-constexpr RegisterProxy<CoreOtgControl       > DWC_CORE_OTGCONTROL     		  { USB_CORE_OFFSET +  0x00 };
-constexpr RegisterProxy<CoreOtgInterrupt     > DWC_CORE_OTGINTERRUPT   		  { USB_CORE_OFFSET +  0x04 };
-constexpr RegisterProxy<CoreAhb              > DWC_CORE_AHB            		  { USB_CORE_OFFSET +  0x08 };
-constexpr RegisterProxy<UsbControl           > DWC_CORE_CONTROL        		  { USB_CORE_OFFSET +  0x0C };
-constexpr RegisterProxy<CoreReset            > DWC_CORE_RESET          		  { USB_CORE_OFFSET +  0x10 };
-constexpr RegisterProxy<CoreInterrupts       > DWC_CORE_INTERRUPT      		  { USB_CORE_OFFSET +  0x14 };
-constexpr RegisterProxy<CoreInterrupts       > DWC_CORE_INTERRUPTMASK  		  { USB_CORE_OFFSET +  0x18 };
-constexpr RegisterProxy<uint32_t             > DWC_CORE_RECEIVESIZE    		  { USB_CORE_OFFSET +  0x24 };
-constexpr RegisterProxy<FifoSize             > DWC_CORE_NONPERIODICFIFO_SIZE  { USB_CORE_OFFSET +  0x28 };
-constexpr RegisterProxy<NonPeriodicFifoStatus> DWC_CORE_NONPERIODICFIFO_STATUS{ USB_CORE_OFFSET +  0x2C };
-constexpr RegisterProxy<uint32_t             > DWC_CORE_USERID                { USB_CORE_OFFSET +  0x3C };
-constexpr RegisterProxy<const uint32_t       > DWC_CORE_VENDORID              { USB_CORE_OFFSET +  0x40 };
-constexpr RegisterProxy<const CoreHardware0  > DWC_CORE_HARDWARE0             { USB_CORE_OFFSET +  0x44 };
-constexpr RegisterProxy<const CoreHardware1  > DWC_CORE_HARDWARE1             { USB_CORE_OFFSET +  0x48 };
-constexpr RegisterProxy<const CoreHardware2  > DWC_CORE_HARDWARE2             { USB_CORE_OFFSET +  0x4C };
-constexpr RegisterProxy<const CoreHardware3  > DWC_CORE_HARDWARE3             { USB_CORE_OFFSET +  0x50 };
-constexpr RegisterProxy<FifoSize		     > DWC_CORE_PERIODICINFO_HostSize { USB_CORE_OFFSET + 0x100 };
+constexpr Mmio::BaseRegisterProxy<CoreOtgControl       > DWC_CORE_OTGCONTROL     		  { USB_CORE_OFFSET +  0x00 };
+constexpr Mmio::BaseRegisterProxy<CoreOtgInterrupt     > DWC_CORE_OTGINTERRUPT   		  { USB_CORE_OFFSET +  0x04 };
+constexpr Mmio::BaseRegisterProxy<CoreAhb              > DWC_CORE_AHB            		  { USB_CORE_OFFSET +  0x08 };
+constexpr Mmio::BaseRegisterProxy<UsbControl           > DWC_CORE_CONTROL        		  { USB_CORE_OFFSET +  0x0C };
+constexpr Mmio::BaseRegisterProxy<CoreReset            > DWC_CORE_RESET          		  { USB_CORE_OFFSET +  0x10 };
+constexpr Mmio::BaseRegisterProxy<CoreInterrupts       > DWC_CORE_INTERRUPT      		  { USB_CORE_OFFSET +  0x14 };
+constexpr Mmio::BaseRegisterProxy<CoreInterrupts       > DWC_CORE_INTERRUPTMASK  		  { USB_CORE_OFFSET +  0x18 };
+constexpr Mmio::BaseRegisterProxy<uint32_t             > DWC_CORE_RECEIVESIZE    		  { USB_CORE_OFFSET +  0x24 };
+constexpr Mmio::BaseRegisterProxy<FifoSize             > DWC_CORE_NONPERIODICFIFO_SIZE  { USB_CORE_OFFSET +  0x28 };
+constexpr Mmio::BaseRegisterProxy<NonPeriodicFifoStatus> DWC_CORE_NONPERIODICFIFO_STATUS{ USB_CORE_OFFSET +  0x2C };
+constexpr Mmio::BaseRegisterProxy<uint32_t             > DWC_CORE_USERID                { USB_CORE_OFFSET +  0x3C };
+constexpr Mmio::BaseRegisterProxy<const uint32_t       > DWC_CORE_VENDORID              { USB_CORE_OFFSET +  0x40 };
+constexpr Mmio::BaseRegisterProxy<const CoreHardware0  > DWC_CORE_HARDWARE0             { USB_CORE_OFFSET +  0x44 };
+constexpr Mmio::BaseRegisterProxy<const CoreHardware1  > DWC_CORE_HARDWARE1             { USB_CORE_OFFSET +  0x48 };
+constexpr Mmio::BaseRegisterProxy<const CoreHardware2  > DWC_CORE_HARDWARE2             { USB_CORE_OFFSET +  0x4C };
+constexpr Mmio::BaseRegisterProxy<const CoreHardware3  > DWC_CORE_HARDWARE3             { USB_CORE_OFFSET +  0x50 };
+constexpr Mmio::BaseRegisterProxy<FifoSize		     > DWC_CORE_PERIODICINFO_HostSize { USB_CORE_OFFSET + 0x100 };
 
 /*--------------------------------------------------------------------------}
 {					DWC USB HOST REGISTER POINTERS						    }
 {--------------------------------------------------------------------------*/
-constexpr RegisterProxy<HostConfig               > DWC_HOST_CONFIG                { USB_CORE_OFFSET + 0x400 };
-constexpr RegisterProxy<HostFrameInterval        > DWC_HOST_FRAMEINTERVAL         { USB_CORE_OFFSET + 0x404 };
-constexpr RegisterProxy<HostFrameControl         > DWC_HOST_FRAMECONTROL          { USB_CORE_OFFSET + 0x408 };
-constexpr RegisterProxy<HostFifoStatus           > DWC_HOST_FIFOSTATUS            { USB_CORE_OFFSET + 0x410 };
-constexpr RegisterProxy<uint32_t                 > DWC_HOST_INTERRUPT             { USB_CORE_OFFSET + 0x414 };
-constexpr RegisterProxy<uint32_t                 > DWC_HOST_INTERRUPTMASK         { USB_CORE_OFFSET + 0x418 };
-constexpr RegisterProxy<uint32_t                 > DWC_HOST_FRAMELIST             { USB_CORE_OFFSET + 0x41C };
-constexpr RegisterProxy<HostPort                 > DWC_HOST_PORT                  { USB_CORE_OFFSET + 0x440 };
-constexpr RegisterProxy<HostChannelCharacteristic> DWC_HOST_CHANNEL_Characteristic[8]
+constexpr Mmio::BaseRegisterProxy<HostConfig               > DWC_HOST_CONFIG                { USB_CORE_OFFSET + 0x400 };
+constexpr Mmio::BaseRegisterProxy<HostFrameInterval        > DWC_HOST_FRAMEINTERVAL         { USB_CORE_OFFSET + 0x404 };
+constexpr Mmio::BaseRegisterProxy<HostFrameControl         > DWC_HOST_FRAMECONTROL          { USB_CORE_OFFSET + 0x408 };
+constexpr Mmio::BaseRegisterProxy<HostFifoStatus           > DWC_HOST_FIFOSTATUS            { USB_CORE_OFFSET + 0x410 };
+constexpr Mmio::BaseRegisterProxy<uint32_t                 > DWC_HOST_INTERRUPT             { USB_CORE_OFFSET + 0x414 };
+constexpr Mmio::BaseRegisterProxy<uint32_t                 > DWC_HOST_INTERRUPTMASK         { USB_CORE_OFFSET + 0x418 };
+constexpr Mmio::BaseRegisterProxy<uint32_t                 > DWC_HOST_FRAMELIST             { USB_CORE_OFFSET + 0x41C };
+constexpr Mmio::BaseRegisterProxy<HostPort                 > DWC_HOST_PORT                  { USB_CORE_OFFSET + 0x440 };
+constexpr Mmio::BaseRegisterProxy<HostChannelCharacteristic> DWC_HOST_CHANNEL_Characteristic[8]
 {
     { USB_CORE_OFFSET + 0x500 },
     { USB_CORE_OFFSET + 0x520 },
@@ -734,7 +703,7 @@ constexpr RegisterProxy<HostChannelCharacteristic> DWC_HOST_CHANNEL_Characterist
     { USB_CORE_OFFSET + 0x5C0 },
     { USB_CORE_OFFSET + 0x5E0 },
 };
-constexpr RegisterProxy<HostChannelSplitControl  > DWC_HOST_CHANNEL_SplitCtrl     [8]
+constexpr Mmio::BaseRegisterProxy<HostChannelSplitControl  > DWC_HOST_CHANNEL_SplitCtrl     [8]
 {
     { USB_CORE_OFFSET + 0x504 },
     { USB_CORE_OFFSET + 0x524 },
@@ -745,7 +714,7 @@ constexpr RegisterProxy<HostChannelSplitControl  > DWC_HOST_CHANNEL_SplitCtrl   
     { USB_CORE_OFFSET + 0x5C4 },
     { USB_CORE_OFFSET + 0x5E4 },
 };
-constexpr RegisterProxy<ChannelInterrupts        > DWC_HOST_CHANNEL_Interrupt     [8]
+constexpr Mmio::BaseRegisterProxy<ChannelInterrupts        > DWC_HOST_CHANNEL_Interrupt     [8]
 {
     { USB_CORE_OFFSET + 0x508 },
     { USB_CORE_OFFSET + 0x528 },
@@ -756,7 +725,7 @@ constexpr RegisterProxy<ChannelInterrupts        > DWC_HOST_CHANNEL_Interrupt   
     { USB_CORE_OFFSET + 0x5C8 },
     { USB_CORE_OFFSET + 0x5E8 },
 };
-constexpr RegisterProxy<ChannelInterrupts        > DWC_HOST_CHANNEL_InterruptMask [8]
+constexpr Mmio::BaseRegisterProxy<ChannelInterrupts        > DWC_HOST_CHANNEL_InterruptMask [8]
 {
     { USB_CORE_OFFSET + 0x50C },
     { USB_CORE_OFFSET + 0x52C },
@@ -767,7 +736,7 @@ constexpr RegisterProxy<ChannelInterrupts        > DWC_HOST_CHANNEL_InterruptMas
     { USB_CORE_OFFSET + 0x5CC },
     { USB_CORE_OFFSET + 0x5EC },
 };
-constexpr RegisterProxy<HostTransferSize         > DWC_HOST_CHANNEL_TransferSize  [8]
+constexpr Mmio::BaseRegisterProxy<HostTransferSize         > DWC_HOST_CHANNEL_TransferSize  [8]
 {
     { USB_CORE_OFFSET + 0x510 },
     { USB_CORE_OFFSET + 0x530 },
@@ -778,7 +747,7 @@ constexpr RegisterProxy<HostTransferSize         > DWC_HOST_CHANNEL_TransferSize
     { USB_CORE_OFFSET + 0x5D0 },
     { USB_CORE_OFFSET + 0x5F0 },
 };
-constexpr RegisterProxy<uint32_t                 > DWC_HOST_CHANNEL_DmaAddr       [8]
+constexpr Mmio::BaseRegisterProxy<uint32_t                 > DWC_HOST_CHANNEL_DmaAddr       [8]
 {
     { USB_CORE_OFFSET + 0x514 },
     { USB_CORE_OFFSET + 0x534 },
@@ -793,7 +762,7 @@ constexpr RegisterProxy<uint32_t                 > DWC_HOST_CHANNEL_DmaAddr     
 /*--------------------------------------------------------------------------}
 {					DWC POWER AND CLOCK REGISTER POINTER				    }
 {--------------------------------------------------------------------------*/
-constexpr RegisterProxy<PowerReg> DWC_POWER_AND_CLOCK{ USB_CORE_OFFSET + 0xE00 };
+constexpr Mmio::BaseRegisterProxy<PowerReg> DWC_POWER_AND_CLOCK{ USB_CORE_OFFSET + 0xE00 };
 
 
 /*--------------------------------------------------------------------------}

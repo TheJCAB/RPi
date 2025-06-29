@@ -10,6 +10,7 @@ add_executable(kernel8
     Framebuffer.cpp     Framebuffer.h
     Exception.cpp       Exception.h
     Run.cpp             Run.h
+    Mmio.cpp            Mmio.h
     Mmu.cpp             Mmu.h
     Timer.cpp           Timer.h
     UsbDevices.cpp      UsbDevices.h

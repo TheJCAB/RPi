@@ -20,8 +20,6 @@
 
 #include "emb-stdio.h"
 
-uintptr_t MMIO_BASE = 0x3F00'0000u;
-
 extern "C"
 {
 
@@ -210,7 +208,7 @@ void Core0()
 
     Mmu::Init();
     
-    MMIO_BASE = 0x7F00'0000u; // Update MMIO base to the new aperture.
+    Mmio::Base = 0x7F00'0000u; // Update MMIO base to the new aperture.
     GpuMemBase = 0xC000'0000u; // Update the GPU memory base to the new aperture.
 
     Uart::Puts("MMU enabled\n");
