@@ -55,11 +55,11 @@ void Init(uint32_t width, uint32_t height)
     mbox[i++] = 0; // Size
     mbox[i++] = 0; // Request
 
-    mbox[i++] = 0x48003; mbox[i++] = 8; size_t m1 = i; mbox[i++] = 0; mbox[i++] = width; mbox[i++] = height; // Set phys size
-    mbox[i++] = 0x48004; mbox[i++] = 8; size_t m2 = i; mbox[i++] = 0; size_t w = i; mbox[i++] = width; size_t h = i; mbox[i++] = height; // Set virt size
+    mbox[i++] = 0x48003; mbox[i++] = 8; size_t m1 = i; mbox[i++] = 0; mbox[i++] = width; size_t h = i; mbox[i++] = height; // Set phys size
+    mbox[i++] = 0x48004; mbox[i++] = 8; size_t m2 = i; mbox[i++] = 0; size_t w = i; mbox[i++] = width; size_t ph = i; mbox[i++] = height * 2; // Set virt size
     mbox[i++] = 0x48005; mbox[i++] = 4; size_t m3 = i; mbox[i++] = 0; mbox[i++] = fb_depth; // Set depth
     mbox[i++] = 0x48006; mbox[i++] = 4; size_t m4 = i; mbox[i++] = 0; mbox[i++] = 0; // Set pixel order
-    mbox[i++] = 0x40001; mbox[i++] = 8; size_t m5 = i; mbox[i++] = 0; size_t addr = i; mbox[i++] = 16; mbox[i++] = 0; // Allocate buffer
+    mbox[i++] = 0x40001; mbox[i++] = 8; size_t m5 = i; mbox[i++] = 0; size_t addr = i; mbox[i++] = 16; size_t size = i; mbox[i++] = 0; // Allocate buffer
     mbox[i++] = 0x40008; mbox[i++] = 4; size_t m6 = i; mbox[i++] = 0; size_t pitch = i; mbox[i++] = 0; // Get pitch
     mbox[i++] = 0; // End tag
 
@@ -78,9 +78,11 @@ void Init(uint32_t width, uint32_t height)
 
         // Framebuffer is now accessible at fb_addr
         Uart::Puts("Framebuffer address: "); Uart::PutHex(fb_addr); Uart::Puts("\n");
+        Uart::Puts("Framebuffer size: "); Uart::PutHex(mbox[size]); Uart::Puts("\n");
         Uart::Puts("Framebuffer pitch: "); Uart::PutDec(fb_pitch); Uart::Puts("\n");
         Uart::Puts("Framebuffer width: "); Uart::PutDec(Width); Uart::Puts("\n");
         Uart::Puts("Framebuffer height: "); Uart::PutDec(Height); Uart::Puts("\n");
+        Uart::Puts("Framebuffer physical height: "); Uart::PutDec(mbox[ph]); Uart::Puts("\n");
     }
     else
     {
@@ -127,11 +129,50 @@ void Init(uint32_t width, uint32_t height)
     }
 }
 
+uint32_t yOffset = 0;
+
+void Flip()
+{
+    size_t i = 0;
+    mbox[i++] = 0; // Size
+    mbox[i++] = 0; // Request
+
+    mbox[i++] = 0x48009; mbox[i++] = 8; mbox[i++] = 0; mbox[i++] = 0; mbox[i++] = yOffset; // Set phys size
+    mbox[i++] = 0; // End tag
+
+    // Pad to 16-byte alignment
+    while (i & 3)
+    {
+        mbox[i++] = 0;
+    }
+
+    if (Mailbox::SendTags(std::span{ mbox, i }))
+    {
+        if (yOffset == 0)
+        {
+            yOffset = Height;
+        }
+        else
+        {
+            yOffset = 0;
+        }
+    }
+    else
+    {
+        Uart::Puts("Framebuffer flip failed.\n");
+        Uart::Puts("Mbox size: "); Uart::PutDec(mbox[0]); Uart::Puts("\n");
+        Uart::Puts("Mbox status: "); Uart::PutHex(mbox[1]); Uart::Puts("\n");
+        Uart::Puts("Mbox status2: "); Uart::PutHex(mbox[4]); Uart::Puts("\n");
+        Uart::Puts("Mbox x: "); Uart::PutHex(mbox[5]); Uart::Puts("\n");
+        Uart::Puts("Mbox y: "); Uart::PutHex(mbox[6]); Uart::Puts("\n");
+    }
+}
+
 void WritePixel(uint32_t x, uint32_t y, Color565 color)
 {
     if (x < Width && y < Height)
     {
-        *((uint16_t volatile*)((uintptr_t)fb_addr + (y * fb_pitch) + (x * 2))) = reinterpret_cast<uint16_t const&>(color);
+        *((uint16_t volatile*)((uintptr_t)fb_addr + ((y + yOffset) * fb_pitch) + (x * 2))) = reinterpret_cast<uint16_t const&>(color);
     }
 }
 

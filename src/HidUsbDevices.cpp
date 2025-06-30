@@ -35,8 +35,8 @@
 
 #include "emb-stdio.h"				// Needed for printf
 
-//#define LOG(...)
-#define LOG(...) printf2(__VA_ARGS__)
+#define LOG(...)
+//#define LOG(...) printf2(__VA_ARGS__)
 #define LOG_DEBUG(...)
 //#define LOG_DEBUG(...) printf2(__VA_ARGS__)
 

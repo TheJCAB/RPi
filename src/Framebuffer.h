@@ -28,6 +28,8 @@ void Init(uint32_t width, uint32_t height);
 extern uint32_t Width;
 extern uint32_t Height;
 
+void Flip();
+
 void WritePixel(uint32_t x, uint32_t y, Color565 color);
 
 void Panic(Color565 color, int divisions = 1, int which = 0, int repeat = 1);

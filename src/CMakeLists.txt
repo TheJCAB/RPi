@@ -15,6 +15,7 @@ add_executable(kernel8
     Timer.cpp           Timer.h
     UsbDevices.cpp      UsbDevices.h
     HidUsbDevices.cpp   HidUsbDevices.h
+    Keyboard.cpp        keyboard.h
 
     emb-stdio.cpp       emb-stdio.h
     DesignWareUsb.cpp   DesignWareUsb.h
