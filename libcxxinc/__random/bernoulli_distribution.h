@@ -12,7 +12,7 @@
 #include <__config>
 #include <__random/is_valid.h>
 #include <__random/uniform_real_distribution.h>
-#include <iosfwd>
+//#include <iosfwd>
 
 #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
 #  pragma GCC system_header
@@ -90,6 +90,8 @@ inline bernoulli_distribution::result_type bernoulli_distribution::operator()(_U
   return __gen(__g) < __p.p();
 }
 
+#if 0
+
 template <class _CharT, class _Traits>
 _LIBCPP_HIDE_FROM_ABI basic_ostream<_CharT, _Traits>&
 operator<<(basic_ostream<_CharT, _Traits>& __os, const bernoulli_distribution& __x) {
@@ -115,6 +117,8 @@ operator>>(basic_istream<_CharT, _Traits>& __is, bernoulli_distribution& __x) {
     __x.param(param_type(__p));
   return __is;
 }
+
+#endif // 0
 
 _LIBCPP_END_NAMESPACE_STD
 

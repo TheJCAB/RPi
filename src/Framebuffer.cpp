@@ -39,8 +39,9 @@ void Panic(Color565 color, int divisions, int which, int repeat)
 }
 
 // Framebuffer info
-volatile unsigned int fb_depth = 16;
-volatile unsigned int fb_pitch, fb_addr;
+uint32_t  fb_depth = 16;
+uintptr_t fb_addr;
+uint32_t  fb_pitch;
 
 
 uint32_t Width;
@@ -172,7 +173,51 @@ void WritePixel(uint32_t x, uint32_t y, Color565 color)
 {
     if (x < Width && y < Height)
     {
-        *((uint16_t volatile*)((uintptr_t)fb_addr + ((y + yOffset) * fb_pitch) + (x * 2))) = reinterpret_cast<uint16_t const&>(color);
+        *((uint16_t volatile*)(fb_addr + ((y + yOffset) * fb_pitch) + (x * 2))) = reinterpret_cast<uint16_t const&>(color);
+    }
+}
+
+void WriteSpan(uint32_t x, uint32_t y, uint32_t w, Color565 color)
+{
+    if (x + w <= Width && y < Height)
+    {
+        uint16_t const color16 = reinterpret_cast<uint16_t const&>(color);
+        uint64_t const color64 =
+            (static_cast<uint64_t>(color16) << 48) |
+            (static_cast<uint64_t>(color16) << 32) |
+            (static_cast<uint64_t>(color16) << 16) |
+            (static_cast<uint64_t>(color16)      );
+        auto const spanPtr16 = reinterpret_cast<uint16_t*>(fb_addr + ((y + yOffset) * fb_pitch));
+        auto const spanPtr64 = reinterpret_cast<uint64_t*>(spanPtr16);
+        auto const x2 = x + w;
+        while (x % 4 != 0 && x < x2)
+        {
+            spanPtr16[x] = color16;
+            ++x;
+        }
+
+        while (x + 4 <= x2)
+        {
+            spanPtr64[x / 4] = color64;
+            x += 4;
+        }
+
+        while (x < x2)
+        {
+            spanPtr16[x] = color16;
+            ++x;
+        }
+    }
+}
+
+void WriteRectangle(uint32_t x, uint32_t y, uint32_t w, uint32_t h, Color565 color)
+{
+    if (x + w <= Width && y + h <= Height)
+    {
+        for (uint32_t i = 0; i < h; ++i)
+        {
+            WriteSpan(x, y + i, w, color);
+        }
     }
 }
 

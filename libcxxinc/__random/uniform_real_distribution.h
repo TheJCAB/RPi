@@ -12,7 +12,7 @@
 #include <__config>
 #include <__random/generate_canonical.h>
 #include <__random/is_valid.h>
-#include <iosfwd>
+//#include <iosfwd>
 #include <limits>
 
 #if !defined(_LIBCPP_HAS_NO_PRAGMA_SYSTEM_HEADER)
@@ -103,6 +103,8 @@ uniform_real_distribution<_RealType>::operator()(_URNG& __g, const param_type& _
   return (__p.b() - __p.a()) * std::generate_canonical<_RealType, numeric_limits<_RealType>::digits>(__g) + __p.a();
 }
 
+#if 0
+
 template <class _CharT, class _Traits, class _RT>
 _LIBCPP_HIDE_FROM_ABI basic_ostream<_CharT, _Traits>&
 operator<<(basic_ostream<_CharT, _Traits>& __os, const uniform_real_distribution<_RT>& __x) {
@@ -130,6 +132,8 @@ operator>>(basic_istream<_CharT, _Traits>& __is, uniform_real_distribution<_RT>&
     __x.param(param_type(__a, __b));
   return __is;
 }
+
+#endif // 0
 
 _LIBCPP_END_NAMESPACE_STD
 
