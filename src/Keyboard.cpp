@@ -51,9 +51,12 @@ void Init()
             break;
         }
     }
-    if (firstKbd) printf2("Keyboard detected\r\n");
-
-    HIDEnableInterruptINSimple(firstKbd, 0);
+    if (firstKbd)
+    {
+        printf2("Keyboard detected\r\n");
+        HIDEnableInterruptINSimple(firstKbd, 0);
+        printf2("Keyboard configured\r\n");
+    }
 }
 
 static void RefreshStateIfNeeded()

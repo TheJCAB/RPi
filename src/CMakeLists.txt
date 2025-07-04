@@ -5,6 +5,8 @@ add_executable(kernel8
     Main.cpp
     Crt.cpp
 
+    Cpu.cpp             Cpu.h
+    Gpio.cpp            Gpio.h
     Uart.cpp            Uart.h
     Mailbox.cpp         Mailbox.h
     Framebuffer.cpp     Framebuffer.h
@@ -29,9 +31,20 @@ set_target_properties(kernel8 PROPERTIES
 )
 
 target_compile_options(kernel8 PRIVATE
+    -ffreestanding
     -Wno-builtin-macro-redefined
     -O3
+    #-fPIC
+    -mcmodel=tiny
+    #-flto
     #-H
+)
+target_Link_options(kernel8 PRIVATE
+    -Wl,--gc-sections
+    -ffunction-sections
+    -fdata-sections
+    -fpie
+    #-flto
 )
 
 # Specify the linker script

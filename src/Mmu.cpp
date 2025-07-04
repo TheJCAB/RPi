@@ -1,7 +1,13 @@
 #include "Mmu.h"
+#include "Mmio.h"
+#include "Uart.h"
+
+#include "emb-stdio.h"
 
 #include <stdint.h>
 #include <stddef.h>
+
+extern uintptr_t GpuMemBase;
 
 namespace Mmu
 {
@@ -241,12 +247,21 @@ alignas(0x1000) static constinit L2PageTable l2_page_table = []() constexpr
     return table;
 }();
 
-alignas(0x1000) static constinit L1PageTable l1_page_table
+alignas(0x1000) static constinit L1PageTable Rpi3_l1_page_table
 {{
-    L1NormalMem(0),        // 0x00000000 - 0x3FFFFFFF: 1 GB RAM (normal memory)
-    L1DeviceMem(0),        // 0x40000000 - 0x7FFFFFFF: 1 GB RAM, including the MMIO (device)
-    L1DeviceMem(0x40000000),   // 0x80000000 - 0xBFFFFFFF: (unused)
-    L1GpuMem(0),           // 0xC0000000 - 0xFFFFFFFF: 1 GB RAM (transient, WT memory for GPU (and devices) data)
+    L1NormalMem(0),             // 0x0000'0000 - 0x3FFF'FFFF: 1 GB RAM (normal memory)
+    L1DeviceMem(0),             // 0x4000'0000 - 0x7FFF'FFFF: 1 GB RAM, including the MMIO (device)
+    L1DeviceMem(0x4000'0000),   // 0x8000'0000 - 0xBFFF'FFFF: (unused)
+    L1GpuMem(0),                // 0xC000'0000 - 0xFFFF'FFFF: 1 GB RAM (transient, WT memory for GPU (and devices) data)
+    // Remaining entries are invalid
+}};
+
+alignas(0x1000) static constinit L1PageTable Rpi4_l1_page_table
+{{
+    L1NormalMem(0),                 // 0x0000'0000 - 0x3FFF'FFFF: 1 GB RAM (normal memory)
+    L1DeviceMem(0x4'4000'0000ull),  // 0x4000'0000 - 0x7FFF'FFFF: 1 GB of MMIO (device)
+    L1DeviceMem(0x4'C000'0000ull),  // 0x8000'0000 - 0xBFFF'FFFF: (unused)
+    L1GpuMem(0),                    // 0xC000'0000 - 0xFFFF'FFFF: 1 GB RAM (transient, WT memory for GPU (and devices) data)
     // Remaining entries are invalid
 }};
 
@@ -259,14 +274,45 @@ alignas(0x1000) static constinit L1PageTable l1_page_table
 //
 //uint64_t const MairEl1 = GetMairEl1();
 
-static void InitPageTablesAndMMU()
+static void DumpMMUState()
 {
-    //l1_page_table.entries[0] = TableDescriptor((uint64_t)&l2_page_table);
+    Uart::Puts("MMU State:\n");
+    Uart::Puts("  TTBR0_EL1: ");
+    uint64_t ttbr0;
+    asm volatile ("mrs %0, ttbr0_el1" : "=r"(ttbr0));
+    Uart::PutHex(ttbr0);
+    Uart::Puts("\n");
+
+    Uart::Puts("  TCR_EL1: ");
+    uint64_t tcr;
+    asm volatile ("mrs %0, tcr_el1" : "=r"(tcr));
+    Uart::PutHex(tcr);
+    Uart::Puts("  ");
+    Uart::PutBin(tcr);
+    Uart::Puts("\n");
+
+    Uart::Puts("  MAIR_EL1: ");
+    uint64_t mair;
+    asm volatile ("mrs %0, mair_el1" : "=r"(mair));
+    Uart::PutHex(mair);
+    Uart::Puts("\n");
+
+    uint64_t sctlr;
+    asm volatile ("mrs %0, sctlr_el1" : "=r"(sctlr));
+    Uart::Puts("  SCTLR_EL1: ");
+    Uart::PutHex(sctlr);
+    Uart::Puts("  ");
+    Uart::PutBin(sctlr);
+    Uart::Puts("\n");
+}
+
+static void InitPageTables()
+{
     // Set MAIR_EL1: Attr0 = 0xFF (normal memory, inner/outer write-back, write-allocate)
     asm volatile ("msr mair_el1, %0" : : "r"(MAIR_ATTR));
 
-    // Set TCR_EL1: 4KB granule, 48-bit VA, 1GB region, inner/outer WB WA cacheable, shareable
-    uint64_t tcr = (25ULL << 0) | // T0SZ = 64-25 = 32 (39-bit address space)
+    // Set TCR_EL1: 4KB granule, 39-bit VA, 1GB region, inner/outer WB WA cacheable, shareable
+    uint64_t tcr = (25ULL << 0) | // T0SZ = 64-25 = 39 (39-bit address space (512 GB) allows level 1 tables to be complete at 1 GB covered per entry)
                    (0ULL << 7) | // EPD0 = 0b0 (enable the bottom page tables)
                    (0b01ULL << 8) | // IRGN0 = 0b01 (inner WB WA)
                    (0b01ULL << 10) | // ORGN0 = 0b01 (outer WB WA)
@@ -274,11 +320,36 @@ static void InitPageTablesAndMMU()
                    (0b00ULL << 14) | // TG0 = 0b00 (4KB granule)
                    (0ULL << 16) |     // Reserved (more stuff)
                    (1ULL << (16+7)) | // EPD1 = 0b1 (disable the top page tables)
-                   (2ULL << 32); // IPS = 1TB
+                   (1ULL << 32); // IPS = 64GB
+    //uint64_t tcr = (28ULL << 0) | // T0SZ = 64-28 = 36 (36-bit address space)
+    //               (0ULL << 7) | // EPD0 = 0b0 (enable the bottom page tables)
+    //               (0b01ULL << 8) | // IRGN0 = 0b01 (inner WB WA)
+    //               (0b01ULL << 10) | // ORGN0 = 0b01 (outer WB WA)
+    //               (0b11ULL << 12) | // SH0 = 0b11 (inner-shareable)
+    //               (0b00ULL << 14) | // TG0 = 0b00 (4KB granule)
+    //               (0ULL << 16) |     // Reserved (more stuff)
+    //               (1ULL << (16+7)) | // EPD1 = 0b1 (disable the top page tables)
+    //               (1ULL << 32); // IPS = 64GB (36 bits) of physical address space
     asm volatile ("msr tcr_el1, %0" : : "r"(tcr));
 
-    // Set TTBR0_EL1 to point to our L1 table
-    asm volatile ("msr ttbr0_el1, %0" : : "r"((uint64_t)&l1_page_table + 1)); // +1 == CnP
+    if (Mmio::Base == 0x4'7E00'0000u || Mmio::Base == 0x7E00'0000u) // RPi4 MMIO base
+    {
+        Mmio::Base    = 0x7E00'0000u; // Update MMIO base to the new aperture.
+        Mmio::QA7Base = 0x8000'0000u; // Update ARM cores' MMIO base to the new aperture.
+        GpuMemBase    = 0xC000'0000u; // Update the GPU memory base to the new aperture.
+
+        // Set TTBR0_EL1 to point to our L1 table
+        asm volatile ("msr ttbr0_el1, %0" : : "r"((uint64_t)&Rpi4_l1_page_table + 1)); // +1 == CnP
+    }
+    else
+    {
+        Mmio::Base    = 0x7F00'0000u; // Update MMIO base to the new aperture.
+        Mmio::QA7Base = 0x8000'0000u; // Update ARM cores' MMIO base to the new aperture.
+        GpuMemBase    = 0xC000'0000u; // Update the GPU memory base to the new aperture.
+
+        // Set TTBR0_EL1 to point to our L1 table
+        asm volatile ("msr ttbr0_el1, %0" : : "r"((uint64_t)&Rpi3_l1_page_table + 1)); // +1 == CnP
+    }
 
     // ISB to synchronize context
     asm volatile ("isb");
@@ -299,13 +370,16 @@ void EnableCachesAndMMU()
 
 void Init()
 {
+    //DumpMMUState();
+
     // Initialize page tables and MMU
-    InitPageTablesAndMMU();
+    InitPageTables();
 
     // Enable caches and MMU
     EnableCachesAndMMU();
 
     // Now the MMU is enabled and caches are active
+    DumpMMUState();
 }
 
 }

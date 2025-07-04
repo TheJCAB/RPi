@@ -1,93 +1,116 @@
 #include "Uart.h"
 
+#include "Timer.h"
+
+#include "Cpu.h"
 #include "Mmio.h"
+#include "Gpio.h"
 
 #include <atomic>
 
 namespace Uart
 {
 
-#define PL011_BASE      (Mmio::Base + 0x201000)
+constexpr uint32_t PL011_MMIO_OFFSET = 0x201000u;
 
-#define UART_DR         ((volatile unsigned int*)(PL011_BASE + 0x00))
-#define UART_FR         ((volatile unsigned int*)(PL011_BASE + 0x18))
-#define UART_IBRD       ((volatile unsigned int*)(PL011_BASE + 0x24))
-#define UART_FBRD       ((volatile unsigned int*)(PL011_BASE + 0x28))
-#define UART_LCRH       ((volatile unsigned int*)(PL011_BASE + 0x2C))
-#define UART_CR         ((volatile unsigned int*)(PL011_BASE + 0x30))
-#define UART_IMSC       ((volatile unsigned int*)(PL011_BASE + 0x38))
-#define UART_ICR        ((volatile unsigned int*)(PL011_BASE + 0x44))
+struct PL011Registers
+{
+    Mmio::BaseRegisterProxy<uint32_t> DR   { PL011_MMIO_OFFSET + 0x00 };// 0x00 - Data Register
+    Mmio::BaseRegisterProxy<uint32_t> RSR  { PL011_MMIO_OFFSET + 0x04 };// 0x04 - Receive Status Register
+    Mmio::BaseRegisterProxy<uint32_t> FR   { PL011_MMIO_OFFSET + 0x18 };// 0x18 - Flag Register
+    Mmio::BaseRegisterProxy<uint32_t> ILPR { PL011_MMIO_OFFSET + 0x20 };// 0x20 - IrDA Low-Power Counter Register
+    Mmio::BaseRegisterProxy<uint32_t> IBRD { PL011_MMIO_OFFSET + 0x24 };// 0x24 - Integer Baud Rate Divisor
+    Mmio::BaseRegisterProxy<uint32_t> FBRD { PL011_MMIO_OFFSET + 0x28 };// 0x28 - Fractional Baud Rate Divisor
+    Mmio::BaseRegisterProxy<uint32_t> LCRH { PL011_MMIO_OFFSET + 0x2C };// 0x2C - Line Control Register
+    Mmio::BaseRegisterProxy<uint32_t> CR   { PL011_MMIO_OFFSET + 0x30 };// 0x30 - Control Register
+    Mmio::BaseRegisterProxy<uint32_t> IFLS { PL011_MMIO_OFFSET + 0x34 };// 0x34 - Interrupt FIFO Level Select Register
+    Mmio::BaseRegisterProxy<uint32_t> IMSC { PL011_MMIO_OFFSET + 0x38 };// 0x38 - Interrupt Mask Set/Clear Register
+    Mmio::BaseRegisterProxy<uint32_t> RIS  { PL011_MMIO_OFFSET + 0x3C };// 0x3C - Raw Interrupt Status Register
+    Mmio::BaseRegisterProxy<uint32_t> MIS  { PL011_MMIO_OFFSET + 0x40 };// 0x40 - Masked Interrupt Status Register
+    Mmio::BaseRegisterProxy<uint32_t> ICR  { PL011_MMIO_OFFSET + 0x44 };// 0x44 - Interrupt Clear Register
+    Mmio::BaseRegisterProxy<uint32_t> DMACR{ PL011_MMIO_OFFSET + 0x48 };// 0x48 - DMA Control Register
+};
 
-#define GPFSEL1         ((volatile unsigned int*)(Mmio::Base + 0x200004))
-#define GPPUD           ((volatile unsigned int*)(Mmio::Base + 0x200094))
-#define GPPUDCLK0       ((volatile unsigned int*)(Mmio::Base + 0x200098))
+static constexpr PL011Registers PL011{};
 
 bool useMutex = false;
-
 std::atomic<bool> Mutex;
 
 void Init()
 {
-    // Disable UART0
-    *UART_CR = 0;
-
-    // Setup GPIO14 and GPIO15 to ALT0 (UART0 TX/RX)
-    unsigned int r = *GPFSEL1;
-    r &= ~((7 << 12) | (7 << 15)); // clear bits for GPIO14, GPIO15
-    r |= (4 << 12) | (4 << 15);    // set ALT0
-    *GPFSEL1 = r;
-
-    // Disable pull-up/down for pins 14 and 15
-    *GPPUD = 0;
-    for (volatile int i = 0; i < 1500; i = i + 1) {}
-    *GPPUDCLK0 = (1 << 14) | (1 << 15);
-    for (volatile int i = 0; i < 1500; i = i + 1) {}
-    *GPPUDCLK0 = 0;
+    Gpio::SetFunction(14, Gpio::Function::Alt0); // GPIO14 (TXD0)
+    Gpio::SetFunction(15, Gpio::Function::Alt0); // GPIO15 (RXD0)
+    Gpio::SetPullUpDown(14, Gpio::PullUpDown::None); // Disable pull-up/down for GPIO14
+    Gpio::SetPullUpDown(15, Gpio::PullUpDown::None); // Disable pull-up/down for GPIO15
 
     // Clear pending interrupts
-    *UART_ICR = 0x7FF;
+    PL011.ICR = 0x7FF;
 
     // Set integer & fractional part of baud rate
     // Baud = 115200, UARTCLK = 48 MHz (default for Pi 3)
     // Divider = UARTCLK / (16 * Baud) = 48,000,000 / (16*115200) = 26.0416
-    *UART_IBRD = 26;
-    *UART_FBRD = 3;
+    PL011.IBRD = 26;
+    PL011.FBRD = 3;
 
     // Enable FIFO & 8 bit data transmission (1 stop bit, no parity)
-    *UART_LCRH = (1 << 4) | (3 << 5); // FIFO enable, 8 bit
+    PL011.LCRH = (1 << 4) | (3 << 5); // FIFO enable, 8 bit
 
     // Mask all interrupts
-    *UART_IMSC = (1 << 1) | (1 << 4) | (1 << 5) | (1 << 6) |
+    PL011.IMSC = (1 << 1) | (1 << 4) | (1 << 5) | (1 << 6) |
                  (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10);
 
     // Enable UART0, receive & transmit
-    *UART_CR = (1 << 0) | (1 << 8) | (1 << 9);
+    PL011.CR = (1 << 0) | (1 << 8) | (1 << 9);
 }
 
 namespace Raw
 {
 
+void NoMmuPutc(char c)
+{
+    // Wait until transmitter FIFO has space
+    if (Cpu::IsRpi4())
+    {
+        while (*(volatile unsigned int*)0x4'7E20'1018ull & (1 << 5)) {}
+        *(volatile unsigned int*)0x4'7E20'1000ull = c;
+    }
+    else
+    {
+        while (*(volatile unsigned int*)0x3F20'1018ull & (1 << 5)) {}
+        *(volatile unsigned int*)0x3F20'1000ull = c;
+    }
+}
+
+void NoMmuPuts(char const* str)
+{
+    while (*str)
+    {
+        NoMmuPutc(*str++);
+    }
+}
+
+
 char Getc()
 {
     // Wait until data is ready in receiver FIFO
-    while (*UART_FR & 0x10) {}
-    return static_cast<char>(*UART_DR & 0xFF);
+    while (PL011.FR & 0x10) {}
+    return static_cast<char>(PL011.DR & 0xFF);
 }
 
 char TryGetc()
 {
-    if (*UART_FR & 0x10)
+    if (PL011.FR & 0x10)
     {
         return (char)0; // No data available
     }
-    return static_cast<char>(*UART_DR & 0xFF);
+    return static_cast<char>(PL011.DR & 0xFF);
 }
 
 void Putc(char c)
 {
     // Wait until transmitter FIFO has space
-    while (*UART_FR & (1 << 5)) {}
-    *UART_DR = c;
+    while (PL011.FR & (1 << 5)) {}
+    PL011.DR = c;
 }
 
 void Puts(char const* str)

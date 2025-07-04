@@ -11,5 +11,7 @@ SECTIONS
         *(.text*)
     }
 
+    _end = .;
+
     /DISCARD/ : { *(.debug*) *(.comment) *(.gnu*) *(.note*) }
 }

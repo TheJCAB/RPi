@@ -7,6 +7,7 @@
 
 #include <atomic>
 
+#include "Cpu.h"
 #include "Mmio.h"
 #include "Uart.h"
 #include "Mailbox.h"
@@ -57,6 +58,8 @@ volatile bool Core3Ready = false;
 
 void Core1()
 {
+    Uart::Raw::NoMmuPuts("Core 1 starting\n");
+
     InitCore();
 
     Uart::Puts("Core 1 says hello\n");
@@ -135,11 +138,27 @@ void Core0()
         *p = 0; // Clear BSS
     }
 
+    bool const isRpi4 = Cpu::IsRpi4();
+    if (isRpi4)
+    {
+        Mmio::Base    = 0x4'7E00'0000u; // RPi4 MMIO base address
+        Mmio::QA7Base = 0x4'C000'0000u; // RPi4 QA7 base address
+    }
+
     Mailbox::Send(0, 0x80); // UART 1 and USB enabled
 
     Uart::Init();
 
     Uart::Puts("\r\n\nHello!\n");
+
+    if (isRpi4)
+    {
+        Uart::Puts("Detected Raspberry Pi 4\n");
+    }
+    else
+    {
+        Uart::Puts("Detected Raspberry Pi 3\n");
+    }
 
     Uart::Puts("Init array start: ");
     Uart::PutHex(reinterpret_cast<uintptr_t>(_init_array_start));
@@ -207,9 +226,6 @@ void Core0()
     }
 
     Mmu::Init();
-    
-    Mmio::Base = 0x7F00'0000u; // Update MMIO base to the new aperture.
-    GpuMemBase = 0xC000'0000u; // Update the GPU memory base to the new aperture.
 
     Uart::Puts("MMU enabled\n");
 

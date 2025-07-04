@@ -1,11 +1,22 @@
 cmake_minimum_required(VERSION 3.24)
 
 add_executable(kernelloader
+    #Min2.S
+    #Min.S
     kernelloader.S
 )
 
 set_target_properties(kernelloader PROPERTIES
     SUFFIX ".elf"
+)
+
+target_compile_options(kernelloader PRIVATE
+    -O3
+    -fPIC
+)
+
+target_link_options(kernelloader PRIVATE
+    -fpie
 )
 
 # Specify the linker script

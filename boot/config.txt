@@ -1,20 +1,23 @@
 # config.txt for Raspberry Pi 3B booting a custom 64-bit kernel
 
-start_file=start.elf
-fixup_file=fixup.dat
-
 # Enable 64-bit mode
 arm_64bit=1
 
 # Specify the custom kernel image (must be in the boot partition)
+#kernel=kernel8.img
 kernel=kernelloader.img
 
 # Set GPU memory (adjust as needed)
 gpu_mem=64
+#gpu_mem=16
 
 # Enable UART for serial console (optional)
 enable_uart=1
+#enable_rp1_uart=1
+init_uart_baud=115200
+init_uart_clock=48000000
 core_freq_fixed=1
+#uart_1ststage=1
 uart_2ndstage=1
 
 # Screen settings
@@ -24,4 +27,22 @@ hdmi_force_hotplug=1
 # Uncomment if you need to set a specific cmdline
 # cmdline=cmdline.txt
 
-# Additional options can be added as needed
+[pi3]
+
+start_file=start.elf
+fixup_file=fixup.dat
+
+core_freq_min=400
+
+[pi4]
+start_file=start4.elf
+fixup_file=fixup4.dat
+
+core_freq_min=500
+
+arm_peri_high=1
+
+# Run as fast as firmware / board allows
+#arm_boost=1
+
+[all]

@@ -13,6 +13,9 @@ void Init();
 namespace Raw
 {
 
+void NoMmuPutc(char c);
+void NoMmuPuts(char const* str);
+
 void Putc(char c);
 char Getc();
 char TryGetc();
