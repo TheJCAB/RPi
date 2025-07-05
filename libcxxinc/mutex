@@ -491,6 +491,131 @@ _LIBCPP_CTAD_SUPPORTED_FOR_TYPE(scoped_lock);
 #    endif // _LIBCPP_STD_VER >= 17
 #  endif   // _LIBCPP_HAS_THREADS
 
+
+    // Simple mutex implementation using atomics for C++20 compatibility
+    class mutex {
+    private:
+        std::atomic_flag flag_ = ATOMIC_FLAG_INIT;
+
+    public:
+        constexpr mutex() noexcept = default;
+        
+        mutex(const mutex&) = delete;
+        mutex& operator=(const mutex&) = delete;
+
+        void lock() noexcept {
+            while (flag_.test_and_set(std::memory_order_acquire)) {
+                // Spin wait
+                while (flag_.test(std::memory_order_relaxed)) {
+                    // Pause/yield hint for better performance
+                    #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+                        __builtin_ia32_pause();
+                    #elif defined(__aarch64__) || defined(_M_ARM64)
+                        __asm__ volatile("yield" ::: "memory");
+                    #endif
+                }
+            }
+        }
+
+        bool try_lock() noexcept {
+            return !flag_.test_and_set(std::memory_order_acquire);
+        }
+
+        void unlock() noexcept {
+            flag_.clear(std::memory_order_release);
+        }
+    };
+
+    // Simple shared_mutex implementation using atomics
+    class shared_mutex {
+    private:
+        std::atomic<int> readers_{0};
+        std::atomic_flag writer_flag_ = ATOMIC_FLAG_INIT;
+
+    public:
+        constexpr shared_mutex() noexcept = default;
+        
+        shared_mutex(const shared_mutex&) = delete;
+        shared_mutex& operator=(const shared_mutex&) = delete;
+
+        void lock() noexcept {
+            while (writer_flag_.test_and_set(std::memory_order_acquire)) {
+                while (writer_flag_.test(std::memory_order_relaxed)) {
+                    #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+                        __builtin_ia32_pause();
+                    #elif defined(__aarch64__) || defined(_M_ARM64)
+                        __asm__ volatile("yield" ::: "memory");
+                    #endif
+                }
+            }
+            
+            // Wait for all readers to finish
+            while (readers_.load(std::memory_order_acquire) > 0) {
+                #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+                    __builtin_ia32_pause();
+                #elif defined(__aarch64__) || defined(_M_ARM64)
+                    __asm__ volatile("yield" ::: "memory");
+                #endif
+            }
+        }
+
+        bool try_lock() noexcept {
+            if (writer_flag_.test_and_set(std::memory_order_acquire)) {
+                return false;
+            }
+            
+            if (readers_.load(std::memory_order_acquire) > 0) {
+                writer_flag_.clear(std::memory_order_release);
+                return false;
+            }
+            
+            return true;
+        }
+
+        void unlock() noexcept {
+            writer_flag_.clear(std::memory_order_release);
+        }
+
+        void lock_shared() noexcept {
+            while (true) {
+                while (writer_flag_.test(std::memory_order_acquire)) {
+                    #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+                        __builtin_ia32_pause();
+                    #elif defined(__aarch64__) || defined(_M_ARM64)
+                        __asm__ volatile("yield" ::: "memory");
+                    #endif
+                }
+                
+                readers_.fetch_add(1, std::memory_order_acquire);
+                
+                if (!writer_flag_.test(std::memory_order_acquire)) {
+                    break;
+                }
+                
+                readers_.fetch_sub(1, std::memory_order_release);
+            }
+        }
+
+        bool try_lock_shared() noexcept {
+            if (writer_flag_.test(std::memory_order_acquire)) {
+                return false;
+            }
+            
+            readers_.fetch_add(1, std::memory_order_acquire);
+            
+            if (writer_flag_.test(std::memory_order_acquire)) {
+                readers_.fetch_sub(1, std::memory_order_release);
+                return false;
+            }
+            
+            return true;
+        }
+
+        void unlock_shared() noexcept {
+            readers_.fetch_sub(1, std::memory_order_release);
+        }
+    };
+
 _LIBCPP_END_NAMESPACE_STD
 
 _LIBCPP_POP_MACROS

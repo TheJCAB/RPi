@@ -258,10 +258,31 @@ alignas(0x1000) static constinit L1PageTable Rpi3_l1_page_table
 
 alignas(0x1000) static constinit L1PageTable Rpi4_l1_page_table
 {{
-    L1NormalMem(0),                 // 0x0000'0000 - 0x3FFF'FFFF: 1 GB RAM (normal memory)
-    L1DeviceMem(0x4'4000'0000ull),  // 0x4000'0000 - 0x7FFF'FFFF: 1 GB of MMIO (device)
-    L1DeviceMem(0x4'C000'0000ull),  // 0x8000'0000 - 0xBFFF'FFFF: (unused)
-    L1GpuMem(0),                    // 0xC000'0000 - 0xFFFF'FFFF: 1 GB RAM (transient, WT memory for GPU (and devices) data)
+    L1NormalMem(0),                 //   0x0000'0000 -   0x3FFF'FFFF: 1 GB RAM (normal memory)
+    L1DeviceMem(0x4'4000'0000ull),  //   0x4000'0000 -   0x7FFF'FFFF: 1 GB of MMIO (device)
+    L1DeviceMem(0x4'C000'0000ull),  //   0x8000'0000 -   0xBFFF'FFFF: (unused)
+    L1GpuMem(0),                    //   0xC000'0000 -   0xFFFF'FFFF: 1 GB RAM (transient, WT memory for GPU (and devices) data)
+    {},                             // 0x1'0000'0000 - 0x1'3FFF'FFFF: (unused)
+    {},                             // 0x1'4000'0000 - 0x1'7FFF'FFFF: (unused)
+    {},                             // 0x1'8000'0000 - 0x1'BFFF'FFFF: (unused)
+    {},                             // 0x1'C000'0000 - 0x1'FFFF'FFFF: (unused)
+    {},                             // 0x2'0000'0000 - 0x2'3FFF'FFFF: (unused)
+    {},                             // 0x2'4000'0000 - 0x2'7FFF'FFFF: (unused)
+    {},                             // 0x2'8000'0000 - 0x2'BFFF'FFFF: (unused)
+    {},                             // 0x2'C000'0000 - 0x2'FFFF'FFFF: (unused)
+    {},                             // 0x3'0000'0000 - 0x3'3FFF'FFFF: (unused)
+    {},                             // 0x3'4000'0000 - 0x3'7FFF'FFFF: (unused)
+    {},                             // 0x3'8000'0000 - 0x3'BFFF'FFFF: (unused)
+    {},                             // 0x3'C000'0000 - 0x3'FFFF'FFFF: (unused)
+    {},                             // 0x4'0000'0000 - 0x4'3FFF'FFFF: (unused)
+    L1DeviceMem(0x4'4000'0000ull),  // 0x4'4000'0000 - 0x4'7FFF'FFFF: (unused)
+    {},                             // 0x4'8000'0000 - 0x4'BFFF'FFFF: (unused)
+    L1DeviceMem(0x4'C000'0000ull),  // 0x4'C000'0000 - 0x4'FFFF'FFFF: MMIO
+    {},                             // 0x5'0000'0000 - 0x5'3FFF'FFFF: (unused)
+    {},                             // 0x5'4000'0000 - 0x5'7FFF'FFFF: (unused)
+    {},                             // 0x5'8000'0000 - 0x5'BFFF'FFFF: (unused)
+    {},                             // 0x5'C000'0000 - 0x5'FFFF'FFFF: (unused)
+    L1DeviceMem(0x6'0000'0000ull),  // 0x6'0000'0000 - 0x6'3FFF'FFFF: PCIe
     // Remaining entries are invalid
 }};
 

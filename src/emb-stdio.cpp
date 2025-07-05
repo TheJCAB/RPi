@@ -32,14 +32,15 @@ CHAR_OUTPUT_HANDLER Console_WriteChar = Uart::Putc;
 /* Number of bits in an 'unsigned long'.  */
 #define LONG_BITS (8 * sizeof(unsigned long))
 
-static void ulong_to_string(unsigned long num, char *str,
+static void ulong_to_string(unsigned long long num, char *str,
                             unsigned int base, bool alt_digits);
 
 enum integer_size {
     SHORT_SHORT_SIZE,
     SHORT_SIZE,
     REGULAR_SIZE,
-    LONG_SIZE
+    LONG_SIZE,
+    LONG_LONG_SIZE,
 };
 
 /**
@@ -128,8 +129,8 @@ int _doprnt(const char *fmt, va_list ap, int (*putc_func) (int, void*), void* pu
     enum integer_size size;     /* Length modifier                      */
     char sign;                  /* Set to '-' for negative decimals     */
 
-    long larg;                  /* Numeric argument                     */
-    unsigned long ularg;        /* Numeric argument                     */
+    long long larg;             /* Numeric argument                     */
+    unsigned long long ularg;   /* Numeric argument                     */
     bool alt_digits;            /* Use alternate digits?                */
     unsigned int base;          /* Base to use for printing.            */
 
@@ -254,7 +255,20 @@ int _doprnt(const char *fmt, va_list ap, int (*putc_func) (int, void*), void* pu
             size = REGULAR_SIZE;
             if (*fmt == 'l')
             {
-                size = LONG_SIZE;
+                fmt++;
+                if (*fmt == 'l')
+                {
+                    size = LONG_LONG_SIZE;
+                    fmt++;
+                }
+                else
+                {
+                    size = LONG_SIZE;
+                }
+            }
+            else if (*fmt == 'z')
+            {
+                size = LONG_LONG_SIZE;
                 fmt++;
             }
             else if (*fmt == 'h')
@@ -309,6 +323,10 @@ int _doprnt(const char *fmt, va_list ap, int (*putc_func) (int, void*), void* pu
                 {
                     larg = va_arg(ap, long);
                 }
+                else if (size == LONG_LONG_SIZE)
+                {
+                    larg = va_arg(ap, long long);
+                }
                 else
                 {
                     /* Note: 'signed char' and 'short' are promoted to 'int'
@@ -354,7 +372,7 @@ int _doprnt(const char *fmt, va_list ap, int (*putc_func) (int, void*), void* pu
 				base = 16;
 				/* Hashflag set on hex display means put 0x at front   */
 				hashtype = 3;
-				ularg = (unsigned long) va_arg(ap, void*);
+				ularg = (unsigned long long) va_arg(ap, void*);
 				pad_char = '0';
 				fmin = sizeof(void*);
 				break;
@@ -368,6 +386,10 @@ int _doprnt(const char *fmt, va_list ap, int (*putc_func) (int, void*), void* pu
                 if (size == LONG_SIZE)
                 {
                     ularg = va_arg(ap, unsigned long);
+                }
+                else if (size == LONG_LONG_SIZE)
+                {
+                    ularg = va_arg(ap, unsigned long long);
                 }
                 else
                 {
@@ -587,7 +609,7 @@ static constexpr unsigned char base_to_nbits[17] = {
  * @param alt_digits
  *      TRUE if hex digits should be upper case rather than lowercase.
  */
-static void ulong_to_string(unsigned long num, char *str,
+static void ulong_to_string(unsigned long long num, char *str,
                             unsigned int base, bool alt_digits)
 {
     const char *digits = digits_lc;

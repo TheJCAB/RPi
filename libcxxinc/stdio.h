@@ -15,7 +15,7 @@ Macros:
 */
 
 //#define BUFSIZ
-#define EOF -1
+#define EOF (-1)
 //#define FILENAME_MAX
 //#define FOPEN_MAX
 //#define L_tmpnam

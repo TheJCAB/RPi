@@ -4,6 +4,8 @@ add_executable(kernel8
     Boot.S
     Main.cpp
     Crt.cpp
+    CppException.cpp
+    CppTypeInfo.cpp
 
     Cpu.cpp             Cpu.h
     Gpio.cpp            Gpio.h
@@ -17,7 +19,8 @@ add_executable(kernel8
     Timer.cpp           Timer.h
     UsbDevices.cpp      UsbDevices.h
     HidUsbDevices.cpp   HidUsbDevices.h
-    Keyboard.cpp        keyboard.h
+    Keyboard.cpp        Keyboard.h
+    PCIe.cpp            PCIe.h
 
     emb-stdio.cpp       emb-stdio.h
     DesignWareUsb.cpp   DesignWareUsb.h
@@ -34,6 +37,7 @@ target_compile_options(kernel8 PRIVATE
     -ffreestanding
     -Wno-builtin-macro-redefined
     -O3
+    -frtti
     #-fPIC
     -mcmodel=tiny
     #-flto

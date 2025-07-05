@@ -21,7 +21,7 @@ extern uintptr_t QA7Base;   // 0x4000'0000u for Raspberry Pi 1/2/3, 0xFF80'0000u
 template < typename T >
 concept RegisterType = (std::is_trivially_copyable_v<std::remove_const_t<T>>) && (sizeof(T) == sizeof(uint32_t));
 
-template < uintptr_t& Base, bool isConst, uint32_t Offset = static_cast<uint32_t>(-1) >
+template < uintptr_t const& Base, bool isConst, uint32_t Offset = static_cast<uint32_t>(-1) >
 struct RegisterProxyBase
 {
     auto& RefUint32() const 
@@ -39,7 +39,7 @@ struct RegisterProxyBase
     }
 };
 
-template < uintptr_t& Base, bool isConst >
+template < uintptr_t const& Base, bool isConst >
 struct RegisterProxyBase<Base, isConst, static_cast<uint32_t>(-1)>
 {
     uint32_t Offset;
@@ -84,7 +84,7 @@ struct RegisterProxyBase<Base, isConst, static_cast<uint32_t>(-1)>
 /// @tparam Base Reference to the MMIO base address variable.
 /// @tparam T    Register type (must conform to the RegisterType concept).
 ///
-template < uintptr_t& Base, RegisterType T, uint32_t Offset = static_cast<uint32_t>(-1) >
+template < uintptr_t const& Base, RegisterType T, uint32_t Offset = static_cast<uint32_t>(-1) >
 struct RegisterProxy : RegisterProxyBase<Base, std::is_const_v<T>, Offset>
 {
     using RegisterProxyBase<Base, std::is_const_v<T>, Offset>::RegisterProxyBase;
@@ -134,7 +134,7 @@ struct RegisterProxy : RegisterProxyBase<Base, std::is_const_v<T>, Offset>
     }
 };
 
-template < uintptr_t& Base, RegisterType T, uint32_t Count, uint32_t Span, uint32_t Offset = static_cast<uint32_t>(-1) >
+template < uintptr_t const& Base, RegisterType T, uint32_t Count, uint32_t Span, uint32_t Offset = static_cast<uint32_t>(-1) >
 struct RegisterArrayProxy
 {
     RegisterProxy<Base, T> operator[](uint32_t index) const
@@ -144,7 +144,7 @@ struct RegisterArrayProxy
     }
 };
 
-template < uintptr_t& Base, RegisterType T, uint32_t Count, uint32_t Span >
+template < uintptr_t const& Base, RegisterType T, uint32_t Count, uint32_t Span >
 struct RegisterArrayProxy<Base, T, Count, Span, static_cast<uint32_t>(-1)>
 {
     uint32_t Offset;

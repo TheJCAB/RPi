@@ -12,7 +12,7 @@ void HandlePeriodicInterrupt();
 namespace Exception
 {
 
-void DataAbortException(Uart::LockedStream& stream, uint8_t ec, uint32_t iss, uint32_t iss2, uint32_t far)
+void DataAbortException(Uart::LockedStream& stream, uint8_t ec, uint32_t iss, uint32_t iss2, uint64_t far)
 {
     stream.Puts("Data ");
     bool isWrite = ((iss >> 6) & 1) == 1;;

@@ -115,6 +115,8 @@ void perror(const char* s);
 #    pragma GCC system_header
 #  endif
 
+#include "__algorithm/remove.h"
+
 _LIBCPP_BEGIN_NAMESPACE_STD
 
 using ::FILE _LIBCPP_USING_IF_EXISTS;
@@ -155,7 +157,7 @@ using ::perror _LIBCPP_USING_IF_EXISTS;
 
 using ::fopen _LIBCPP_USING_IF_EXISTS;
 using ::freopen _LIBCPP_USING_IF_EXISTS;
-using ::remove _LIBCPP_USING_IF_EXISTS;
+//using ::remove _LIBCPP_USING_IF_EXISTS;
 using ::rename _LIBCPP_USING_IF_EXISTS;
 using ::tmpfile _LIBCPP_USING_IF_EXISTS;
 using ::tmpnam _LIBCPP_USING_IF_EXISTS;

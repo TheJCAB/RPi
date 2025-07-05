@@ -26,8 +26,10 @@
 #include <__type_traits/is_constant_evaluated.h>
 #include <__utility/is_pointer_in_range.h>
 #include <cstdint>
-#include <cstdio>
-#include <iosfwd>
+//#include <cstdio>
+//#include <iosfwd>
+
+#define EOF    (-1)
 
 #if _LIBCPP_HAS_WIDE_CHARACTERS
 #  include <cwchar> // for wmemcpy
@@ -81,9 +83,9 @@ template <>
 struct char_traits<char> {
   using char_type  = char;
   using int_type   = int;
-  using off_type   = streamoff;
-  using pos_type   = streampos;
-  using state_type = mbstate_t;
+//  using off_type   = streamoff;
+//  using pos_type   = streampos;
+//  using state_type = mbstate_t;
 #if _LIBCPP_STD_VER >= 20
   using comparison_category = strong_ordering;
 #endif
@@ -173,14 +175,14 @@ template <class _CharT, class _IntT, _IntT _EOFVal>
 struct __char_traits_base {
   using char_type  = _CharT;
   using int_type   = _IntT;
-  using off_type   = streamoff;
-  using state_type = mbstate_t;
+//  using off_type   = streamoff;
+//  using state_type = mbstate_t;
 #if _LIBCPP_STD_VER >= 20
   using comparison_category = strong_ordering;
 #endif
 
   // There are different aliases for the different char types, but they are all aliases to this type
-  using pos_type = fpos<mbstate_t>;
+  //using pos_type = fpos<mbstate_t>;
 
   _LIBCPP_HIDE_FROM_ABI static inline _LIBCPP_CONSTEXPR_SINCE_CXX17 void
   assign(char_type& __lhs, const char_type& __rhs) _NOEXCEPT {

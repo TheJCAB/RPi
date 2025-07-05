@@ -18,6 +18,7 @@
 #include "Timer.h"
 #include "Run.h"
 #include "UsbDevices.h"
+#include "PCIe.h"
 
 #include "emb-stdio.h"
 
@@ -279,23 +280,30 @@ void Core0()
     while (!Core3Ready) asm volatile ("wfe;dmb ish;sev" ::: "memory");
     Uart::Puts("Core 3 is going\n");
 
-    //Timer::SetPeriodicInterrupt(1000'000); // Set a periodic interrupt every second
-    //Timer::Delay(3'000'000);
+    if (isRpi4)
+    {
+        PCIe::examples::demonstrate_enumeration();
+    }
+    else
+    {
+        //Timer::SetPeriodicInterrupt(1000'000); // Set a periodic interrupt every second
+        //Timer::Delay(3'000'000);
 
-    UsbInitialise();
-    Timer::Delay(10'000);
-    Uart::Init();
+        UsbInitialise();
+        Timer::Delay(10'000);
+        Uart::Init();
 
-    Uart::Puts("Waiting...\n");
-    Timer::Delay(1000'000);
+        Uart::Puts("Waiting...\n");
+        Timer::Delay(1000'000);
 
-    UsbCheckForChange();
-    Uart::Init();
+        UsbCheckForChange();
+        Uart::Init();
 
-    /* Display the USB tree */
-    printf2("\n");
-    UsbShowTree(UsbGetRootHub(), 1, '+');
-    printf2("\n");
+        /* Display the USB tree */
+        printf2("\n");
+        UsbShowTree(UsbGetRootHub(), 1, '+');
+        printf2("\n");
+    }
 
     Uart::Puts("Waiting...\n");
     Timer::Delay(1000'000);

@@ -7,6 +7,11 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include "stddef.h"
+
+extern "C"
+{
+
 /*
     stdlib.h synopsis
 
@@ -39,8 +44,10 @@ unsigned long long strtoull(const char* restrict nptr, char** restrict endptr, i
 int rand(void);
 void srand(unsigned int seed);
 void* calloc(size_t nmemb, size_t size);
+*/
 void free(void* ptr);
 void* malloc(size_t size);
+/*
 void* realloc(void* ptr, size_t size);
 void abort(void);
 int atexit(void (*func)(void));
@@ -72,6 +79,8 @@ void quick_exit(int status);                                              // C++
 void *aligned_alloc(size_t alignment, size_t size);                       // C11
 
 */
+
+}
 
 #if defined(__cplusplus) && __cplusplus < 201103L && defined(_LIBCPP_USE_FROZEN_CXX03_HEADERS)
 #  include <__cxx03/stdlib.h>
