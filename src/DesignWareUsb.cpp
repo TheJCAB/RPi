@@ -39,6 +39,7 @@
 #include "Mailbox.h"
 #include "Timer.h"
 #include "Processor.h"
+#include "Interrupts.h"
 
 #include "emb-stdio.h"				// Needed for printf
 
@@ -610,7 +611,7 @@ struct __attribute__((__packed__, aligned(1))) HostChannelSplitControl {
         struct __attribute__((__packed__, aligned(1))) {
             unsigned port_address : 7;						// @0-6		0-based index of the port on the high-speed hub Transaction Translator occurs
             unsigned hub_address : 7;						// @7-13	USB device address of the high-speed hub that acts as Transaction Translator
-            unsigned transaction_position : 2;				// @14-15	If we are processing split the transation position Begin=2,End=1,Middle=0,All=3
+            unsigned transaction_position : 2;				// @14-15	If we are processing isochronous OUT split the transation position Begin=2,End=1,Middle=0,All=3
             unsigned complete_split : 1;					// @16		1 to complete a Split transaction, 0 = normal transaction
             unsigned _reserved : 14;						// @17-30
             unsigned split_enable : 1;						// @31		Set to 1 to enable Split Transactions
@@ -836,7 +837,6 @@ void DwcResume()
 
 void DwcPowerOff()
 {
-    LOG("Physical host power off\n");
     auto tempPort = *DWC_HOST_PORT;
     tempPort.Raw32 &= HOSTPORTMASK;
     tempPort.Power = false;
@@ -1037,6 +1037,90 @@ DWCRESULT HCDReceiveFifoFlush(void) {
     return DWCRESULT::Ok;
 }
 
+void HandleOtgInterrupt()
+{
+    CoreOtgInterrupt otg = DWC_CORE_OTGINTERRUPT;
+
+    Uart::Raw::Puts("OTG Interrupt: ");
+    Uart::Raw::PutBin(otg.Raw32);
+    Uart::Raw::Puts("\n");
+
+    if (otg.SessionEndDetected                ) { Uart::Raw::Puts("SessionEndDetected"                );  }
+    if (otg.SessionRequestSuccessStatusChange ) { Uart::Raw::Puts("SessionRequestSuccessStatusChange" );  }
+    if (otg.HostNegotiationSuccessStatusChange) { Uart::Raw::Puts("HostNegotiationSuccessStatusChange");  }
+    if (otg.HostNegotiationDetected           ) { Uart::Raw::Puts("HostNegotiationDetected"           );  }
+    if (otg.ADeviceTimeoutChange              ) { Uart::Raw::Puts("ADeviceTimeoutChange"              );  }
+    if (otg.DebounceDone                      ) { Uart::Raw::Puts("DebounceDone"                      );  }
+
+    DWC_CORE_OTGINTERRUPT = otg;
+}
+
+void HandlePortInterrupt()
+{
+    HostPort port = DWC_HOST_PORT;
+    Uart::Raw::Puts("DWC_HOST_PORT: ");
+    Uart::Raw::PutBin(port.Raw32);
+    Uart::Raw::Puts("\n");
+
+    if (port.ConnectChanged    ) { Uart::Raw::Puts("ConnectChanged    : "); Uart::Raw::PutDec(port.Connect    ); Uart::Raw::Puts("\n"); }
+    if (port.EnableChanged     ) { Uart::Raw::Puts("EnableChanged     : "); Uart::Raw::PutDec(port.Enable     ); Uart::Raw::Puts("\n"); }
+    if (port.OverCurrentChanged) { Uart::Raw::Puts("OverCurrentChanged: "); Uart::Raw::PutDec(port.OverCurrent); Uart::Raw::Puts("\n"); }
+
+    port.Enable = false;
+
+    DWC_HOST_PORT = port;
+}
+
+void InterruptHandler()
+{
+    // See what's what.
+    CoreInterrupts interrupts = DWC_CORE_INTERRUPT;
+    CoreInterrupts const mask = DWC_CORE_INTERRUPTMASK;
+
+    Uart::Raw::Puts("DWC_CORE_INTERRUPT    : 0x");
+    Uart::Raw::PutBin(DWC_CORE_INTERRUPT.get().Raw32);
+    Uart::Raw::Puts("\n");
+
+    Uart::Raw::Puts("DWC_CORE_INTERRUPTMASK: 0x");
+    Uart::Raw::PutBin(DWC_CORE_INTERRUPTMASK.get().Raw32);
+    Uart::Raw::Puts("\n");
+
+    interrupts.Raw32 &= mask.Raw32; // Mask out the interrupts we are not interested in.
+
+    if (interrupts.CurrentMode                 ) { Uart::Raw::Puts("CurrentMode\n"                 ); DWC_CORE_INTERRUPT = CoreInterrupts{ .CurrentMode                  = true }; }
+    if (interrupts.ModeMismatch                ) { Uart::Raw::Puts("ModeMismatch\n"                ); DWC_CORE_INTERRUPT = CoreInterrupts{ .ModeMismatch                 = true }; }
+    if (interrupts.Otg                         ) { HandleOtgInterrupt(); }
+    if (interrupts.DmaStartOfFrame             ) { Uart::Raw::Puts("DmaStartOfFrame\n"             ); DWC_CORE_INTERRUPT = CoreInterrupts{ .DmaStartOfFrame              = true }; }
+    if (interrupts.ReceiveStatusLevel          ) { Uart::Raw::Puts("ReceiveStatusLevel\n"          ); DWC_CORE_INTERRUPT = CoreInterrupts{ .ReceiveStatusLevel           = true }; }
+    if (interrupts.NpTransmitFifoEmpty         ) { Uart::Raw::Puts("NpTransmitFifoEmpty\n"         ); DWC_CORE_INTERRUPT = CoreInterrupts{ .NpTransmitFifoEmpty          = true }; }
+    if (interrupts.ginnakeff                   ) { Uart::Raw::Puts("ginnakeff\n"                   ); DWC_CORE_INTERRUPT = CoreInterrupts{ .ginnakeff                    = true }; }
+    if (interrupts.goutnakeff                  ) { Uart::Raw::Puts("goutnakeff\n"                  ); DWC_CORE_INTERRUPT = CoreInterrupts{ .goutnakeff                   = true }; }
+    if (interrupts.ulpick                      ) { Uart::Raw::Puts("ulpick\n"                      ); DWC_CORE_INTERRUPT = CoreInterrupts{ .ulpick                       = true }; }
+    if (interrupts.I2c                         ) { Uart::Raw::Puts("I2c\n"                         ); DWC_CORE_INTERRUPT = CoreInterrupts{ .I2c                          = true }; }
+    if (interrupts.EarlySuspend                ) { Uart::Raw::Puts("EarlySuspend\n"                ); DWC_CORE_INTERRUPT = CoreInterrupts{ .EarlySuspend                 = true }; }
+    if (interrupts.UsbSuspend                  ) { Uart::Raw::Puts("UsbSuspend\n"                  ); DWC_CORE_INTERRUPT = CoreInterrupts{ .UsbSuspend                   = true }; }
+    if (interrupts.UsbReset                    ) { Uart::Raw::Puts("UsbReset\n"                    ); DWC_CORE_INTERRUPT = CoreInterrupts{ .UsbReset                     = true }; }
+    if (interrupts.EnumerationDone             ) { Uart::Raw::Puts("EnumerationDone\n"             ); DWC_CORE_INTERRUPT = CoreInterrupts{ .EnumerationDone              = true }; }
+    if (interrupts.IsochronousOutDrop          ) { Uart::Raw::Puts("IsochronousOutDrop\n"          ); DWC_CORE_INTERRUPT = CoreInterrupts{ .IsochronousOutDrop           = true }; }
+    if (interrupts.eopframe                    ) { Uart::Raw::Puts("eopframe\n"                    ); DWC_CORE_INTERRUPT = CoreInterrupts{ .eopframe                     = true }; }
+    if (interrupts.RestoreDone                 ) { Uart::Raw::Puts("RestoreDone\n"                 ); DWC_CORE_INTERRUPT = CoreInterrupts{ .RestoreDone                  = true }; }
+    if (interrupts.EndPointMismatch            ) { Uart::Raw::Puts("EndPointMismatch\n"            ); DWC_CORE_INTERRUPT = CoreInterrupts{ .EndPointMismatch             = true }; }
+    if (interrupts.InEndPoint                  ) { Uart::Raw::Puts("InEndPoint\n"                  ); DWC_CORE_INTERRUPT = CoreInterrupts{ .InEndPoint                   = true }; }
+    if (interrupts.OutEndPoint                 ) { Uart::Raw::Puts("OutEndPoint\n"                 ); DWC_CORE_INTERRUPT = CoreInterrupts{ .OutEndPoint                  = true }; }
+    if (interrupts.IncompleteIsochronousIn     ) { Uart::Raw::Puts("IncompleteIsochronousIn\n"     ); DWC_CORE_INTERRUPT = CoreInterrupts{ .IncompleteIsochronousIn      = true }; }
+    if (interrupts.IncompleteIsochronousOut    ) { Uart::Raw::Puts("IncompleteIsochronousOut\n"    ); DWC_CORE_INTERRUPT = CoreInterrupts{ .IncompleteIsochronousOut     = true }; }
+    if (interrupts.fetsetup                    ) { Uart::Raw::Puts("fetsetup\n"                    ); DWC_CORE_INTERRUPT = CoreInterrupts{ .fetsetup                     = true }; }
+    if (interrupts.ResetDetect                 ) { Uart::Raw::Puts("ResetDetect\n"                 ); DWC_CORE_INTERRUPT = CoreInterrupts{ .ResetDetect                  = true }; }
+    if (interrupts.Port                        ) { HandlePortInterrupt(); }
+    if (interrupts.HostChannel                 ) { Uart::Raw::Puts("HostChannel\n"                 ); DWC_CORE_INTERRUPT = CoreInterrupts{ .HostChannel                  = true }; }
+    if (interrupts.HpTransmitFifoEmpty         ) { Uart::Raw::Puts("HpTransmitFifoEmpty\n"         ); DWC_CORE_INTERRUPT = CoreInterrupts{ .HpTransmitFifoEmpty          = true }; }
+    if (interrupts.LowPowerModeTransmitReceived) { Uart::Raw::Puts("LowPowerModeTransmitReceived\n"); DWC_CORE_INTERRUPT = CoreInterrupts{ .LowPowerModeTransmitReceived = true }; }
+    if (interrupts.ConnectionIdStatusChange    ) { Uart::Raw::Puts("ConnectionIdStatusChange\n"    ); DWC_CORE_INTERRUPT = CoreInterrupts{ .ConnectionIdStatusChange     = true }; }
+    if (interrupts.Disconnect                  ) { Uart::Raw::Puts("Disconnect\n"                  ); DWC_CORE_INTERRUPT = CoreInterrupts{ .Disconnect                   = true }; }
+    if (interrupts.SessionRequest              ) { Uart::Raw::Puts("SessionRequest\n"              ); DWC_CORE_INTERRUPT = CoreInterrupts{ .SessionRequest               = true }; }
+    if (interrupts.Wakeup                      ) { Uart::Raw::Puts("Wakeup\n"                      ); DWC_CORE_INTERRUPT = CoreInterrupts{ .Wakeup                       = true }; }
+}
+
 /*-INTERNAL: HCDStart--------------------------------------------------------
  Starts the HCD system once completed this routiune the system is operational.
  24Feb17 LdB
@@ -1180,6 +1264,7 @@ DWCRESULT HCDStart (void) {
     tempOtgControl = *DWC_CORE_OTGCONTROL;
     tempOtgControl.HostSetHnpEnable = true;
     DWC_CORE_OTGCONTROL = tempOtgControl;
+    //DWC_CORE_OTGINTERRUPT = 0xFFFF'FFFFu; // Clear all OTG interrupts
 
     Timer::Delay(1000);
 
@@ -1301,6 +1386,23 @@ DWCRESULT HCDStart (void) {
     Timer::Delay(1000);
 
     LOG_DEBUG("HCD: Reset host port: 0x%08X\n", tempPort.Raw32);
+
+    Interrupts::EnableUsb(InterruptHandler);
+
+    DWC_CORE_AHB = [](auto& ahb){ ahb.InterruptEnable = true; };
+    CoreInterrupts mask{
+        .ReceiveStatusLevel = true,
+        .EnumerationDone = true,
+        .InEndPoint = true,
+        .OutEndPoint = true,
+        //.Port = true, // Port status changes (connections, disconnections). Handling them prevents the work of the initial enumeration. TODO: Fix this.
+        .HostChannel = true,
+        .ConnectionIdStatusChange = true,
+        .Disconnect = true,
+        .SessionRequest = true,
+    };
+    DWC_CORE_INTERRUPT = 0xFFFFFFFF; // Setting bits clears interrupts
+    DWC_CORE_INTERRUPTMASK = mask;
     
     LOG_DEBUG("HCD: Successfully started.\n");
 
@@ -1421,8 +1523,8 @@ ChannelInterrupts HCDWaitOnTransmissionResult(uint32_t timeout, uint8_t channel)
  --------------------------------------------------------------------------*/
 DWCRESULT HCDChannelTransfer(const struct UsbPipe pipe, const struct UsbPipeControl pipectrl, uint8_t* buffer, uint32_t& bufferLength, PacketId packetId) 
 {
-    LOG_DEBUG("HCD: Channel %u %s transfer, length %d, packetId %d, address %u, endpoint %u, type %u%s",
-        pipectrl.Channel, pipectrl.Direction == USB_DIRECTION_IN ? "in" : "out", bufferLength, packetId, pipe.Number, pipe.EndPoint, pipectrl.Type,
+    LOG_DEBUG("HCD: Channel %u %s transfer, length %d, packetId %d, address %u, endpoint %u, type %u, speed %u%s",
+        pipectrl.Channel, pipectrl.Direction == USB_DIRECTION_IN ? "in" : "out", bufferLength, packetId, pipe.Number, pipe.EndPoint, pipectrl.Type, pipe.Speed,
         pipectrl.Direction == USB_DIRECTION_IN ? "\n" : ", "
     );
     if (bufferLength >= 8 && pipectrl.Direction == USB_DIRECTION_OUT)
@@ -1458,11 +1560,11 @@ DWCRESULT HCDChannelTransfer(const struct UsbPipe pipe, const struct UsbPipeCont
     struct HostChannelSplitControl tempSplit = { 0 };
     if (pipe.Speed != USB_SPEED_HIGH) {
         LOG_DEBUG("Setting split control, addr: %i port: %i, packetSize: PacketSize: %u\n",
-            pipe.lowSpeedNodePoint, pipe.lowSpeedNodePort, pipe.MaxPacketSizeInBits);
+            pipe.splitNodePoint, pipe.splitNodePort, pipe.MaxPacketSizeInBits);
         tempSplit.split_enable = true;
-        tempSplit.hub_address = pipe.lowSpeedNodePoint;
-        tempSplit.port_address = pipe.lowSpeedNodePort;
-        tempSplit.transaction_position = 3;
+        tempSplit.hub_address = pipe.splitNodePoint;
+        tempSplit.port_address = pipe.splitNodePort;
+        tempSplit.transaction_position = 0;//3;
     }
     DWC_HOST_CHANNEL_SplitCtrl[pipectrl.Channel] = tempSplit;
 
@@ -1474,6 +1576,8 @@ DWCRESULT HCDChannelTransfer(const struct UsbPipe pipe, const struct UsbPipeCont
     if (tempXfer.packet_count == 0) tempXfer.packet_count = 1;
     tempXfer.packet_id = packetId;
     DWC_HOST_CHANNEL_TransferSize[pipectrl.Channel] = tempXfer;
+
+    LOG_DEBUG("HCD: Channel %u transfer size set to %#08X bytes.\n", pipectrl.Channel, tempXfer.Raw32);
 
     sendCtrl.PacketTries = 0;
     do {

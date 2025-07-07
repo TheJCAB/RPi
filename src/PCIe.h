@@ -18,7 +18,6 @@ namespace PCIe
 {
 
 // Forward declarations
-class Device;
 class Configuration;
 class MemoryMappedRegion;
 class InterruptHandler;
@@ -113,6 +112,7 @@ struct BarInfo {
     std::uint8_t bar_number;
     PhysicalAddress physical_address;
     std::size_t size;
+    uint8_t flags;
     bool is_memory_space;  // true for memory, false for I/O
     bool is_64bit;
     bool is_prefetchable;
@@ -128,9 +128,6 @@ struct Capability {
 // Concepts for type safety
 template<typename T>
 concept PCIeRegisterType = std::integral<T> && (sizeof(T) <= 4);
-
-template<typename T>
-concept InterruptCallable = std::invocable<T, const Device&>;
 
 // Configuration space accessor
 class Configuration
@@ -175,188 +172,47 @@ public:
     [[nodiscard]] ClassCode class_code() const noexcept;
     [[nodiscard]] uint16_t  command   () const noexcept;
     [[nodiscard]] uint16_t  status    () const noexcept;
-    
-    PCIeError set_command(std::uint16_t command) noexcept;
-    
+
+    [[nodiscard]] PCIeError set_command(std::uint16_t command) noexcept;
+
+    [[nodiscard]] PCIeError enable_device();
+    [[nodiscard]] PCIeError disable_device();
+
     // BAR access
-    [[nodiscard]] std::expected<std::vector<BarInfo>, PCIeError> enumerate_bars() const;
-    [[nodiscard]] std::expected<BarInfo, PCIeError> get_bar(std::uint8_t bar_number) const;
-    
+    [[nodiscard]] size_t enumerate_bars(std::span<BarInfo>) const;
+    [[nodiscard]] BarInfo get_bar(std::uint8_t bar_number) const;
+    [[nodiscard]] std::span<uint8_t> map_bar(BarInfo& bar);
+
     // Capability iteration
     [[nodiscard]] std::expected<std::vector<Capability>, PCIeError> enumerate_capabilities() const;
     [[nodiscard]] std::expected<std::optional<Capability>, PCIeError> find_capability(std::uint8_t cap_id) const;
-    
+
+   
 private:
     DeviceAddress address_ = InvalidDeviceAddress;
     uintptr_t registersBase_ = 0; // Base address for configuration space registers
 };
 
-// Memory-mapped I/O region
-class MemoryMappedRegion {
-public:
-    MemoryMappedRegion(PhysicalAddress phys_addr, std::size_t size);
-    ~MemoryMappedRegion();
-    
-    MemoryMappedRegion(const MemoryMappedRegion&) = delete;
-    MemoryMappedRegion& operator=(const MemoryMappedRegion&) = delete;
-    MemoryMappedRegion(MemoryMappedRegion&&) noexcept;
-    MemoryMappedRegion& operator=(MemoryMappedRegion&&) noexcept;
-    
-    // Register access with type safety
-    template<PCIeRegisterType T>
-    [[nodiscard]] T read(std::size_t offset) const noexcept;
-    
-    template<PCIeRegisterType T>
-    void write(std::size_t offset, T value) noexcept;
-    
-    // Memory barriers
-    void memory_barrier() const noexcept;
-    void read_barrier() const noexcept;
-    void write_barrier() const noexcept;
-    
-    [[nodiscard]] VirtualAddress virtual_address() const noexcept { return virtual_addr_; }
-    [[nodiscard]] PhysicalAddress physical_address() const noexcept { return physical_addr_; }
-    [[nodiscard]] std::size_t size() const noexcept { return size_; }
-    [[nodiscard]] bool is_valid() const noexcept { return virtual_addr_ != nullptr; }
-    
-private:
-    PhysicalAddress physical_addr_;
-    VirtualAddress virtual_addr_;
-    std::size_t size_;
+// Main PCIe device information class
+struct DeviceInfo
+{
+    PCIe::DeviceAddress Address;
+    PCIe::VendorID      VendorId;
+    PCIe::DeviceID      DeviceId;
+    PCIe::ClassCode     ClassCode;
 };
 
-// Interrupt management
-class InterruptHandler {
-public:
-    using HandlerFunction = std::function<void(const Device&)>;
-    
-    explicit InterruptHandler(const Device& device);
-    ~InterruptHandler();
-    
-    InterruptHandler(const InterruptHandler&) = delete;
-    InterruptHandler& operator=(const InterruptHandler&) = delete;
-    //InterruptHandler(InterruptHandler&&) = default;
-    //InterruptHandler& operator=(InterruptHandler&&) = default;
-    
-    // MSI/MSI-X support
-    [[nodiscard]] PCIeError enable_msi(std::uint8_t vector_count = 1);
-    [[nodiscard]] PCIeError enable_msi_x(std::uint16_t vector_count);
-    PCIeError disable_interrupts() noexcept;
-    
-    // Handler registration
-    PCIeError register_handler(HandlerFunction handler);
-    void unregister_handler() noexcept;
-    
-    [[nodiscard]] bool is_enabled() const noexcept { return enabled_.load(); }
-    [[nodiscard]] bool supports_msi() const noexcept;
-    [[nodiscard]] bool supports_msi_x() const noexcept;
-    
-private:
-    const Device& device_;
-    std::atomic<bool> enabled_{false};
-    HandlerFunction handler_;
-    std::mutex handler_mutex_;
-};
-
-// Main PCIe device class
-class Device {
-public:
-    explicit Device(Configuration addr);
-    ~Device() = default;
-    
-    Device(const Device&) = delete;
-    Device& operator=(const Device&) = delete;
-    //Device(Device&&) = default;
-    //Device& operator=(Device&&) = default;
-    
-    // Device identification
-    [[nodiscard]] DeviceAddress address   () const noexcept { return address_   ; }
-    [[nodiscard]] VendorID      vendor_id () const noexcept { return vendor_id_ ; }
-    [[nodiscard]] DeviceID      device_id () const noexcept { return device_id_ ; }
-    [[nodiscard]] ClassCode     class_code() const noexcept { return class_code_; }
-    [[nodiscard]] bool is_valid() const;
-    
-    // Configuration space access
-    [[nodiscard]] Configuration configuration() const noexcept;
-    
-    // Memory mapping
-    [[nodiscard]] std::expected<std::unique_ptr<MemoryMappedRegion>, PCIeError> 
-    map_bar(std::uint8_t bar_number);
-    
-    // Power management
-    PCIeError enable_device();
-    PCIeError disable_device();
-    [[nodiscard]] bool is_enabled() const;
-    
-    // Interrupt management
-    [[nodiscard]] std::expected<std::unique_ptr<InterruptHandler>, PCIeError> 
-    create_interrupt_handler();
-    
-    // DMA operations (if supported)
-    [[nodiscard]] std::expected<PhysicalAddress, PCIeError> 
-    allocate_dma_buffer(std::size_t size, std::size_t alignment = 4096);
-    PCIeError free_dma_buffer(PhysicalAddress addr, std::size_t size);
-    
-private:
-    DeviceAddress address_;
-    VendorID      vendor_id_;
-    DeviceID      device_id_;
-    ClassCode     class_code_;
-    mutable std::mutex device_mutex_;
-    std::atomic<bool> enabled_{false};
-};
 
 // PCIe bus manager/driver
-class PCIeDriver {
-public:
-    static PCIeDriver& instance();
-    
-    PCIeDriver(const PCIeDriver&) = delete;
-    PCIeDriver& operator=(const PCIeDriver&) = delete;
-    
-    // Initialization
-    [[nodiscard]] PCIeError initialize();
-    void shutdown() noexcept;
-    [[nodiscard]] bool is_initialized() const noexcept { return initialized_.load(); }
-    
-    // Device enumeration
-    [[nodiscard]] std::expected<std::vector<DeviceAddress>, PCIeError> enumerate_devices();
-    [[nodiscard]] std::expected<std::vector<DeviceAddress>, PCIeError> 
-    find_devices(VendorID vendor, std::optional<DeviceID> device = std::nullopt);
-    [[nodiscard]] std::expected<std::vector<DeviceAddress>, PCIeError> 
-    find_devices_by_class(ClassCode class_code, std::uint32_t mask = 0xFFFFFF00);
-    
-    // Device creation
-    [[nodiscard]] std::expected<std::unique_ptr<Device>, PCIeError> 
-    create_device(DeviceAddress addr);
-    
-    // Hot-plug support
-    using HotplugCallback = std::function<void(DeviceAddress, bool /* added */)>;
-    PCIeError register_hotplug_callback(HotplugCallback callback);
-    void unregister_hotplug_callback() noexcept;
-    
-    // Statistics and debugging
-    struct Statistics {
-        std::size_t total_devices;
-        std::size_t active_devices;
-        std::size_t total_interrupts;
-        std::size_t dma_allocations;
-        std::size_t memory_mapped_regions;
-    };
-    
-    [[nodiscard]] Statistics get_statistics() const noexcept;
-    void reset_statistics() noexcept;
-    
-private:
-    PCIeDriver() = default;
-    ~PCIeDriver() = default;
-    
-    std::atomic<bool> initialized_{false};
-    mutable std::shared_mutex driver_mutex_;
-    std::vector<std::unique_ptr<Device>> active_devices_;
-    HotplugCallback hotplug_callback_;
-    mutable Statistics stats_{};
-};
+
+// Initialization
+[[nodiscard]] PCIeError initialize();
+[[nodiscard]] bool is_initialized() noexcept;
+
+// Device enumeration
+[[nodiscard]] std::vector<DeviceInfo> enumerate_devices();
+[[nodiscard]] std::vector<DeviceInfo> find_devices(VendorID vendor, std::optional<DeviceID> device = std::nullopt);
+[[nodiscard]] std::vector<DeviceInfo> find_devices_by_class(ClassCode class_code, std::uint32_t mask = 0xFFFFFF00);
 
 // Utility functions
 namespace utils {
@@ -373,40 +229,12 @@ namespace utils {
     [[nodiscard]] constexpr bool is_power_of_two(std::size_t value) noexcept;
 }
 
-// RAII helper for device management
-class ScopedDevice {
-public:
-    explicit ScopedDevice(DeviceAddress addr);
-    ~ScopedDevice();
-    
-    ScopedDevice(const ScopedDevice&) = delete;
-    ScopedDevice& operator=(const ScopedDevice&) = delete;
-    ScopedDevice(ScopedDevice&&) = default;
-    ScopedDevice& operator=(ScopedDevice&&) = default;
-    
-    [[nodiscard]] Device* operator->() noexcept { return device_.get(); }
-    [[nodiscard]] const Device* operator->() const noexcept { return device_.get(); }
-    [[nodiscard]] Device& operator*() noexcept { return *device_; }
-    [[nodiscard]] const Device& operator*() const noexcept { return *device_; }
-    
-    [[nodiscard]] bool is_valid() const noexcept { return device_ != nullptr; }
-    [[nodiscard]] Device* get() noexcept { return device_.get(); }
-    [[nodiscard]] const Device* get() const noexcept { return device_.get(); }
-    
-private:
-    std::unique_ptr<Device> device_;
-};
-
-
 
 // Example usage function (for demonstration)
 namespace examples {
     
 // Example: Enumerate and display all PCIe devices
 void demonstrate_enumeration();
-
-// Example: Find a specific device by vendor/device ID
-void find_usb_controller();
 
 }
 // namespace examples

@@ -1,8 +1,10 @@
 #include "Run.h"
+#include "Mmio.h"
 #include "Uart.h"
 #include "Timer.h"
 #include "Framebuffer.h"
 #include "Keyboard.h"
+#include "Gamepad.h"
 
 #include "emb-stdio.h"
 
@@ -132,6 +134,7 @@ void FlashScreen(Color565 color)
 void Snake()
 {
     Keyboard::Init();
+    Gamepad::Init();
 
     using namespace Framebuffer;
 
@@ -139,19 +142,19 @@ void Snake()
 
     for (;;)
     {
-        if (Keyboard::IsKeyPressed('d'))
+        if (Keyboard::IsKeyPressed('d') || Gamepad::IsButtonPressed(Gamepad::Button::AnyRight))
         {
             direction = Right;
         }
-        if (Keyboard::IsKeyPressed('a'))
+        if (Keyboard::IsKeyPressed('a') || Gamepad::IsButtonPressed(Gamepad::Button::AnyLeft))
         {
             direction = Left;
         }
-        if (Keyboard::IsKeyPressed('s'))
+        if (Keyboard::IsKeyPressed('s') || Gamepad::IsButtonPressed(Gamepad::Button::AnyDown))
         {
             direction = Down;
         }
-        if (Keyboard::IsKeyPressed('w'))
+        if (Keyboard::IsKeyPressed('w') || Gamepad::IsButtonPressed(Gamepad::Button::AnyUp))
         {
             direction = Up;
         }

@@ -84,9 +84,7 @@ void SetPeriodicInterrupt(uint64_t us)
     uint64_t ctl = 1; // Enable = 1, IMASK = 0, ISTATUS = don't care
     asm volatile ("msr cntv_ctl_el0, %0" :: "r"(ctl));
 
-    asm volatile("msr daifclr, #2"); // Clear IRQ mask in DAIF
-
-    *reinterpret_cast<volatile uint32_t*>(0x8000'0040u) = 0x08; // Enable the virtual timer interrupt
+    *reinterpret_cast<volatile uint32_t*>(0x8000'0040u) = 0x08; // Enable the virtual timer interrupt for core 3
 
 // This stuff is RPi4
 //    // Enable the interrupt in the interrupt controller (GIC)

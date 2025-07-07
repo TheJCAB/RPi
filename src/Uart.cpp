@@ -180,6 +180,24 @@ void PutDec(auto value)
     }
 }
 
+template void PutHex(uint64_t value);
+template void PutHex(uint32_t value);
+template void PutHex(uint16_t value);
+template void PutHex(uint8_t  value);
+template void PutHex(bool     value);
+
+template void PutBin(uint64_t value);
+template void PutBin(uint32_t value);
+template void PutBin(uint16_t value);
+template void PutBin(uint8_t  value);
+template void PutBin(bool     value);
+
+template void PutDec(uint64_t value);
+template void PutDec(uint32_t value);
+template void PutDec(uint16_t value);
+template void PutDec(uint8_t  value);
+template void PutDec(bool     value);
+
 } // namespace Raw
 
 
@@ -238,17 +256,20 @@ void PutDec(auto value)
 template void PutHex(uint64_t value);
 template void PutHex(uint32_t value);
 template void PutHex(uint16_t value);
-template void PutHex(uint8_t value);
+template void PutHex(uint8_t  value);
+template void PutHex(bool     value);
 
 template void PutBin(uint64_t value);
 template void PutBin(uint32_t value);
 template void PutBin(uint16_t value);
-template void PutBin(uint8_t value);
+template void PutBin(uint8_t  value);
+template void PutBin(bool     value);
 
 template void PutDec(uint64_t value);
 template void PutDec(uint32_t value);
 template void PutDec(uint16_t value);
-template void PutDec(uint8_t value);
+template void PutDec(uint8_t  value);
+template void PutDec(bool     value);
 
 LockedStream::LockedStream(bool tryOnly)
 {
@@ -311,17 +332,20 @@ void LockedStream::PutDec(auto value)
 template void LockedStream::PutHex(uint64_t value);
 template void LockedStream::PutHex(uint32_t value);
 template void LockedStream::PutHex(uint16_t value);
-template void LockedStream::PutHex(uint8_t value);
+template void LockedStream::PutHex(uint8_t  value);
+template void LockedStream::PutHex(bool     value);
 
 template void LockedStream::PutBin(uint64_t value);
 template void LockedStream::PutBin(uint32_t value);
 template void LockedStream::PutBin(uint16_t value);
-template void LockedStream::PutBin(uint8_t value);
+template void LockedStream::PutBin(uint8_t  value);
+template void LockedStream::PutBin(bool     value);
 
 template void LockedStream::PutDec(uint64_t value);
 template void LockedStream::PutDec(uint32_t value);
 template void LockedStream::PutDec(uint16_t value);
-template void LockedStream::PutDec(uint8_t value);
+template void LockedStream::PutDec(uint8_t  value);
+template void LockedStream::PutDec(bool     value);
 
 }
 // namespace Uart

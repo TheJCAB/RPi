@@ -1,85 +1,141 @@
 // The interrupt controller routes IRQs or FIQs to core 0
 
-struct Basic_IRQs
+#include "Interrupts.h"
+
+#include "Mmio.h"
+
+#include <stdint.h>
+
+namespace Interrupts
 {
-    uint32_t ARM_Timer      : 1; // @0
-    uint32_t ARM_Mailbox    : 1; // @1
-    uint32_t ARM_Doorbell_0 : 1; // @2
-    uint32_t ARM_Doorbell_1 : 1; // @3
-    uint32_t GPU_0_Halted   : 1; // @4
-    uint32_t GPU_1_Halted   : 1; // @5
-    uint32_t Access_Error_1 : 1; // @6
-    uint32_t Access_Error_0 : 1; // @7
-    uint32_t unused         : 24; // @8-31
+
+union BasicIrqPending
+{
+    struct
+    {
+        uint32_t ARM_Timer      : 1; // @0
+        uint32_t ARM_Mailbox    : 1; // @1
+        uint32_t ARM_Doorbell_0 : 1; // @2
+        uint32_t ARM_Doorbell_1 : 1; // @3
+        uint32_t GPU_0_Halted   : 1; // @4
+        uint32_t GPU_1_Halted   : 1; // @5
+        uint32_t Access_Error_1 : 1; // @6
+        uint32_t Access_Error_0 : 1; // @7
+        uint32_t IRQs1          : 1; // @8 Some IRQs are in table 1 that don't have a copy here.
+        uint32_t IRQs2          : 1; // @9
+        uint32_t Jpeg           : 1; // @10 Copy of IRQ 7 which is USB
+        uint32_t USB            : 1; // @11 Copy of IRQ 9 which is USB
+        uint32_t unused         : 20; // @12-31
+    };
+    uint32_t Raw32; // Union to access all 32 bits as a uint32_t
+
+    explicit operator bool() const { return Raw32 != 0; }
 };
 
-// IRQs 1
-//0       ST_C0
-//1       ST_C1
-//2       ST_C2
-//3       ST_C3
-//4       codec0 (vce? h264?)
-//5       codec1
-//6       codec2
-//7       jpeg
-//8       isp
-//9       usb
-//10      v3d
-//11      transposer
-//12      multicore sync 0
-//13      multicore sync 1
-//14      multicore sync 2
-//15      multicore sync 3
-//16      dma0
-//17      dma1
-//18      dma2
-//19      dma3
-//20      dma4
-//21      dma5
-//22      dma6
-//23      dma7
-//24      dma8
-//25      dma9
-//26      dma10
-//27      dma11/dma12/dma13/dma14
-//28      dma-all
-//29      aux int
-//30      arm
-//31      dma-vpu
+// Like the pending ones above, but without any of the IRQ1/2 references.
+// IRQ1/2 are enabled/disabled using the corresponding IRQ1/2 registers.
+union BasicIrqEnables
+{
+    struct
+    {
+        uint32_t ARM_Timer      :  1; // @0
+        uint32_t ARM_Mailbox    :  1; // @1
+        uint32_t ARM_Doorbell_0 :  1; // @2
+        uint32_t ARM_Doorbell_1 :  1; // @3
+        uint32_t GPU_0_Halted   :  1; // @4
+        uint32_t GPU_1_Halted   :  1; // @5
+        uint32_t Access_Error_1 :  1; // @6
+        uint32_t Access_Error_0 :  1; // @7
+        uint32_t unused         : 24; // @12-31
+    };
+    uint32_t Raw32; // Union to access all 32 bits as a uint32_t
 
-// IRQs 2
-//32      hostport
-//33      videoscaler               (HVS)
-//34      ccp2tx
-//35      sdc
-//36      dsi0
-//37      axe
-//38      cam0
-//39      cam1
-//40      hdmi0
-//41      hdmi1
-//42      pixelvalve1 (PV2!!)
-//43      i2c_spi_slv_int
-//44      dsi1
-//45      pwa0    (PV0)
-//46      pwa1    (PV1)
-//47      cpr
-//48      smi
-//49      gpio_int[0]
-//50      gpio_int[1]
-//51      gpio_int[2]
-//52      gpio_int[3]
-//53      i2c_int
-//54      spi_int
-//55      i2s_pcm_int
-//56      sdio
-//57      uart_int (PL011?)
-//58      slimbus
-//59      vec
-//60      cpf
-//61      rng
-//62      asdio
-//63      avspmon
+    explicit operator bool() const { return Raw32 != 0; }
+};
+
+union Irq1
+{
+    struct
+    {
+        bool ST_C0          : 1; // @0
+        bool ST_C1          : 1; // @1
+        bool ST_C2          : 1; // @2
+        bool ST_C3          : 1; // @3
+        bool Codec0         : 1; // @4 (vce? h264?)
+        bool Codec1         : 1; // @5
+        bool Codec2         : 1; // @6
+        bool Jpeg           : 1; // @7
+        bool Isp            : 1; // @8
+        bool USB            : 1; // @9
+        bool V3d            : 1; // @10
+        bool Transposer     : 1; // @11
+        bool MulticoreSync0 : 1; // @12
+        bool MulticoreSync1 : 1; // @13
+        bool MulticoreSync2 : 1; // @14
+        bool MulticoreSync3 : 1; // @15
+        bool Dma0           : 1; // @16
+        bool Dma1           : 1; // @17
+        bool Dma2           : 1; // @18
+        bool Dma3           : 1; // @19
+        bool Dma4           : 1; // @20
+        bool Dma5           : 1; // @21
+        bool Dma6           : 1; // @22
+        bool Dma7           : 1; // @23
+        bool Dma8           : 1; // @24
+        bool Dma9           : 1; // @25
+        bool Dma10          : 1; // @26
+        bool Dma11_14       : 1; // @27
+        bool DmaAll         : 1; // @28
+        bool AuxInt         : 1; // @29
+        bool ARM            : 1; // @30
+        bool DmaVpu         : 1; // @31
+    };
+    uint32_t Raw32; // Union to access all 32 bits as a uint32_t
+
+    explicit operator bool() const { return Raw32 != 0; }
+};
+    
+union Irq2
+{
+    struct
+    {
+        bool Hostport     : 1; // @32                                    
+        bool Videoscaler  : 1; // @33 (HVS)                                                       
+        bool Ccp2tx       : 1; // @34                                
+        bool Sdc          : 1; // @35                            
+        bool Dsi0         : 1; // @36                                
+        bool Axe          : 1; // @37                            
+        bool Cam0         : 1; // @38                                
+        bool Cam1         : 1; // @39                                
+        bool Hdmi0        : 1; // @40                                
+        bool Hdmi1        : 1; // @41                                
+        bool Pixelvalve1  : 1; // @42 (PV2!!)                                           
+        bool I2cSpiSlvInt : 1; // @43                                        
+        bool Dsi1         : 1; // @44                                
+        bool Pwa0         : 1; // @45 (PV0)                                       
+        bool Pwa1         : 1; // @46 (PV1)                                       
+        bool Cpr          : 1; // @47                            
+        bool Smi          : 1; // @48                            
+        bool GpioInt0     : 1; // @49                                    
+        bool GpioInt1     : 1; // @50                                    
+        bool GpioInt2     : 1; // @51                                    
+        bool GpioInt3     : 1; // @52                                    
+        bool I2cInt       : 1; // @53                                
+        bool SpiInt       : 1; // @54                                
+        bool I2sPcmInt    : 1; // @55                                    
+        bool Sdio         : 1; // @56                                
+        bool UartInt      : 1; // @57 (PL011?)                                           
+        bool Slimbus      : 1; // @58                                
+        bool Vec          : 1; // @59                            
+        bool Cpf          : 1; // @60                            
+        bool Rng          : 1; // @61                            
+        bool Asdio        : 1; // @62                                
+        bool Avspmon      : 1; // @63                                
+    };
+    uint32_t Raw32; // Union to access all 32 bits as a uint32_t
+
+    explicit operator bool() const { return Raw32 != 0; }
+};
 
 struct FIQ_Control
 {
@@ -99,6 +155,60 @@ constexpr uint32_t Disable_IRQs_1     = 0xB21Cu;
 constexpr uint32_t Disable_IRQs_2     = 0xB220u;
 constexpr uint32_t Disable_Basic_IRQs = 0xB224u;
 
+Mmio::BaseRegisterProxy<BasicIrqPending, IRQ_basic_pending > IrqBasicPending;
+Mmio::BaseRegisterProxy<Irq1           , IRQ_pending_1     > IrqPending1;
+Mmio::BaseRegisterProxy<Irq2           , IRQ_pending_2     > IrqPending2;
+Mmio::BaseRegisterProxy<BasicIrqEnables, Enable_Basic_IRQs > EnableBasicIrq;
+Mmio::BaseRegisterProxy<Irq1           , Enable_IRQs_1     > EnableIrq1;
+Mmio::BaseRegisterProxy<Irq2           , Enable_IRQs_2     > EnableIrq2;
+Mmio::BaseRegisterProxy<BasicIrqEnables, Disable_Basic_IRQs> DisableBasicIrq;
+Mmio::BaseRegisterProxy<Irq1           , Disable_IRQs_1    > DisableIrq1;
+Mmio::BaseRegisterProxy<Irq2           , Disable_IRQs_2    > DisableIrq2;
+
+HandlerFunction UsbHandler;
+
+void EnableUsb(HandlerFunction handler)
+{
+    if (handler == nullptr)
+    {
+        DisableIrq1 = Irq1{ .USB = true };
+    }
+    else
+    {
+        EnableIrq1 = Irq1{ .USB = true };
+    }
+    UsbHandler = handler;
+}
+
+extern "C" void InterruptDispatcher()
+{
+
+    // Check for basic IRQs
+    while (auto basicPending = IrqBasicPending.get())
+    {
+        // Handle basic IRQs
+        if (basicPending.USB)
+        {
+            // Handle USB IRQ
+            if (UsbHandler)
+            {
+                UsbHandler();
+            }
+        }
+    }
+
+//    // Check for IRQ1
+//    if (irqPending1.get()) {
+//        // Handle IRQ1
+//    }
+//
+//    // Check for IRQ2
+//    if (irqPending2.get()) {
+//        // Handle IRQ2
+//    }
+}
+
+/*
 void SetPeriodicInterrupt(uint64_t us)
 {
     Basic_IRQs armTimerBasicIrq{ .ARM_Timer = 1 };
@@ -143,6 +253,7 @@ void HandlePeriodicInterrupt()
         lockedStream.Puts("Periodic interrupt handled\n");
     }
 }
+*/
 
 }
-// namespace Timer
+// namespace Interrupts

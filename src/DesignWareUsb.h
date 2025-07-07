@@ -51,8 +51,8 @@ struct __attribute__((__packed__)) UsbPipe {
     UsbSpeed Speed;		    									// Speed of device
     uint8_t EndPoint;   										// Endpoint address
     uint8_t Number; 											// Unique device number sometimes called address or id
-    uint8_t lowSpeedNodePort;									// In low speed transfers it is port device is on closest parent high speed hub
-    uint8_t lowSpeedNodePoint;									// In low speed transfers it is closest parent high speed hub
+    uint8_t splitNodePort;									// In low speed transfers it is port device is on closest parent high speed hub
+    uint8_t splitNodePoint;									// In low speed transfers it is closest parent high speed hub
 };
 
 /*--------------------------------------------------------------------------}
@@ -95,13 +95,13 @@ void dwc_release_channel(unsigned int chan);
 enum class DWCRESULT : uint8_t
 {
     Ok = 0,
-    ErrorGeneral,
-    ErrorArgument,
-    ErrorDevice,
-    ErrorIncompatible,
-    ErrorTimeout,
-    ErrorTransmission,
-    ErrorStall,
+    ErrorGeneral      = 1,
+    ErrorArgument     = 2,
+    ErrorDevice       = 3,
+    ErrorIncompatible = 4,
+    ErrorTimeout      = 5,
+    ErrorTransmission = 6,
+    ErrorStall        = 7,
 };
 
 // Initialises the hardware that is in use. This usually means powering up that

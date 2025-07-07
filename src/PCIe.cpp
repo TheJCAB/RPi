@@ -494,37 +494,35 @@ PCIeError Configuration::set_command(std::uint16_t command) noexcept {
     return write_register<std::uint16_t>(constants::COMMAND_OFFSET, command);
 }
 
-std::expected<std::vector<BarInfo>, PCIeError> Configuration::enumerate_bars() const
+size_t Configuration::enumerate_bars(std::span<BarInfo> bars) const
 {
-    std::vector<BarInfo> bars;
-    
-    for (std::uint8_t bar_num = 0; bar_num < 6; ++bar_num) {
-        auto bar_result = get_bar(bar_num);
-        if (bar_result)
-        {
-            if (bar_result.value().size > 0) {
-                bars.push_back(bar_result.value());
-            }
-            if (bar_result.value().is_64bit) {
-                // If it's a 64-bit BAR, we need to skip the next BAR
-                ++bar_num;
-            }
+    size_t count = 0;
+    for (std::uint8_t bar_num = 0; bar_num < 6 && count < bars.size(); ++bar_num)
+    {
+        bars[count] = get_bar(bar_num);
+        if (bars[count].is_64bit) {
+            // If it's a 64-bit BAR, we need to skip the next BAR
+            ++bar_num;
+        }
+        if (bars[count].size > 0) {
+            ++count;
         }
     }
     
-    return std::expected<std::vector<BarInfo>, PCIeError>(std::move(bars));
+    return count;
 }
 
-std::expected<BarInfo, PCIeError> Configuration::get_bar(std::uint8_t bar_number) const {
+BarInfo Configuration::get_bar(std::uint8_t bar_number) const
+{
     if (bar_number >= 6) {
-        return std::expected<BarInfo, PCIeError>(PCIeError::INVALID_ADDRESS);
+        return {};
     }
     
     RegisterOffset bar_offset = constants::BAR0_OFFSET + (bar_number * 4);
 
     auto bar_low = read_register<std::uint32_t>(bar_offset);
     if (bar_low == 0 || bar_low == 0xFFFF'FFFFu) {
-        return std::expected<BarInfo, PCIeError>(PCIeError::DEVICE_NOT_FOUND);
+        return {};
     }
 
     // Get the size.
@@ -535,6 +533,7 @@ std::expected<BarInfo, PCIeError> Configuration::get_bar(std::uint8_t bar_number
 
     BarInfo bar_info{};
     bar_info.bar_number = bar_number;
+    bar_info.flags = bar_low & 0xF;
     bar_info.is_memory_space = (bar_low & 0x1) == 0;
 
     if (bar_info.is_memory_space) {
@@ -563,7 +562,7 @@ std::expected<BarInfo, PCIeError> Configuration::get_bar(std::uint8_t bar_number
         bar_info.size = ~(bar_mask & ~0x3u) + 1;
     }
     
-    return std::expected<BarInfo, PCIeError>(bar_info);
+    return bar_info;
 }
 
 std::expected<std::vector<Capability>, PCIeError> Configuration::enumerate_capabilities() const {
@@ -611,284 +610,61 @@ std::expected<std::optional<Capability>, PCIeError> Configuration::find_capabili
     return std::expected<std::optional<Capability>, PCIeError>(std::nullopt);
 }
 
-// MemoryMappedRegion implementation
-MemoryMappedRegion::MemoryMappedRegion(PhysicalAddress phys_addr, std::size_t size)
-    : physical_addr_(phys_addr), virtual_addr_(nullptr), size_(size) {
-    virtual_addr_ = map_physical_memory_stub(phys_addr, size);
-}
+uintptr_t NextUnusedMapOffsetAddress = 0;
 
-MemoryMappedRegion::~MemoryMappedRegion() {
-    if (virtual_addr_) {
-        unmap_physical_memory_stub(virtual_addr_, size_);
-    }
-}
-
-MemoryMappedRegion::MemoryMappedRegion(MemoryMappedRegion&& other) noexcept
-    : physical_addr_(other.physical_addr_), virtual_addr_(other.virtual_addr_), size_(other.size_) {
-    other.virtual_addr_ = nullptr;
-    other.size_ = 0;
-}
-
-MemoryMappedRegion& MemoryMappedRegion::operator=(MemoryMappedRegion&& other) noexcept {
-    if (this != &other) {
-        if (virtual_addr_) {
-            unmap_physical_memory_stub(virtual_addr_, size_);
-        }
-        
-        physical_addr_ = other.physical_addr_;
-        virtual_addr_ = other.virtual_addr_;
-        size_ = other.size_;
-        
-        other.virtual_addr_ = nullptr;
-        other.size_ = 0;
-    }
-    return *this;
-}
-
-template<PCIeRegisterType T>
-T MemoryMappedRegion::read(std::size_t offset) const noexcept {
-    if (!virtual_addr_ || offset + sizeof(T) > size_) {
-        return T{};  // Return zero on error
-    }
-    
-    // Simulate reading from memory (would be actual volatile access in real implementation)
-    return T{};
-}
-
-template<PCIeRegisterType T>
-void MemoryMappedRegion::write(std::size_t offset, T value) noexcept {
-    if (!virtual_addr_ || offset + sizeof(T) > size_) {
-        return;  // Ignore writes on error
-    }
-    
-    // Simulate writing to memory (would be actual volatile access in real implementation)
-}
-
-// Explicit template instantiations for MemoryMappedRegion
-template std::uint8_t MemoryMappedRegion::read<std::uint8_t>(std::size_t) const noexcept;
-template std::uint16_t MemoryMappedRegion::read<std::uint16_t>(std::size_t) const noexcept;
-template std::uint32_t MemoryMappedRegion::read<std::uint32_t>(std::size_t) const noexcept;
-template void MemoryMappedRegion::write<std::uint8_t>(std::size_t, std::uint8_t) noexcept;
-template void MemoryMappedRegion::write<std::uint16_t>(std::size_t, std::uint16_t) noexcept;
-template void MemoryMappedRegion::write<std::uint32_t>(std::size_t, std::uint32_t) noexcept;
-
-void MemoryMappedRegion::memory_barrier() const noexcept {
-    // ARM64 data memory barrier
-    #if defined(__aarch64__) || defined(_M_ARM64)
-        __asm__ volatile("dmb sy" ::: "memory");
-    #elif defined(__arm__) || defined(_M_ARM)
-        __asm__ volatile("dmb" ::: "memory");
-    #else
-        // Generic compiler barrier
-        __asm__ volatile("" ::: "memory");
-    #endif
-}
-
-void MemoryMappedRegion::read_barrier() const noexcept {
-    #if defined(__aarch64__) || defined(_M_ARM64)
-        __asm__ volatile("dmb ld" ::: "memory");
-    #else
-        memory_barrier();
-    #endif
-}
-
-void MemoryMappedRegion::write_barrier() const noexcept {
-    #if defined(__aarch64__) || defined(_M_ARM64)
-        __asm__ volatile("dmb st" ::: "memory");
-    #else
-        memory_barrier();
-    #endif
-}
-
-// InterruptHandler implementation
-InterruptHandler::InterruptHandler(const Device& device) : device_(device) {}
-
-InterruptHandler::~InterruptHandler() {
-    disable_interrupts();
-}
-
-PCIeError InterruptHandler::enable_msi(std::uint8_t vector_count) {
-    std::lock_guard<std::mutex> lock(handler_mutex_);
-    
-    // Find MSI capability
-    auto msi_cap = device_.configuration().find_capability(0x05);  // MSI capability ID
-    if (!msi_cap || !msi_cap.value()) {
-        return PCIeError(PCIeError::INTERRUPT_SETUP_FAILED);
-    }
-    
-    // MSI setup would require more specific implementation based on the device
-    // For now, return success if capability exists
-    enabled_.store(true);
-    return PCIeError::SUCCESS;
-}
-
-PCIeError InterruptHandler::enable_msi_x(std::uint16_t vector_count) {
-    std::lock_guard<std::mutex> lock(handler_mutex_);
-    
-    // Find MSI-X capability
-    auto msix_cap = device_.configuration().find_capability(0x11);  // MSI-X capability ID
-    if (!msix_cap || !msix_cap.value()) {
-        return PCIeError(PCIeError::INTERRUPT_SETUP_FAILED);
-    }
-    
-    // MSI-X setup would require more specific implementation
-    enabled_.store(true);
-    return PCIeError::SUCCESS;
-}
-
-PCIeError InterruptHandler::disable_interrupts() noexcept {
-    std::lock_guard<std::mutex> lock(handler_mutex_);
-    enabled_.store(false);
-    handler_ = nullptr;
-    return PCIeError::SUCCESS;
-}
-
-PCIeError InterruptHandler::register_handler(HandlerFunction handler) {
-    std::lock_guard<std::mutex> lock(handler_mutex_);
-    handler_ = std::move(handler);
-    return PCIeError::SUCCESS;
-}
-
-void InterruptHandler::unregister_handler() noexcept {
-    std::lock_guard<std::mutex> lock(handler_mutex_);
-    handler_ = nullptr;
-}
-
-bool InterruptHandler::supports_msi() const noexcept {
-    auto msi_cap = device_.configuration().find_capability(0x05);
-    return msi_cap && msi_cap.value().has_value();
-}
-
-bool InterruptHandler::supports_msi_x() const noexcept {
-    auto msix_cap = device_.configuration().find_capability(0x11);
-    return msix_cap && msix_cap.value().has_value();
-}
-
-// Device implementation
-Device::Device(Configuration config) : address_(config.GetAddress())
+std::span<uint8_t> Configuration::map_bar(BarInfo& bar)
 {
-    // Get the basics.
-    vendor_id_  = config.vendor_id();
-    device_id_  = config.device_id();
-    class_code_ = config.class_code();
+    if (!bar.is_memory_space || bar.size == 0) {
+        return {};
+    }
+
+    RegisterOffset bar_offset = constants::BAR0_OFFSET + (bar.bar_number * 4);
+
+    uint64_t pciAddress = 0xF800'0000u + NextUnusedMapOffsetAddress; // Base address for PCIe memory space
+    write_register<std::uint32_t>(bar_offset, (static_cast<uint32_t>(pciAddress) & ~0xFu) | bar.flags);
+    if (bar.is_64bit) {
+        RegisterOffset bar_high_offset = bar_offset + 4;
+        write_register<std::uint32_t>(bar_high_offset, static_cast<uint32_t>(pciAddress >> 32));
+    }
+
+    bar.physical_address = 0x6'0000'0000ull + NextUnusedMapOffsetAddress;
+    NextUnusedMapOffsetAddress += bar.size;
+
+    return { reinterpret_cast<uint8_t*>(bar.physical_address), bar.size };
 }
 
-bool Device::is_valid() const {
-    auto vid = vendor_id();
-    return vid != constants::INVALID_VENDOR_ID;
-}
-
-[[nodiscard]] Configuration Device::configuration() const noexcept
+PCIeError Configuration::enable_device()
 {
-    return Configuration(address_);
-}
-
-
-std::expected<std::unique_ptr<MemoryMappedRegion>, PCIeError> Device::map_bar(std::uint8_t bar_number) {
-    std::lock_guard<std::mutex> lock(device_mutex_);
+    // Enable memory and I/O space access, bus mastering
+    std::uint16_t c = command();
+    c |= 0x07;  // Enable memory space, I/O space, and bus mastering
     
-    if (auto config = configuration())
-    {
-        auto bar_info = config.get_bar(bar_number);
-        if (!bar_info) {
-            return bar_info.error();
-        }
-        
-        if (!bar_info.value().is_memory_space || bar_info.value().size == 0) {
-            return PCIeError::INVALID_ADDRESS;
-        }
-        
-        auto region = std::make_unique<MemoryMappedRegion>(
-            bar_info.value().physical_address, bar_info.value().size);
-
-        // For stub implementation, always return success
-        return std::move(region);
-    }
-    else
-    {
-        return PCIeError::DEVICE_NOT_FOUND;
-    }
-}
-
-PCIeError Device::enable_device() {
-    std::lock_guard<std::mutex> lock(device_mutex_);
-
-    if (auto config = configuration())
-    {
-        // Enable memory and I/O space access, bus mastering
-        std::uint16_t command = config.command();
-        command |= 0x07;  // Enable memory space, I/O space, and bus mastering
-        
-        auto set_result = config.set_command(command);
-        if (set_result != PCIeError::SUCCESS) {
-            return set_result;
-        }
-        
-        enabled_.store(true);
-        return PCIeError::SUCCESS;
-    }
-    else
-    {
-        return PCIeError::DEVICE_NOT_FOUND;
-    }
-}
-
-PCIeError Device::disable_device() {
-    std::lock_guard<std::mutex> lock(device_mutex_);
-
-    if (auto config = configuration())
-    {
-        std::uint16_t command = config.command();
-        command &= ~0x07;  // Disable memory space, I/O space, and bus mastering
-        
-        auto set_result = config.set_command(command);
-        if (set_result != PCIeError::SUCCESS) {
-            return set_result;
-        }
-        
-        enabled_.store(false);
-        return PCIeError::SUCCESS;
-    }
-    else
-    {
-        return PCIeError::DEVICE_NOT_FOUND;
-    }
-}
-
-bool Device::is_enabled() const {
-    return enabled_.load();
-}
-
-std::expected<std::unique_ptr<InterruptHandler>, PCIeError> Device::create_interrupt_handler() {
-    auto handler = std::make_unique<InterruptHandler>(*this);
-    return std::expected<std::unique_ptr<InterruptHandler>, PCIeError>(std::move(handler));
-}
-
-std::expected<PhysicalAddress, PCIeError> Device::allocate_dma_buffer(std::size_t size, std::size_t alignment) {
-    // DMA buffer allocation using simple allocator
-    void* buffer = simple_alloc(size, alignment);
-    if (!buffer) {
-        return std::expected<PhysicalAddress, PCIeError>(PCIeError::HARDWARE_ERROR);
+    auto set_result = set_command(c);
+    if (set_result != PCIeError::SUCCESS) {
+        return set_result;
     }
     
-    // Convert virtual to physical address (simplified - would need proper translation)
-    PhysicalAddress phys_addr = reinterpret_cast<PhysicalAddress>(buffer);
-    return std::expected<PhysicalAddress, PCIeError>(phys_addr);
-}
-
-PCIeError Device::free_dma_buffer(PhysicalAddress addr, std::size_t size) {
-    // Free the DMA buffer
-    simple_free(reinterpret_cast<void*>(addr));
     return PCIeError::SUCCESS;
 }
 
-// PCIeDriver implementation
-PCIeDriver& PCIeDriver::instance() {
-    static PCIeDriver instance;
-    return instance;
+PCIeError Configuration::disable_device()
+{
+    std::uint16_t c = command();
+    c &= ~0x07;  // Disable memory space, I/O space, and bus mastering
+    
+    auto set_result = set_command(c);
+    if (set_result != PCIeError::SUCCESS) {
+        return set_result;
+    }
+    
+    return PCIeError::SUCCESS;
 }
 
-PCIeError PCIeDriver::initialize() {
+std::atomic<bool> initialized_{false};
+std::shared_mutex driver_mutex_;
+std::vector<DeviceInfo> devices_;
+
+PCIeError initialize() {
     std::lock_guard<std::shared_mutex> lock(driver_mutex_);
     
     if (initialized_.load()) {
@@ -915,30 +691,7 @@ PCIeError PCIeDriver::initialize() {
         cleanup_platform_stub();
         return PCIeError::DEVICE_NOT_FOUND;
     }
-    
-    initialized_.store(true);
-    std::memset(&stats_, 0, sizeof(stats_));
-    
-    return PCIeError::SUCCESS;
-}
 
-void PCIeDriver::shutdown() noexcept {
-    std::lock_guard<std::shared_mutex> lock(driver_mutex_);
-    
-    active_devices_.clear();
-    cleanup_platform_stub();
-    initialized_.store(false);
-}
-
-std::expected<std::vector<DeviceAddress>, PCIeError> PCIeDriver::enumerate_devices() {
-    std::lock_guard<std::shared_mutex> lock(driver_mutex_);
-    
-    if (!initialized_.load()) {
-        return std::expected<std::vector<DeviceAddress>, PCIeError>(PCIeError::DRIVER_NOT_INITIALIZED);
-    }
-    
-    std::vector<DeviceAddress> devices;
-    
     // Real PCIe device enumeration for Raspberry Pi 4
     // The RPi4 PCIe controller is typically on bus 0, and devices appear on bus 1
     
@@ -949,7 +702,12 @@ std::expected<std::vector<DeviceAddress>, PCIeError> PCIeDriver::enumerate_devic
         auto root_vendor = root_config.vendor_id();
         
         if (root_vendor != constants::INVALID_VENDOR_ID) {
-            devices.push_back(root_addr);
+            devices_.push_back(DeviceInfo{
+                .Address   = root_addr,
+                .VendorId  = root_vendor,
+                .DeviceId  = root_config.device_id(),
+                .ClassCode = root_config.class_code()
+            });
         }
     }
 
@@ -978,9 +736,16 @@ std::expected<std::vector<DeviceAddress>, PCIeError> PCIeDriver::enumerate_devic
                     continue;
                 }
                 
+                auto class_code = config.class_code();
+
                 // Device exists, add it to the list
-                devices.push_back(addr);
-                
+                devices_.push_back(DeviceInfo{
+                    .Address   = addr,
+                    .VendorId  = vendor,
+                    .DeviceId  = config.device_id(),
+                    .ClassCode = class_code
+                });
+
                 // Check if this is a multi-function device
                 if (function == 0) {
                     auto header_type = config.read_register<std::uint8_t>(constants::HEADER_TYPE_OFFSET);
@@ -991,7 +756,6 @@ std::expected<std::vector<DeviceAddress>, PCIeError> PCIeDriver::enumerate_devic
                 }
                 
                 // For bridges, we might need to scan secondary buses
-                auto class_code = config.class_code();
                 if (utils::is_bridge_device(class_code)) {
                     // This is a bridge device - in a full implementation, we would
                     // read the secondary bus number and scan it recursively
@@ -1001,90 +765,43 @@ std::expected<std::vector<DeviceAddress>, PCIeError> PCIeDriver::enumerate_devic
         }
     }
 
-    // Update statistics
-    stats_.total_devices = devices.size();
-    
-    return std::expected<std::vector<DeviceAddress>, PCIeError>(std::move(devices));
-}
+    initialized_.store(true);
 
-std::expected<std::vector<DeviceAddress>, PCIeError> PCIeDriver::find_devices(VendorID vendor, std::optional<DeviceID> device) {
-    auto all_devices = enumerate_devices();
-    if (!all_devices) {
-        return std::expected<std::vector<DeviceAddress>, PCIeError>(all_devices.error());
-    }
-    
-    std::vector<DeviceAddress> matching_devices;
-    
-    for (const auto& addr : all_devices.value()) {
-        Configuration config(addr);
-        auto vid = config.vendor_id();
-        if (vid != vendor) continue;
-        
-        if (device.has_value()) {
-            auto did = config.device_id();
-            if (did != device.value()) continue;
-        }
-    
-        matching_devices.push_back(addr);
-    }
-    
-    return std::expected<std::vector<DeviceAddress>, PCIeError>(std::move(matching_devices));
-}
-
-std::expected<std::vector<DeviceAddress>, PCIeError> PCIeDriver::find_devices_by_class(ClassCode class_code, std::uint32_t mask) {
-    auto all_devices = enumerate_devices();
-    if (!all_devices) {
-        return std::expected<std::vector<DeviceAddress>, PCIeError>(all_devices.error());
-    }
-    
-    std::vector<DeviceAddress> matching_devices;
-
-    for (const auto& addr : all_devices.value()) {
-        Configuration config(addr);
-        auto cc = config.class_code();
-        if ((cc & mask) == (class_code & mask)) {
-            matching_devices.push_back(addr);
-        }
-    }
-    
-    return std::expected<std::vector<DeviceAddress>, PCIeError>(std::move(matching_devices));
-}
-
-std::expected<std::unique_ptr<Device>, PCIeError> PCIeDriver::create_device(DeviceAddress addr) {
-    std::lock_guard<std::shared_mutex> lock(driver_mutex_);
-    
-    if (!initialized_.load()) {
-        return std::expected<std::unique_ptr<Device>, PCIeError>(PCIeError::DRIVER_NOT_INITIALIZED);
-    }
-    
-    auto device = std::make_unique<Device>(Configuration{ addr });
-    if (!device->is_valid()) {
-        return std::expected<std::unique_ptr<Device>, PCIeError>(PCIeError::DEVICE_NOT_FOUND);
-    }
-    
-    stats_.active_devices++;
-    return std::expected<std::unique_ptr<Device>, PCIeError>(std::move(device));
-}
-
-PCIeError PCIeDriver::register_hotplug_callback(HotplugCallback callback) {
-    std::lock_guard<std::shared_mutex> lock(driver_mutex_);
-    hotplug_callback_ = std::move(callback);
     return PCIeError::SUCCESS;
 }
 
-void PCIeDriver::unregister_hotplug_callback() noexcept {
-    std::lock_guard<std::shared_mutex> lock(driver_mutex_);
-    hotplug_callback_ = nullptr;
+[[nodiscard]] bool is_initialized() noexcept { return initialized_.load(); }
+
+std::vector<DeviceInfo> find_devices(VendorID vendor, std::optional<DeviceID> device)
+{
+    std::vector<DeviceInfo> matching_devices;
+
+    for (const auto& info : devices_)
+    {
+        if (info.VendorId != vendor) continue;
+        
+        if (device.has_value()) {
+            if (info.DeviceId != device.value()) continue;
+        }
+
+        matching_devices.push_back(info);
+    }
+    
+    return matching_devices;
 }
 
-PCIeDriver::Statistics PCIeDriver::get_statistics() const noexcept {
-    std::lock_guard<std::shared_mutex> lock(driver_mutex_);
-    return stats_;
-}
+std::vector<DeviceInfo> find_devices_by_class(ClassCode class_code, std::uint32_t mask)
+{
+    std::vector<DeviceInfo> matching_devices;
 
-void PCIeDriver::reset_statistics() noexcept {
-    std::lock_guard<std::shared_mutex> lock(driver_mutex_);
-    std::memset(&stats_, 0, sizeof(stats_));
+    for (const auto& info : devices_)
+    {
+        if ((info.ClassCode & mask) == (class_code & mask)) {
+            matching_devices.push_back(info);
+        }
+    }
+    
+    return matching_devices;
 }
 
 // Utility functions implementation
@@ -1130,17 +847,6 @@ namespace utils {
     }
 }
 
-// ScopedDevice implementation
-ScopedDevice::ScopedDevice(DeviceAddress addr) {
-    auto& driver = PCIeDriver::instance();
-    auto device_result = driver.create_device(addr);
-    if (device_result) {
-        device_ = std::move(device_result.value());
-    }
-}
-
-ScopedDevice::~ScopedDevice() = default;
-
 
 // Example usage function (for demonstration)
 namespace examples {
@@ -1149,11 +855,9 @@ namespace examples {
     void demonstrate_enumeration() {
         printf("Enumerating PCIe devices...\n");
 
-        auto& driver = PCIeDriver::instance();
-
         printf("Initializing PCIe driver...\n");
         
-        auto init_result = driver.initialize();
+        auto init_result = initialize();
         if (init_result != PCIeError::SUCCESS) {
             // Handle initialization error
             return;
@@ -1162,27 +866,16 @@ namespace examples {
         printf("PCIe driver initialized successfully.\n");
         printf("Enumerating devices...\n");
         
-        // Enumerate all devices
-        auto devices_result = driver.enumerate_devices();
-        if (!devices_result) {
-            // Handle enumeration error
-            return;
-        }
-
-        printf("Found %zu PCIe devices:\n", devices_result.value().size());
+        printf("Found %zu PCIe devices:\n", devices_.size());
         
         // Process each found device
-        for (const auto& addr : devices_result.value()) {
-            auto device_result = driver.create_device(addr);
-            if (!device_result) continue;
-            
-            auto device = std::move(device_result.value());
-            
+        for (const auto& info : devices_) {
             // Read device information
-            auto vendor = device->vendor_id();
-            auto device_id = device->device_id();
-            auto class_code = device->class_code();
-            
+            auto addr       = info.Address;
+            auto vendor     = info.VendorId;
+            auto device_id  = info.DeviceId;
+            auto class_code = info.ClassCode;
+
             // Pretty print device information
             printf("PCIe Device %02x:%02x.%x\n", addr.Bus, addr.Device, addr.Function);
             printf("  Vendor ID: 0x%04x\n", vendor);
@@ -1191,7 +884,7 @@ namespace examples {
                 utils::class_code_to_string(class_code).data());
 
             // Get and display additional information if available
-            auto configuration = device->configuration();
+            Configuration configuration{ info.Address };
             auto command = configuration.command();
             auto status = configuration.status();
             if (command && status) {
@@ -1234,10 +927,12 @@ namespace examples {
             else
             {
                 // Display BARs if any
-                auto bars_result = configuration.enumerate_bars();
-                if (bars_result && !bars_result.value().empty()) {
+                BarInfo bars[6];
+                size_t barCount = configuration.enumerate_bars(bars);
+                if (barCount > 0)
+                {
                     printf("  BARs:\n");
-                    for (const auto& bar : bars_result.value()) {
+                    for (const auto& bar : std::span{ bars, barCount }) {
                         printf("    BAR%d: 0x%016llx (size: 0x%x, %s%s%s)\n",
                             bar.bar_number,
                             static_cast<unsigned long long>(bar.physical_address),
@@ -1260,47 +955,6 @@ namespace examples {
 
             printf("\n");
         }
-        
-        // Get statistics
-        auto stats = driver.get_statistics();
-        // stats.total_devices contains the number of found devices
-        
-        // Cleanup
-        driver.shutdown();
-    }
-
-    // Example: Find a specific device by vendor/device ID
-    void find_usb_controller() {
-        auto& driver = PCIeDriver::instance();
-        
-        if (driver.initialize() != PCIeError::SUCCESS) {
-            return;
-        }
-        
-        // Look for VIA Labs USB 3.0 controller (common on RPi4)
-        VendorID via_vendor = 0x1106;
-        DeviceID vl805_device = 0x3483;
-        
-        auto devices = driver.find_devices(via_vendor, vl805_device);
-        if (devices && !devices.value().empty()) {
-            // Found the USB controller
-            auto device_result = driver.create_device(devices.value()[0]);
-            if (device_result) {
-                auto usb_device = std::move(device_result.value());
-                
-                // Enable the device
-                usb_device->enable_device();
-                
-                // Map BAR0 for register access
-                auto bar_result = usb_device->map_bar(0);
-                if (bar_result) {
-                    auto bar_region = std::move(bar_result.value());
-                    // Now you can access USB controller registers through bar_region
-                }
-            }
-        }
-        
-        driver.shutdown();
     }
 }
 

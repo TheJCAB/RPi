@@ -50,7 +50,7 @@ void InitCore()
 
     Mmu::Init();
 
-    asm volatile("msr daifclr,#2"); // Clear the IRQ mask bit to enable IRQs
+    asm volatile("msr daifclr,#3"); // Clear the IRQ and FIQ mask bits to enable them
 }
 
 volatile bool Core1Ready = false;
@@ -259,7 +259,7 @@ void Core0()
     //asm volatile ("svc #42"); // Trigger a software interrupt to test exception handling
     //asm volatile ("hvc #42"); // Trigger a software interrupt to test exception handling
 
-    asm volatile("msr daifclr,#2"); // Clear the IRQ mask bit to enable IRQs
+    asm volatile("msr daifclr,#3"); // Clear the IRQ and FIQ mask bits to enable them
 
     Uart::useMutex = true;
 

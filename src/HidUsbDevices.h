@@ -36,6 +36,20 @@
 #include "UsbDevices.h"
 
 
+/***************************************************************************}
+{          PUBLIC HID 1.11 STRUCTURE DEFINITIONS AS PER THE MANUAL          }
+****************************************************************************/
+
+/*--------------------------------------------------------------------------}
+{ 					 USB HID 1.11 defined report types						}
+{---------------------------------------------------------------------------}*/
+enum HidReportType {
+    USB_HID_REPORT_TYPE_INPUT = 1,									// Input HID report
+    USB_HID_REPORT_TYPE_OUTPUT = 2,									// Output HID report
+    USB_HID_REPORT_TYPE_FEATURE = 3,								// Feature HID report
+};
+
+
 /*--------------------------------------------------------------------------}
 {						 PUBLIC HID INTERFACE ROUTINES						}
 {---------------------------------------------------------------------------}*/

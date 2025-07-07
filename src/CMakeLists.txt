@@ -20,10 +20,12 @@ add_executable(kernel8
     UsbDevices.cpp      UsbDevices.h
     HidUsbDevices.cpp   HidUsbDevices.h
     Keyboard.cpp        Keyboard.h
+    Gamepad.cpp         Gamepad.h
     PCIe.cpp            PCIe.h
 
     emb-stdio.cpp       emb-stdio.h
     DesignWareUsb.cpp   DesignWareUsb.h
+    BroadcomInterruptController.cpp #   BroadcomInterruptController.h
 
     Processor.h
     Task.h

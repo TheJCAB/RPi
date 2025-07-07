@@ -162,7 +162,7 @@ IrqExceptionVector:
     stp     x18, x30, [sp, #-16]!
     bl PreserveSimd
     mov     x0, #0x11
-    bl       MainExceptionHandler
+    bl      InterruptDispatcher
     bl RestoreSimd
     ldp     x18, x30, [sp], #16
     ldp     x16, x17, [sp], #16

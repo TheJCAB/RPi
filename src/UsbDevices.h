@@ -30,9 +30,11 @@
 //    {++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 #pragma once
 
-#include <stdint.h>
-
 #include "UsbSpec.h"
+
+#include <span>
+
+#include <stdint.h>
 
 
 enum RESULT {
@@ -76,6 +78,13 @@ struct HidDevice;
  24Feb17 LdB
  --------------------------------------------------------------------------*/
 RESULT UsbInitialise ();
+
+DeviceDescriptor GetDeviceDescriptor(uint8_t devNumber);
+
+size_t GetDeviceProductString(uint8_t devNumber, std::span<char> buffer);
+size_t GetDeviceManufacturerString(uint8_t devNumber, std::span<char> buffer);
+size_t GetDeviceSerialNumberString(uint8_t devNumber, std::span<char> buffer);
+size_t GetDeviceConfigStringString(uint8_t devNumber, std::span<char> buffer);
 
 /*-IsHub---------------------------------------------------------------------
  Will return if the given usbdevice is infact a hub and thus has hub payload
