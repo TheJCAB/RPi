@@ -93,7 +93,7 @@ void Core2()
         //    stream.PutDec(2u);
         //    stream.Puts(" is running\n");
         //}
-        //Timer::Delay(1000);
+        //Cpu::DelayInMicroseconds(1000);
         asm volatile ("wfe" ::: "memory"); // Wait for event
     }
 }
@@ -189,11 +189,8 @@ void Core0()
     Uart::PutHex(pc);
     Uart::Puts("\n");
 
-    Uart::Puts("Initial performance Frequency: ");
-    Uart::PutDec(Timer::PerformanceFrequency);
-    Uart::Puts("\n");
-    Uart::Puts("Current performance Frequency: ");
-    Uart::PutDec(Timer::GetPerformanceFrequency());
+    Uart::Puts("Performance Frequency: ");
+    Uart::PutDec(Cpu::PerformanceFrequency);
     Uart::Puts("\n");
 
     uint64_t el = 0;
@@ -222,7 +219,7 @@ void Core0()
         Uart::Puts("\n");
 
         Uart::Puts("Performance Frequency: ");
-        Uart::PutDec(Timer::GetPerformanceFrequency());
+        Uart::PutDec(Cpu::PerformanceFrequency);
         Uart::Puts("\n");
     }
 
@@ -231,7 +228,7 @@ void Core0()
     Uart::Puts("MMU enabled\n");
 
     Uart::Puts("Performance Frequency: ");
-    Uart::PutDec(Timer::GetPerformanceFrequency());
+    Uart::PutDec(Cpu::PerformanceFrequency);
     Uart::Puts("\n");
 
     Exception::Init();
@@ -254,7 +251,7 @@ void Core0()
     asm volatile ("msr cpacr_el1, %0" :: "r"(cpacr));
 
     Uart::Puts("Waiting...\n");
-    Timer::Delay(1000'000);
+    Cpu::DelayInMicroseconds(1000'000);
     
     //asm volatile ("svc #42"); // Trigger a software interrupt to test exception handling
     //asm volatile ("hvc #42"); // Trigger a software interrupt to test exception handling
@@ -286,15 +283,15 @@ void Core0()
     }
     else
     {
-        //Timer::SetPeriodicInterrupt(1000'000); // Set a periodic interrupt every second
-        //Timer::Delay(3'000'000);
+        Timer::SetPeriodicVirtualTimerInterrupt(1000'000); // Set a periodic interrupt every second
+        //Cpu::DelayInMicroseconds(3'000'000);
 
         UsbInitialise();
-        Timer::Delay(10'000);
+        Cpu::DelayInMicroseconds(10'000);
         Uart::Init();
 
         Uart::Puts("Waiting...\n");
-        Timer::Delay(1000'000);
+        Cpu::DelayInMicroseconds(1000'000);
 
         UsbCheckForChange();
         Uart::Init();
@@ -306,7 +303,7 @@ void Core0()
     }
 
     Uart::Puts("Waiting...\n");
-    Timer::Delay(1000'000);
+    Cpu::DelayInMicroseconds(1000'000);
 
     uint32_t const w = 1280;
     uint32_t const h =  720;

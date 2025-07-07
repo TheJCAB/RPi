@@ -550,7 +550,7 @@ RESULT HIDSetProtocol (uint8_t devNumber,							// Device number (address) of th
  *         if (HIDReadReport(keyboardDevice, 0, 0x0100, keyboardData, 8) == Ok) {
  *             ProcessKeyboardData(keyboardData);
  *         }
- *         Timer::Delay(10000); // Poll every 10ms - wastes CPU cycles
+ *         Cpu::DelayInMicroseconds(10000); // Poll every 10ms - wastes CPU cycles
  *     }
  * }
  * 
@@ -571,7 +571,7 @@ RESULT HIDSetProtocol (uint8_t devNumber,							// Device number (address) of th
  *             ProcessKeyboardData(keyboardData, bytesRead);
  *         }
  *         // Small delay based on device's preferred interval
- *         Timer::Delay(pollInterval * 1000); // Convert ms to microseconds
+ *         Cpu::DelayInMicroseconds(pollInterval * 1000); // Convert ms to microseconds
  *     }
  * }
  */
@@ -683,7 +683,7 @@ RESULT HIDStopInterruptIN (uint8_t devNumber,                       // Device nu
     //     if (HIDReadReport(keyboardDevice, 0, 0x0100, buffer, 8) == Ok) {
     //         // Process keyboard data
     //     }
-    //     Timer::Delay(10000); // 10ms delay
+    //     Cpu::DelayInMicroseconds(10000); // 10ms delay
     // }
     
     // New interrupt IN approach:

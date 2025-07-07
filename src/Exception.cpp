@@ -4,11 +4,6 @@
 #include "Uart.h"
 #include "Processor.h"
 
-namespace Timer
-{
-void HandlePeriodicInterrupt();
-}
-
 namespace Exception
 {
 
@@ -111,8 +106,6 @@ extern "C" void MainExceptionHandler(uint32_t code)
 {
     Uart::LockedStream stream(true);
 
-    //if (code == 0x11) return Timer::HandlePeriodicInterrupt();
-
     uint64_t core = 0;
     asm volatile ("mrs %0, mpidr_el1" : "=r"(core));
     stream.Puts("Main Exception Handler on core");
@@ -172,9 +165,8 @@ extern "C" void MainExceptionHandler(uint32_t code)
         }
         case 1: // IRQ
             stream.Puts("IRQ exception\n");
-            //PutRawExceptionInfo(code, esr, elr, spsr, far);
+            PutRawExceptionInfo(stream, code, esr, elr, spsr, far);
             stream.Puts("\n");
-            Timer::HandlePeriodicInterrupt();
             return;
         case 2: // FIQ
             stream.Puts("FIQ exception\n");

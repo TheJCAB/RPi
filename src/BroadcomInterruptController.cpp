@@ -3,6 +3,8 @@
 #include "Interrupts.h"
 
 #include "Mmio.h"
+#include "Timer.h"
+#include "Uart.h"
 
 #include <stdint.h>
 
@@ -182,10 +184,28 @@ void EnableUsb(HandlerFunction handler)
 
 extern "C" void InterruptDispatcher()
 {
+    uint64_t ctl = 1; // Enable = 1, IMASK = 0, ISTATUS = don't care
+    asm volatile ("mrs %0, cntv_ctl_el0" : "=r"(ctl));
+    if ((ctl & 4) != 0)
+    {
+        return Timer::HandleArmVirtualTimerInterrupt();
+    }
+
+    // If not core 0, return
+    uint64_t coreId;
+    asm volatile ("mrs %0, MPIDR_EL1" : "=r"(coreId));
+    if (coreId & 3)
+    {
+        return;
+    }
 
     // Check for basic IRQs
     while (auto basicPending = IrqBasicPending.get())
     {
+        Uart::Raw::Puts("Basic IRQs pending: ");
+        Uart::Raw::PutHex(basicPending.Raw32);
+        Uart::Raw::Puts("\n");
+
         // Handle basic IRQs
         if (basicPending.USB)
         {
@@ -195,17 +215,29 @@ extern "C" void InterruptDispatcher()
                 UsbHandler();
             }
         }
-    }
 
-//    // Check for IRQ1
-//    if (irqPending1.get()) {
-//        // Handle IRQ1
-//    }
-//
-//    // Check for IRQ2
-//    if (irqPending2.get()) {
-//        // Handle IRQ2
-//    }
+        // Check for IRQ1
+        if (basicPending.IRQs1)
+        {
+            auto irq1 = IrqPending1.get();
+            Uart::Raw::Puts("IRQs 1 pending: ");
+            Uart::Raw::PutHex(irq1.Raw32);
+            Uart::Raw::Puts("\n");
+
+            // Handle IRQ1
+        }
+
+        // Check for IRQ2
+        if (basicPending.IRQs2)
+        {
+            auto irq2 = IrqPending2.get();
+            Uart::Raw::Puts("IRQs 2 pending: ");
+            Uart::Raw::PutHex(irq2.Raw32);
+            Uart::Raw::Puts("\n");
+
+            // Handle IRQ2
+        }
+    }
 }
 
 /*

@@ -32,6 +32,7 @@
 
 #include "DesignWareUsb.h"
 
+#include "Cpu.h"
 #include "Timer.h"
 
 #include "emb-stdio.h"				// Needed for printf
@@ -1041,7 +1042,7 @@ RESULT HubPortReset(struct UsbDevice *device, uint8_t port) {
         }
         timeout = 0;
         do {
-            Timer::Delay(20000);
+            Cpu::DelayInMicroseconds(20000);
             if ((result = HCDReadHubPortStatus(device, port + 1, (uint8_t*)&portStatus.Raw32)) != Ok) {
                 LOG("HUB: Hub failed to get status (4) for %s.Port%d.\n", UsbGetDescription(device), port + 1);
                 return result;
@@ -1287,8 +1288,8 @@ RESULT EnumerateHub (struct UsbDevice *device) {
             LOG("HUB: device: %i could not power Port%d.\n",
                 device->Pipe0.Number, i + 1);						// Log error
     }
-    Timer::Delay(data->Descriptor.PowerGoodDelay * 2000);				// Every hub has a different power stability delay
-    Timer::Delay(1'000'000);									// Wait 1 second to allow power to stabilize
+    Cpu::DelayInMicroseconds(data->Descriptor.PowerGoodDelay * 2000);				// Every hub has a different power stability delay
+    Cpu::DelayInMicroseconds(1'000'000);									// Wait 1 second to allow power to stabilize
 
     for (int port = 0; port < data->MaxChildren; port++) {			// Now check for new device to enumerate on each port
         HubCheckConnection(device, port);							// Run connection check on each port
@@ -1367,7 +1368,7 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
         return result;												// Fatal enumeration error of this device
     }
     device->Pipe0.Number = address;									// Device successfully addressed so put it back to control pipe								
-    Timer::Delay(10000);												// Allows time for address to propagate.
+    Cpu::DelayInMicroseconds(10000);												// Allows time for address to propagate.
     device->Config.Status = USB_STATUS_ADDRESSED;					// Our enumeration status in now addressed
 
     LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 4 = Read Device Descriptor At Address\n");
@@ -1580,7 +1581,7 @@ RESULT UsbAttachRootHub(void) {
     DeviceTable[0].Pipe0.MaxPacketSizeInBits = 64;					// Set our fake hub to 64 byte packets .. as it's fake we need to do it manually
     DeviceTable[0].Config.Status = USB_STATUS_POWERED;				// Set our fake hub status to configured .. as it's fake we need to do manually
     RootHubDeviceNumber = 0;										// Roothub number is zero
-    Timer::Delay(1'000'000);								// Wait 1 second to allow the USB bus to stabilize
+    Cpu::DelayInMicroseconds(1'000'000);								// Wait 1 second to allow the USB bus to stabilize
     return EnumerateDevice(&DeviceTable[0], NULL, 0);				// Ok start enumerating the USB bus as roothub port 1 is the physical bus
 }
 

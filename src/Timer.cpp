@@ -1,37 +1,11 @@
 #include "Timer.h"
 
+#include "Cpu.h"
 #include "Mmio.h"
 #include "Uart.h"
 
 namespace Timer
 {
-
-uint64_t GetPerformanceFrequency()
-{
-    uint64_t freq = 0;
-    asm volatile ("mrs %0, cntfrq_el0" : "=r"(freq));
-    return freq;
-}
-
-uint64_t const PerformanceFrequency = GetPerformanceFrequency();
-
-uint64_t GetPerformanceCounter()
-{
-    uint64_t counter = 0;
-    asm volatile ("mrs %0, cntvct_el0" : "=r"(counter));
-    return counter;
-}
-
-void Delay(uint64_t us)
-{
-    uint64_t const freq = GetPerformanceFrequency();
-    uint64_t start = GetPerformanceCounter();
-    uint64_t end = start + (us * freq / 1'000'000u);
-    while (GetPerformanceCounter() < end) {
-        //asm volatile ("wfe"); // This is bad unless we know there will be some event.
-        asm volatile ("yield");
-    }
-}
 
 
 
@@ -73,9 +47,9 @@ constexpr uint32_t Timer_Reload    = 0xB418u;
 // Calculate timer interval in counter ticks
 uint64_t interval;
 
-void SetPeriodicInterrupt(uint64_t us)
+void SetPeriodicVirtualTimerInterrupt(uint64_t us)
 {
-    interval = us * GetPerformanceFrequency() / 1'000'000u;
+    interval = us * Cpu::PerformanceFrequency / 1'000'000u;
 
     // Set the timer interval
     asm volatile ("msr cntv_tval_el0, %0" :: "r"(interval));
@@ -84,7 +58,10 @@ void SetPeriodicInterrupt(uint64_t us)
     uint64_t ctl = 1; // Enable = 1, IMASK = 0, ISTATUS = don't care
     asm volatile ("msr cntv_ctl_el0, %0" :: "r"(ctl));
 
-    *reinterpret_cast<volatile uint32_t*>(0x8000'0040u) = 0x08; // Enable the virtual timer interrupt for core 3
+    uint64_t coreId;
+    asm volatile ("mrs %0, MPIDR_EL1" : "=r"(coreId));
+
+    //*reinterpret_cast<volatile uint32_t*>(0x8000'0040u) |= (1u << (coreId & 3)); // Enable the virtual timer interrupt for the current core
 
 // This stuff is RPi4
 //    // Enable the interrupt in the interrupt controller (GIC)
@@ -106,11 +83,9 @@ void SetPeriodicInterrupt(uint64_t us)
 }
 
 // This should be called from the IRQ handler for the virtual timer
-void HandlePeriodicInterrupt()
+void HandleArmVirtualTimerInterrupt()
 {
     // Acknowledge the interrupt by resetting the timer interval
-    //uint64_t interval;
-    //asm volatile ("mrs %0, cntv_tval_el0" : "=r"(interval));
     asm volatile ("msr cntv_tval_el0, %0" :: "r"(interval));
 
     if (auto lockedStream = Uart::LockedStream(true)) {

@@ -48,7 +48,7 @@ while (true) {
     }
     
     // Optional: small delay based on device's preferred interval
-    Timer::Delay(pollInterval * 1000); // Convert ms to microseconds
+    Cpu::DelayInMicroseconds(pollInterval * 1000); // Convert ms to microseconds
 }
 ```
 
@@ -211,7 +211,7 @@ void KeyboardInterruptExample() {
             ProcessKeyboardData(keyboardData, bytesRead);
         } else if (result != RESULT::Ok) {
             printf("Interrupt IN transfer failed: %d\n", result);
-            Timer::Delay(10000); // Brief delay before retry
+            Cpu::DelayInMicroseconds(10000); // Brief delay before retry
         }
         
         // No delay needed here - interrupt IN is event-driven!

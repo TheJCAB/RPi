@@ -1,4 +1,6 @@
 #include "Run.h"
+
+#include "Cpu.h"
 #include "Mmio.h"
 #include "Uart.h"
 #include "Timer.h"
@@ -35,7 +37,7 @@ void Flashing()
                 background = Magenta;
             }
 
-            Timer::Delay(33'333); // Delay for 33.333 ms (30 FPS)
+            Cpu::DelayInMicroseconds(33'333); // Delay for 33.333 ms (30 FPS)
             for (uint32_t x = 0; x < Framebuffer::Width; ++x)
             {
                 for (uint32_t y = 0; y < Framebuffer::Height; ++y)
@@ -128,7 +130,7 @@ void FlashScreen(Color565 color)
 {
     Framebuffer::WriteRectangle(0, 0, Framebuffer::Width, Framebuffer::Height, color);
     Framebuffer::Flip();
-    Timer::Delay(33'333); // Flash for 33.333 ms (30 FPS)
+    Cpu::DelayInMicroseconds(33'333); // Flash for 33.333 ms (30 FPS)
 }
 
 void Snake()
@@ -159,10 +161,10 @@ void Snake()
             direction = Up;
         }
 
-        uint64_t time = Timer::GetPerformanceCounter();
+        uint64_t time = Cpu::GetPerformanceCounter();
         if (time >= nextSimulationTime)
         {
-            nextSimulationTime = time + Timer::GetPerformanceFrequency() / 10;
+            nextSimulationTime = time + Cpu::PerformanceFrequency / 10;
             if (tailLength > 0)
             {
                 // Move the tail
@@ -237,7 +239,7 @@ void Snake()
         WriteRectangle(head.x * cellWidth, head.y * cellHeight, cellWidth, cellHeight, Green);
 
         Framebuffer::Flip();
-        Timer::Delay(33'333);
+        Cpu::DelayInMicroseconds(33'333);
     }
 }
 

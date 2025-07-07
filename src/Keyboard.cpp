@@ -1,4 +1,6 @@
 #include "HidUsbDevices.h"
+
+#include "Cpu.h"
 #include "Timer.h"
 
 #include "emb-stdio.h"
@@ -66,7 +68,7 @@ static void RefreshStateIfNeeded()
         return;
     }
 
-    auto const time = Timer::GetPerformanceCounter();
+    auto const time = Cpu::GetPerformanceCounter();
     static uint64_t nextRefresh = 0;
     if (time >= nextRefresh)
     {

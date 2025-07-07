@@ -25,6 +25,7 @@
 
 #include "PCIe.h"
 
+#include "Cpu.h"
 #include "Mmio.h"
 #include "Uart.h"
 #include "Timer.h"
@@ -224,7 +225,7 @@ namespace
         init = RPI_PCIE_REG_INIT;
         printf("RPI_PCIE_REG_INIT after reset=%x\n", init);
 
-        Timer::Delay(1000);
+        Cpu::DelayInMicroseconds(1000);
 
         init = RPI_PCIE_REG_INIT;
         printf("RPI_PCIE_REG_INIT=%x\n", init);
@@ -249,7 +250,7 @@ namespace
             if ((status & 0x30) == 0x30) {
                 break;
             }
-            Timer::Delay(1000);
+            Cpu::DelayInMicroseconds(1000);
             status = RPI_PCIE_REG_STATUS;
         }
 

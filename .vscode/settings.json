@@ -80,6 +80,12 @@
         "__hash_table": "cpp",
         "hash_set": "cpp",
         "string_view": "cpp",
-        "condition_variable": "cpp"
+        "condition_variable": "cpp",
+        "__node_handle": "cpp",
+        "__verbose_abort": "cpp",
+        "cstdarg": "cpp",
+        "expected": "cpp",
+        "fstream": "cpp",
+        "iostream": "cpp"
     }
 }

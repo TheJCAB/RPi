@@ -15,11 +15,14 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_CXX_FLAGS_DEBUG": "",
+        "CMAKE_C_FLAGS_DEBUG": "",
         "CMAKE_ASM_COMPILER": "clang.exe",
         "CMAKE_CXX_COMPILER": "clang.exe",
+        "CMAKE_C_COMPILER": "clang.exe",
         "CMAKE_LINKER": "ld64.lld.exe",
         "CMAKE_ASM_FLAGS": "-target aarch64-none-elf",
         "CMAKE_CXX_FLAGS": "-target aarch64-none-elf",
+        "CMAKE_C_FLAGS": "-target aarch64-none-elf",
         "CMAKE_EXE_LINKER_FLAGS": "-target aarch64-none-elf -nostdlib",
         "CMAKE_MSVC_RUNTIME_LIBRARY": ""
       },

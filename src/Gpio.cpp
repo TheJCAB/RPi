@@ -65,9 +65,9 @@ void SetPullUpDown(uint32_t pin, PullUpDown pud)
         auto&& clkreg = Rpi3Registers.GPPUDCLK[pin / 32];
 
         pudreg = static_cast<uint32_t>(pud);
-        Timer::Delay(150); // Wait for 150 cycles (we use 150us)
+        Cpu::DelayInMicroseconds(150); // Wait for 150 cycles (we use 150us)
         clkreg = static_cast<uint32_t>(pin) << shift;
-        Timer::Delay(150); // Wait for 150 cycles (we use 150us)
+        Cpu::DelayInMicroseconds(150); // Wait for 150 cycles (we use 150us)
         if (static_cast<uint32_t>(pud) != 0)
         {
             pudreg = 0;

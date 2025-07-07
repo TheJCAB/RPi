@@ -35,6 +35,7 @@
 #include <wchar.h>				// C standard needed for UTF for unicode descriptor support
 #include "DesignWareUsb.h"			// This units header
 
+#include "Cpu.h"
 #include "Mmio.h"
 #include "Mailbox.h"
 #include "Timer.h"
@@ -822,12 +823,12 @@ void DwcClearEnable()
 void DwcResume()
 {
     DWC_POWER_AND_CLOCK = 0;
-    Timer::Delay(5000);
+    Cpu::DelayInMicroseconds(5000);
     auto tempPort = *DWC_HOST_PORT;
     tempPort.Raw32 &= HOSTPORTMASK;
     tempPort.Resume = true;
     DWC_HOST_PORT = tempPort;
-    Timer::Delay(100000);
+    Cpu::DelayInMicroseconds(100000);
     tempPort = *DWC_HOST_PORT;
     tempPort.Raw32 &= HOSTPORTMASK;
     tempPort.Suspend = false;
@@ -873,7 +874,7 @@ void DwcReset()
     tempPower.EnableSleepClockGating = false;
     tempPower.StopPClock = false;
     DWC_POWER_AND_CLOCK = tempPower;
-    Timer::Delay(10000);
+    Cpu::DelayInMicroseconds(10000);
     DWC_POWER_AND_CLOCK = 0;
 
     auto tempPort = *DWC_HOST_PORT;
@@ -882,7 +883,7 @@ void DwcReset()
     tempPort.Reset = true;
     tempPort.Power = true;
     DWC_HOST_PORT = tempPort;
-    Timer::Delay(60000);
+    Cpu::DelayInMicroseconds(60000);
     tempPort = *DWC_HOST_PORT;
     tempPort.Raw32 &= HOSTPORTMASK;
     tempPort.Reset = false;
@@ -976,10 +977,10 @@ DWCRESULT PowerOffUsb(void) {
  --------------------------------------------------------------------------*/
 DWCRESULT HCDReset(void) {
 
-    uint64_t ticks100ms = Timer::GetPerformanceTicksForUs(100'000);
-    uint64_t original_tick = Timer::GetPerformanceCounter();
+    uint64_t ticks100ms = Cpu::GetPerformanceTicksForUs(100'000);
+    uint64_t original_tick = Cpu::GetPerformanceCounter();
     do {
-        if (Timer::GetPerformanceCounter() - original_tick > ticks100ms) {
+        if (Cpu::GetPerformanceCounter() - original_tick > ticks100ms) {
             return DWCRESULT::ErrorTimeout;
         }
     } while ((*DWC_CORE_RESET).AhbMasterIdle == false);
@@ -987,9 +988,9 @@ DWCRESULT HCDReset(void) {
     DWC_CORE_RESET = [](auto& r){ r.CoreSoft = true; };
 
     struct CoreReset temp;
-    original_tick = Timer::GetPerformanceCounter();
+    original_tick = Cpu::GetPerformanceCounter();
     do {
-        if (Timer::GetPerformanceCounter() - original_tick > ticks100ms) {
+        if (Cpu::GetPerformanceCounter() - original_tick > ticks100ms) {
             return DWCRESULT::ErrorTimeout;
         }
         temp = *DWC_CORE_RESET;
@@ -1007,10 +1008,10 @@ DWCRESULT HCDTransmitFifoFlush(enum CoreFifoFlush fifo) {
     DWC_CORE_RESET = [=](auto& r){ r.TransmitFifoFlushNumber = fifo; };
     DWC_CORE_RESET = [](auto& r){ r.TransmitFifoFlush = true; };
 
-    uint64_t ticks100ms = Timer::GetPerformanceTicksForUs(100'000);
-    uint64_t original_tick = Timer::GetPerformanceCounter();
+    uint64_t ticks100ms = Cpu::GetPerformanceTicksForUs(100'000);
+    uint64_t original_tick = Cpu::GetPerformanceCounter();
     do {
-        if (Timer::GetPerformanceCounter() - original_tick > ticks100ms) {
+        if (Cpu::GetPerformanceCounter() - original_tick > ticks100ms) {
             return DWCRESULT::ErrorTimeout;
         }
     } while ((*DWC_CORE_RESET).TransmitFifoFlush == true);
@@ -1026,10 +1027,10 @@ DWCRESULT HCDReceiveFifoFlush(void) {
 
     DWC_CORE_RESET = [](auto& r){ r.ReceiveFifoFlush = true; };
 
-    uint64_t ticks100ms = Timer::GetPerformanceTicksForUs(100'000);
-    uint64_t original_tick = Timer::GetPerformanceCounter();
+    uint64_t ticks100ms = Cpu::GetPerformanceTicksForUs(100'000);
+    uint64_t original_tick = Cpu::GetPerformanceCounter();
     do {
-        if (Timer::GetPerformanceCounter() - original_tick > ticks100ms) {
+        if (Cpu::GetPerformanceCounter() - original_tick > ticks100ms) {
             return DWCRESULT::ErrorTimeout;
         }
     } while ((*DWC_CORE_RESET).ReceiveFifoFlush == true);
@@ -1144,7 +1145,7 @@ DWCRESULT HCDStart (void) {
     coreUsb.TsDlinePulseEnable = 0;
     DWC_CORE_CONTROL = coreUsb;
 
-    Timer::Delay(1000);
+    Cpu::DelayInMicroseconds(1000);
 
     LOG_DEBUG("HCD: Master reset.\n");								
     if ((result = HCDReset()) != DWCRESULT::Ok) {
@@ -1152,7 +1153,7 @@ DWCRESULT HCDStart (void) {
         return result;
     }
 
-    Timer::Delay(1000);
+    Cpu::DelayInMicroseconds(1000);
 
     if (!PhyInitialised) {
         LOG_DEBUG("HCD: One time phy initialisation.\n");
@@ -1168,7 +1169,7 @@ DWCRESULT HCDStart (void) {
         }
     }
 
-    Timer::Delay(1000);
+    Cpu::DelayInMicroseconds(1000);
 
     coreUsb = *DWC_CORE_CONTROL;
     if ((*DWC_CORE_HARDWARE1).HighSpeedPhysical == Ulpi
@@ -1183,7 +1184,7 @@ DWCRESULT HCDStart (void) {
     }
     DWC_CORE_CONTROL = coreUsb;
 
-    Timer::Delay(1000);
+    Cpu::DelayInMicroseconds(1000);
 
     struct CoreAhb tempAhb;
     tempAhb = *DWC_CORE_AHB;
@@ -1191,7 +1192,7 @@ DWCRESULT HCDStart (void) {
     tempAhb.DmaRemainderMode = Incremental;
     DWC_CORE_AHB = tempAhb;
 
-    Timer::Delay(1000);
+    Cpu::DelayInMicroseconds(1000);
 
     coreUsb = *DWC_CORE_CONTROL;
     switch ((*DWC_CORE_HARDWARE1).OperatingMode) {
@@ -1219,7 +1220,7 @@ DWCRESULT HCDStart (void) {
     LOG_DEBUG("HCD: Core started.\n");
     LOG_DEBUG("HCD: Starting host.\n");
 
-    Timer::Delay(1000);
+    Cpu::DelayInMicroseconds(1000);
 
     DWC_POWER_AND_CLOCK = {};
 
@@ -1236,11 +1237,11 @@ DWCRESULT HCDStart (void) {
     // ULPI FsLs Host mode, I assume other mode is ULPI only  .. documentation would be nice
     DWC_HOST_CONFIG = [](auto& r){ r.FslsOnly = true; };
 
-    Timer::Delay(1000);
+    Cpu::DelayInMicroseconds(1000);
 
     DWC_CORE_RECEIVESIZE = ReceiveFifoSize;
 
-    Timer::Delay(1000);
+    Cpu::DelayInMicroseconds(1000);
 
     DWC_CORE_NONPERIODICFIFO_SIZE = [](auto& r)
     {
@@ -1248,7 +1249,7 @@ DWCRESULT HCDStart (void) {
         r.StartAddress = ReceiveFifoSize;
     };
 
-    Timer::Delay(1000);
+    Cpu::DelayInMicroseconds(1000);
 
     DWC_CORE_PERIODICINFO_HostSize = [](auto& r)
     {
@@ -1256,7 +1257,7 @@ DWCRESULT HCDStart (void) {
         r.StartAddress = ReceiveFifoSize + NonPeriodicFifoSize;
     };
 
-    Timer::Delay(1000);
+    Cpu::DelayInMicroseconds(1000);
 
     LOG_DEBUG("HCD: Set HNP: enabled.\n");
 
@@ -1266,15 +1267,15 @@ DWCRESULT HCDStart (void) {
     DWC_CORE_OTGCONTROL = tempOtgControl;
     //DWC_CORE_OTGINTERRUPT = 0xFFFF'FFFFu; // Clear all OTG interrupts
 
-    Timer::Delay(1000);
+    Cpu::DelayInMicroseconds(1000);
 
     if ((result = HCDTransmitFifoFlush(FlushAll)) != DWCRESULT::Ok)
         return result;
-    Timer::Delay(1000);
+    Cpu::DelayInMicroseconds(1000);
 
     if ((result = HCDReceiveFifoFlush()) != DWCRESULT::Ok)
         return result;
-    Timer::Delay(1000);
+    Cpu::DelayInMicroseconds(1000);
 
 
     printf2("DWC_HOST_CONFIG: 0x%08X\n", (*DWC_HOST_CONFIG).Raw32);
@@ -1297,17 +1298,17 @@ DWCRESULT HCDStart (void) {
         }
         printf2("\n");
 
-        Timer::Delay(100'000);
+        Cpu::DelayInMicroseconds(100'000);
 
         //for (int channel = 0; channel < (*DWC_CORE_HARDWARE1).HostChannelCount; channel++) {
         //	struct HostChannelCharacteristic tempChar;
-        //	uint64_t ticks100ms = Timer::GetPerformanceTicksForUs(100'000);
-        //	uint64_t original_tick = Timer::GetPerformanceCounter();
+        //	uint64_t ticks100ms = Cpu::GetPerformanceTicksForUs(100'000);
+        //	uint64_t original_tick = Cpu::GetPerformanceCounter();
         //	do {
         //		tempChar = *DWC_HOST_CHANNEL_Characteristic[channel];
-        //		if (Timer::GetPerformanceCounter() - original_tick > ticks100ms) {
+        //		if (Cpu::GetPerformanceCounter() - original_tick > ticks100ms) {
         //			LOG("HCD: Unable to set halt on channel %i %X.\n", channel, tempChar.Raw32);
-        //			original_tick = Timer::GetPerformanceCounter();
+        //			original_tick = Cpu::GetPerformanceCounter();
         //			//Processor::Halt();
         //		}
         //	} while (!tempChar.channel_disable || !tempChar.channel_enable);
@@ -1329,7 +1330,7 @@ DWCRESULT HCDStart (void) {
         }
         printf2("\n");
 
-        Timer::Delay(100'000);
+        Cpu::DelayInMicroseconds(100'000);
 
         for (int channel = 0; channel < (*DWC_CORE_HARDWARE1).HostChannelCount; channel++) {
             printf2("DWC_HOST_CHANNEL_Characteristic[%d]: 0x%08X\n", channel, (*DWC_HOST_CHANNEL_Characteristic[channel]).Raw32);
@@ -1337,13 +1338,13 @@ DWCRESULT HCDStart (void) {
 
         for (int channel = 0; channel < (*DWC_CORE_HARDWARE1).HostChannelCount; channel++) {
             struct HostChannelCharacteristic tempChar;
-            uint64_t ticks100ms = Timer::GetPerformanceTicksForUs(100'000);
-            uint64_t original_tick = Timer::GetPerformanceCounter();
+            uint64_t ticks100ms = Cpu::GetPerformanceTicksForUs(100'000);
+            uint64_t original_tick = Cpu::GetPerformanceCounter();
             do {
                 tempChar = *DWC_HOST_CHANNEL_Characteristic[channel];
-                if (Timer::GetPerformanceCounter() - original_tick > ticks100ms) {
+                if (Cpu::GetPerformanceCounter() - original_tick > ticks100ms) {
                     LOG("HCD: Unable to clear halt on channel %i %X.\n", channel, tempChar.Raw32);
-                    original_tick = Timer::GetPerformanceCounter();
+                    original_tick = Cpu::GetPerformanceCounter();
                     //Processor::Halt();
                 }
             } while (tempChar.channel_disable || !tempChar.channel_enable);
@@ -1354,7 +1355,7 @@ DWCRESULT HCDStart (void) {
         }
     }
 
-    Timer::Delay(1000);
+    Cpu::DelayInMicroseconds(1000);
 
     struct HostPort tempPort;
     tempPort = *DWC_HOST_PORT;
@@ -1366,7 +1367,7 @@ DWCRESULT HCDStart (void) {
         DWC_HOST_PORT = tempPort;
     }
 
-    Timer::Delay(1000);
+    Cpu::DelayInMicroseconds(1000);
 
     LOG_DEBUG("HCD: Initial resetting physical host.\n");
     tempPort = *DWC_HOST_PORT;
@@ -1375,7 +1376,7 @@ DWCRESULT HCDStart (void) {
     tempPort.Raw32 &= HOSTPORTMASK;
     tempPort.Reset = true;
     DWC_HOST_PORT = tempPort;
-    Timer::Delay(60000);
+    Cpu::DelayInMicroseconds(60000);
     tempPort = *DWC_HOST_PORT;
     LOG_DEBUG("HCD: Reset host port: 0x%08X\n", tempPort.Raw32);
     
@@ -1383,7 +1384,7 @@ DWCRESULT HCDStart (void) {
     tempPort.Reset = false;
     DWC_HOST_PORT = tempPort;
     
-    Timer::Delay(1000);
+    Cpu::DelayInMicroseconds(1000);
 
     LOG_DEBUG("HCD: Reset host port: 0x%08X\n", tempPort.Raw32);
 
@@ -1489,7 +1490,7 @@ DWCRESULT HCDCheckErrorAndAction(struct ChannelInterrupts interrupts, bool packe
     // Deal with true transmission errors
     if ((interrupts.BabbleError) ||
         (interrupts.FrameOverrun) ||
-        (interrupts.TransactionError))								
+        (interrupts.TransactionError))
     {
         return DWCRESULT::ErrorTransmission;
     }
@@ -1505,15 +1506,195 @@ DWCRESULT HCDCheckErrorAndAction(struct ChannelInterrupts interrupts, bool packe
 ChannelInterrupts HCDWaitOnTransmissionResult(uint32_t timeout, uint8_t channel)
 {
     ChannelInterrupts tempInt;
-    uint64_t ticksTimeout = Timer::GetPerformanceTicksForUs(timeout);
-    uint64_t original_tick = Timer::GetPerformanceCounter();
+    uint64_t ticksTimeout = Cpu::GetPerformanceTicksForUs(timeout);
+    uint64_t original_tick = Cpu::GetPerformanceCounter();
     for (;;) {
-        Timer::Delay(100);
+        Cpu::DelayInMicroseconds(100);
         tempInt = *DWC_HOST_CHANNEL_Interrupt[channel];
-        if (tempInt.Halt || Timer::GetPerformanceCounter() - original_tick > ticksTimeout)
+        if (tempInt.Halt || Cpu::GetPerformanceCounter() - original_tick > ticksTimeout)
         {
             return tempInt;
         }
+    }
+}
+
+using InCallback = bool (*)(uintptr_t context, uint32_t channel);
+
+struct Channel
+{
+    bool              Prepared;
+    bool              InTransfer;
+    bool              OutTransfer;
+    bool              SplitEnabled;
+    uint32_t          Size;
+    UsbPipe           Pipe;
+    usb_transfer_type Type;
+    UsbDirection      Direction;
+    InCallback        Callback;
+    uintptr_t         Context;
+};
+
+Channel ChannelData[DWC_NUM_CHANNELS]{};
+
+void HCDPrepareChannel(
+    UsbPipe const&    pipe, // Endpoint information
+    uint32_t          channel,
+    usb_transfer_type Type,
+    UsbDirection      Direction,
+    PacketId          packetId,
+    uint32_t          transferSize,
+    InCallback        callback, // Callback to call when transfer is complete
+    uintptr_t         context
+)
+{
+    LOG_DEBUG("HCD: Channel %u %s transfer, length %d, packetId %d, address %u, endpoint %u, type %u, speed %u\n",
+        channel, Direction == USB_DIRECTION_IN ? "in" : "out", pipe.Number, pipe.EndPoint, Type, pipe.Speed);
+
+    uint32_t offset = 0;
+    if (channel > (*DWC_CORE_HARDWARE1).HostChannelCount) {
+        LOG("HCD: Channel %d is not available on this host.\n", channel);
+        return;
+    }
+
+    // Program the channel.
+    DWC_HOST_CHANNEL_Interrupt[channel] = 0xFFFFFFFF;
+    DWC_HOST_CHANNEL_InterruptMask[channel] = 0x0;
+
+    struct HostChannelCharacteristic tempChar = { 0 };
+    tempChar.device_address = pipe.Number;
+    tempChar.endpoint_number = pipe.EndPoint;
+    tempChar.endpoint_direction = Direction;
+    tempChar.low_speed = pipe.Speed == USB_SPEED_LOW ? true : false;
+    tempChar.endpoint_type = Type;
+    tempChar.max_packet_size = pipe.MaxPacketSizeInBits;
+    tempChar.channel_enable = false;
+    tempChar.channel_disable = false;
+    DWC_HOST_CHANNEL_Characteristic[channel] = tempChar;
+
+    // Clear and setup split control to low speed devices
+    struct HostChannelSplitControl tempSplit = { 0 };
+    if (pipe.Speed != USB_SPEED_HIGH) {
+        LOG_DEBUG("Setting split control, addr: %i port: %i, packetSize: PacketSize: %u\n",
+            pipe.splitNodePoint, pipe.splitNodePort, pipe.MaxPacketSizeInBits);
+        tempSplit.split_enable = true;
+        tempSplit.hub_address = pipe.splitNodePoint;
+        tempSplit.port_address = pipe.splitNodePort;
+        tempSplit.transaction_position = 0;//3;
+    }
+    DWC_HOST_CHANNEL_SplitCtrl[channel] = tempSplit;
+
+    // Set transfer size
+    HostTransferSize tempXfer{};
+    tempXfer.size = transferSize;
+    if (pipe.Speed == USB_SPEED_LOW) tempXfer.packet_count = (transferSize + 7) / 8;
+    else                             tempXfer.packet_count = (transferSize + pipe.MaxPacketSizeInBits - 1) / pipe.MaxPacketSizeInBits;
+    if (tempXfer.packet_count == 0) tempXfer.packet_count = 1;
+    tempXfer.packet_id = packetId;
+    DWC_HOST_CHANNEL_TransferSize[channel] = tempXfer;
+
+    ChannelData[channel].Prepared = true; // Mark channel as prepared
+    ChannelData[channel].InTransfer = false;
+    ChannelData[channel].OutTransfer = false;
+    ChannelData[channel].SplitEnabled = (pipe.Speed != USB_SPEED_HIGH);
+    ChannelData[channel].Size = transferSize;
+    ChannelData[channel].Pipe = pipe;
+    ChannelData[channel].Type = Type;
+    ChannelData[channel].Direction = Direction;
+    ChannelData[channel].Callback = nullptr;
+    ChannelData[channel].Context = 0;
+}
+
+void HCDStartInTransfer(
+    uint32_t channel
+)
+{
+    ChannelData[channel].InTransfer = true;
+
+    LOG_DEBUG("HCD: Channel %u transfer size set to %#08X bytes.\n", pipectrl.Channel, tempXfer.Raw32);
+
+    // Clear any left over channel interrupts
+    DWC_HOST_CHANNEL_Interrupt[channel] = 0xFFFFFFFF;
+    DWC_HOST_CHANNEL_InterruptMask[channel] = ChannelInterrupts
+    {
+        .TransferComplete        = true,
+        .Halt                    = true,
+        .Stall                   = true,
+        .NegativeAcknowledgement = true,
+    };
+
+    DWC_HOST_INTERRUPTMASK = 1u << channel; // Enable channel interrupts
+
+    // Clear any left over split
+    DWC_HOST_CHANNEL_SplitCtrl[channel] = [](auto& reg){ reg.complete_split = false; };
+
+    uint8_t* dmaBuffer  = Mailbox::AsGpuPointer(aligned_bufs[channel]);
+
+    DWC_HOST_CHANNEL_DmaAddr[channel] = Mailbox::AsGpuAddress(dmaBuffer) | 0xC000'0000u;
+    
+    auto nextFrame = (*DWC_HOST_FRAMECONTROL).FrameNumber + 1;
+
+    /* Launch transmission */
+    DWC_HOST_CHANNEL_Characteristic[channel] = [nextFrame](auto& reg)
+    {
+        reg.channel_enable    = true;
+        reg.odd_frame         = nextFrame & 1;
+        reg.packets_per_frame = 1;
+    };
+}
+
+void HCDHandleInTransferInterrupt(uint32_t channel)
+{
+    ChannelInterrupts interrupts = DWC_HOST_CHANNEL_Interrupt[channel];
+    if (interrupts.TransferComplete)
+    {
+        HostTransferSize size = DWC_HOST_CHANNEL_TransferSize[channel];
+        if (size.packet_count > 0)
+        {
+
+            LOG_DEBUG("HCD: Channel %u transfer size is zero, no data transferred.\n", channel);
+            return;
+        }
+
+        LOG_DEBUG("HCD: Channel %u transfer complete.\n", channel);
+        if (ChannelData[channel].Callback)
+        {
+            if (ChannelData[channel].Callback(ChannelData[channel].Context, channel))
+            {
+                LOG_DEBUG("HCD: Callback for channel %u returned true.\n", channel);
+            }
+            else
+            {
+                LOG_DEBUG("HCD: Callback for channel %u returned false.\n", channel);
+            }
+        }
+    }
+    else if (interrupts.Stall)
+    {
+        // Must retry later.
+        LOG_DEBUG("HCD: Channel %u stalled.\n", channel);
+    }
+    else if (interrupts.NegativeAcknowledgement)
+    {
+        // Rejected by the device.
+        LOG_DEBUG("HCD: Channel %u NAKed.\n", channel);
+    }
+    else if (interrupts.Halt)
+    {
+        if (ChannelData[channel].SplitEnabled)
+        {
+            DWC_HOST_CHANNEL_SplitCtrl[channel] = [](auto& reg)
+            {
+                reg.complete_split = true; // Mark split as complete
+            };
+        }
+        else
+        {
+            LOG_DEBUG("HCD: Channel %u halted.\n", channel);
+        }
+    }
+    else
+    {
+        LOG_DEBUG("HCD: Channel %u unknown interrupt.\n", channel);
     }
 }
 
@@ -1637,7 +1818,7 @@ DWCRESULT HCDChannelTransfer(const struct UsbPipe pipe, const struct UsbPipeCont
 
         sendCtrl.SplitTries = 0;
         while (sendCtrl.ActionResendSplit) {						// Decision was made to resend split
-            Timer::Delay(250);
+            Cpu::DelayInMicroseconds(250);
             // Clear channel interrupts
             DWC_HOST_CHANNEL_Interrupt[pipectrl.Channel] = 0xFFFFFFFF;
             DWC_HOST_CHANNEL_InterruptMask[pipectrl.Channel] = 0x0;
@@ -1669,8 +1850,8 @@ DWCRESULT HCDChannelTransfer(const struct UsbPipe pipe, const struct UsbPipeCont
                 result, (unsigned int)sendCtrl.Raw32, (unsigned int)tempInt.Raw32, 
                 (unsigned int)tempSplit.Raw32, result != DWCRESULT::Ok ? 0 : (*DWC_HOST_CHANNEL_TransferSize[pipectrl.Channel]).size);
             if (sendCtrl.ActionFatalError) return result;			// Fatal error occured bail
-            if (sendCtrl.LongerDelay) Timer::Delay(10000);			// Not yet response slower delay
-                else Timer::Delay(2500);								// Small delay between split resends
+            if (sendCtrl.LongerDelay) Cpu::DelayInMicroseconds(10000);			// Not yet response slower delay
+                else Cpu::DelayInMicroseconds(2500);								// Small delay between split resends
         }
 
         if (sendCtrl.Success) {										// Send successful adjust buffer position
