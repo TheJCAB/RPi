@@ -38,6 +38,7 @@ SECTIONS
 
     . = ALIGN(4096);
     _data_end = .;
+    _end = .;
 
     /DISCARD/ : { *(.debug*) *(.comment) *(.gnu*) *(.note*) }
 }

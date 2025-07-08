@@ -2,7 +2,6 @@
 
 #include "Cpu.h"
 #include "Mmio.h"
-#include "Timer.h"
 
 namespace Gpio
 {
