@@ -93,6 +93,38 @@ size_t strlen(const char* s)
     return static_cast<size_t>(p - s);
 }
 
+int strcmp(const char* s1, const char* s2)
+{
+    while (*s1 && *s2 && *s1 == *s2)
+    {
+        ++s1;
+        ++s2;
+    }
+    return static_cast<unsigned char>(*s1) - static_cast<unsigned char>(*s2);
+}
+
+int strncmp(const char* s1, const char* s2, size_t n)
+{
+    if (n == 0)
+    {
+        return 0;
+    }
+    
+    while (n > 0 && *s1 && *s2 && *s1 == *s2)
+    {
+        ++s1;
+        ++s2;
+        --n;
+    }
+    
+    if (n == 0)
+    {
+        return 0;
+    }
+    
+    return static_cast<unsigned char>(*s1) - static_cast<unsigned char>(*s2);
+}
+
 int __cxa_atexit(void (*func)(void*), void* arg, void* dso_handle)
 {
     // Simple implementation that ignores atexit functions

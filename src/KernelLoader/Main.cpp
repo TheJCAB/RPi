@@ -9,9 +9,9 @@
 extern "C" uint64_t _start;
 extern "C" uint64_t _end;
 
-extern "C" [[noreturn]] void KernelMain();
+extern "C" [[noreturn]] void KernelMain(void* p0, void* p1, void* dtb, void* p3);
 
-extern "C" [[noreturn]] void GetNewKernel(BootLib::PL011Uart uart0, uint8_t* destination)
+extern "C" [[noreturn]] void GetNewKernel(BootLib::PL011Uart uart0, uint8_t* destination, void* p0, void* p1, void* dtb, void* p3)
 {
     uart0.Puts("\n\nLet's load a kernel over UART!\n\n");
 
@@ -47,19 +47,19 @@ extern "C" [[noreturn]] void GetNewKernel(BootLib::PL011Uart uart0, uint8_t* des
         destination[i] = uart0.Getc();
     }
 
-    reinterpret_cast<decltype(KernelMain)*>(destination)();
+    reinterpret_cast<decltype(KernelMain)*>(destination)(p0, p1, dtb, p3);
     BootLib::Cpu::Halt(); // Should never reach here.
 }
 
-extern "C" [[noreturn]] void KernelMain()
+extern "C" [[noreturn]] void KernelMain(void* p0, void* p1, void* dtb, void* p3)
 {
-    BootLib::Mmio::Init();
+    auto const peripheralsBase = BootLib::Mmio::GetPeripheralsPhysicalBase();
 
-    BootLib::Gpio gpio{ BootLib::Mmio::Base + BootLib::Gpio::RegistersOffset };
+    BootLib::Gpio gpio{ peripheralsBase + BootLib::Gpio::RegistersOffset };
 
     gpio.SetUart0_14_15();
 
-    BootLib::PL011Uart uart0{ BootLib::Mmio::Base + BootLib::PL011Uart::Uart0RegistersOffset };
+    BootLib::PL011Uart uart0{ peripheralsBase + BootLib::PL011Uart::Uart0RegistersOffset };
 
     uart0.Init();
 
@@ -76,7 +76,7 @@ extern "C" [[noreturn]] void KernelMain()
         *newLocation++ = *p;
     }
 
-    reinterpret_cast<decltype(GetNewKernel)*>(reinterpret_cast<uintptr_t>(&GetNewKernel) - offsetInBytes)(uart0, reinterpret_cast<uint8_t*>(&_start));
+    reinterpret_cast<decltype(GetNewKernel)*>(reinterpret_cast<uintptr_t>(&GetNewKernel) - offsetInBytes)(uart0, reinterpret_cast<uint8_t*>(&_start), p0, p1, dtb, p3);
     BootLib::Cpu::Halt(); // Should never reach here.
 }
 

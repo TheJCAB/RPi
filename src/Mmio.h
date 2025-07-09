@@ -1,5 +1,7 @@
 #pragma once
 
+#include <BootLib/Mmio.h>
+
 #include <stdint.h>
 
 #include <concepts>

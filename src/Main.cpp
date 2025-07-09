@@ -12,6 +12,7 @@
 #include "Uart.h"
 #include "Mailbox.h"
 #include "Framebuffer.h"
+#include "SdCard.h"
 #include "Exception.h"
 #include "Processor.h"
 #include "Mmu.h"
@@ -21,6 +22,8 @@
 #include "PCIe.h"
 
 #include "emb-stdio.h"
+
+void parse_dtb(void* dtb);
 
 extern "C"
 {
@@ -59,11 +62,17 @@ volatile bool Core3Ready = false;
 
 void Core1()
 {
-    Uart::Raw::NoMmuPuts("Core 1 starting\n");
+    {
+        // Without MMU, we need to use physical addresses to access peripherals.
+        BootLib::PL011Uart uart{ BootLib::Mmio::GetPeripheralsPhysicalBase() + BootLib::PL011Uart::Uart0RegistersOffset };
+        uart.Puts("Core 1 starting\n");
+    }
 
     InitCore();
 
-    Uart::Puts("Core 1 says hello\n");
+    BootLib::PL011Uart uart{ Mmio::Base + BootLib::PL011Uart::Uart0RegistersOffset };
+    uart.Puts("Core 1 says hello\n");
+
     Core1Ready = true; // Signal that core 1 is ready
 
     asm volatile ("dmb ish"); // Release barrier
@@ -77,9 +86,16 @@ void Core1()
 
 void Core2()
 {
+    {
+        // Without MMU, we need to use physical addresses to access peripherals.
+        BootLib::PL011Uart uart{ BootLib::Mmio::GetPeripheralsPhysicalBase() + BootLib::PL011Uart::Uart0RegistersOffset };
+        uart.Puts("Core 2 starting\n");
+    }
+
     InitCore();
 
-    Uart::Puts("Core 2 says hello\n");
+    BootLib::PL011Uart uart{ Mmio::Base + BootLib::PL011Uart::Uart0RegistersOffset };
+    uart.Puts("Core 2 says hello\n");
     Core2Ready = true; // Signal that core 2 is ready
 
     asm volatile ("dmb ish"); // Release barrier
@@ -100,9 +116,16 @@ void Core2()
 
 void Core3()
 {
+    {
+        // Without MMU, we need to use physical addresses to access peripherals.
+        BootLib::PL011Uart uart{ BootLib::Mmio::GetPeripheralsPhysicalBase() + BootLib::PL011Uart::Uart0RegistersOffset };
+        uart.Puts("Core 3 starting\n");
+    }
+
     InitCore();
 
-    Uart::Puts("Core 3 says hello\n");
+    BootLib::PL011Uart uart{ Mmio::Base + BootLib::PL011Uart::Uart0RegistersOffset };
+    uart.Puts("Core 3 says hello\n");
     Core3Ready = true; // Signal that core 3 is ready
 
     asm volatile ("dmb ish"); // Release barrier
@@ -131,12 +154,69 @@ inline uint32_t AtomicAdd(uint32_t volatile& value, uint32_t increment)
     return old_value;
 }
 
-void Core0()
+void Core0(void* dtb, void* p1, void* p2, void* p3)
 {
-    // Clear the BSS.
-    for (auto p = &_bss_start; p < &_bss_end; ++p)
     {
-        *p = 0; // Clear BSS
+        Cpu::cpacr_el1.modify([](auto& reg){
+            reg.FPEN = 3; // Enable the Floating point and SIMD unit for EL0 and EL1
+        });
+
+        // Without MMU, we need to use physical addresses to access peripherals.
+        BootLib::PL011Uart uart{ BootLib::Mmio::GetPeripheralsPhysicalBase() + BootLib::PL011Uart::Uart0RegistersOffset };
+        uart.Puts("Core 0 starting\n");
+
+        // Clear the BSS.
+        for (auto p = &_bss_start; p < &_bss_end; ++p)
+        {
+            *p = 0; // Clear BSS
+        }
+
+        // Call all global initializers.
+        for (auto ctor = _init_array_start; ctor < _init_array_end; ++ctor) {
+            if (ctor != nullptr)
+            {
+                (*ctor)();
+            }
+        }
+
+        if (Cpu::IsRpi4())
+        {
+            uart.Puts("Detected Raspberry Pi 4\n");
+        }
+        else
+        {
+            uart.Puts("Detected Raspberry Pi 3\n");
+        }
+
+        uart.Puts("Performance Frequency: ");
+        uart.PutDec(Cpu::PerformanceFrequency);
+        uart.Puts("\n");
+
+        uart.Puts("Reading DTB at ");
+        uart.PutHex(reinterpret_cast<uintptr_t>(dtb));
+        uart.Puts("\n");
+
+        uart.Puts("p1 ");
+        uart.PutHex(reinterpret_cast<uintptr_t>(p1));
+        uart.Puts("\n");
+
+        uart.Puts("p2 ");
+        uart.PutHex(reinterpret_cast<uintptr_t>(p2));
+        uart.Puts("\n");
+
+        uart.Puts("p3 ");
+        uart.PutHex(reinterpret_cast<uintptr_t>(p3));
+        uart.Puts("\n");
+
+        Exception::InitEL2();
+        // Configure HCR_EL2 to route exceptions to EL2
+        asm volatile("mrs x0, hcr_el2");
+        asm volatile("orr x0, x0, #0x8");  // Set AMO bit to route SError to EL2
+        asm volatile("msr hcr_el2, x0");
+        asm volatile("isb");
+        Cpu::daifclr = 4; // Clear the SError mask bit to enable synchronous exceptions
+        //asm volatile ("svc #0");
+        //*(volatile int32_t*)(0x1234567890123456) = 0; // Clear the mailbox status register
     }
 
     bool const isRpi4 = Cpu::IsRpi4();
@@ -148,79 +228,24 @@ void Core0()
 
     Mailbox::Send(0, 0x80); // UART 1 and USB enabled
 
-    Uart::Init();
-
     Uart::Puts("\r\n\nHello!\n");
 
-    if (isRpi4)
-    {
-        Uart::Puts("Detected Raspberry Pi 4\n");
-    }
-    else
-    {
-        Uart::Puts("Detected Raspberry Pi 3\n");
-    }
-
-    Uart::Puts("Init array start: ");
-    Uart::PutHex(reinterpret_cast<uintptr_t>(_init_array_start));
-    Uart::Puts("\n");
-    Uart::Puts("Init array end: ");
-    Uart::PutHex(reinterpret_cast<uintptr_t>(_init_array_end));
-    Uart::Puts("\n");
-
-    for (auto ctor = _init_array_start; ctor < _init_array_end; ++ctor) {
-        if (ctor != nullptr)
-        {
-            (*ctor)();
-        }
-    }
-
-    uint64_t lr = 0;
-    asm volatile ("mov %0, lr" : "=r"(lr));
-    uint64_t fp = 0;
-    asm volatile ("mov %0, fp" : "=r"(fp));
-    uint64_t pc = 0;
-    asm volatile ("adr %0, ." : "=r"(pc));
-    Uart::Puts("LR: ");
-    Uart::PutHex(lr);
-    Uart::Puts("\nFR: ");
-    Uart::PutHex(fp);
-    Uart::Puts("\nPC: ");
-    Uart::PutHex(pc);
-    Uart::Puts("\n");
-
-    Uart::Puts("Performance Frequency: ");
-    Uart::PutDec(Cpu::PerformanceFrequency);
-    Uart::Puts("\n");
-
-    uint64_t el = 0;
-    asm volatile ("mrs %0, CurrentEL" : "=r"(el));
+    uint64_t el = Cpu::CurrentEL->EL;
+    //asm volatile ("mrs %0, CurrentEL" : "=r"(el));
     Uart::Puts("CurrentEL: ");
-    Uart::PutDec((el >> 2) & 0b11);
+    Uart::PutDec(el);
     Uart::Puts("\n");
 
-    uint64_t mmfr0 = 0;
-    asm volatile ("mrs %0, id_aa64mmfr0_el1" : "=r" (mmfr0));
-    Uart::Puts("ID_AA64MMFR0_EL1: ");
-    Uart::PutHex(mmfr0);
-    Uart::Puts("\n");
-
-    if (((el >> 2) & 0b11) == 2)
+    if (el == 2)
     {
-        Exception::InitEL2();
-
         el2_to_el1_return();
 
-        Uart::Puts("Running EL1\n");
+        Uart::Puts("Lowered to EL1\n");
 
-        asm volatile ("mrs %0, CurrentEL" : "=r"(el));
         Uart::Puts("CurrentEL: ");
-        Uart::PutDec((el >> 2) & 0b11);
+        Uart::PutDec(Cpu::CurrentEL->EL);
         Uart::Puts("\n");
 
-        Uart::Puts("Performance Frequency: ");
-        Uart::PutDec(Cpu::PerformanceFrequency);
-        Uart::Puts("\n");
     }
 
     Mmu::Init();
@@ -233,30 +258,24 @@ void Core0()
 
     Exception::Init();
 
-    uint64_t sctlr = 0;
-    asm volatile ("mrs %0, sctlr_el1" : "=r"(sctlr));
-    //sctlr |= (1 << 1); // Set A (Alignment check enable) bit
-    sctlr |= (1 << 3); // Set SA (Stack Alignment Check Enable) bit
-    asm volatile ("msr sctlr_el1, %0" :: "r"(sctlr));
+    Cpu::sctlr_el1.modify([](auto& reg){
+        //reg.A  = true; // Set A (Alignment check enable) bit
+        reg.SA = true; // Set SA (Stack Alignment Check Enable) bit
+    });
+
     asm volatile ("isb"); // Ensure changes take effect
 
-    uint64_t daif = 0;
-    asm volatile ("mrs %0, daif" : "=r"(daif));
-    daif &= ~(1 << 7); // Clear the SError (S) mask bit to enable synchronous exceptions
-    asm volatile ("msr daif, %0" :: "r"(daif));
+    // Enable SError, IRQ and FIQ.
+    // Note: SError means synchronous exceptions, all caused by the executing code,
+    // but not necessarily means errors. It includes system calls, memory faults, etc...
+    Cpu::daifclr = 7;
 
-    uint64_t cpacr = 0;
-    asm volatile ("mrs %0, cpacr_el1" : "=r"(cpacr));
-    cpacr |= (3 << 20); // Set CPACR_EL1.FP
-    asm volatile ("msr cpacr_el1, %0" :: "r"(cpacr));
+    parse_dtb(dtb);
 
     Uart::Puts("Waiting...\n");
     Cpu::DelayInMicroseconds(1000'000);
     
     //asm volatile ("svc #42"); // Trigger a software interrupt to test exception handling
-    //asm volatile ("hvc #42"); // Trigger a software interrupt to test exception handling
-
-    asm volatile("msr daifclr,#3"); // Clear the IRQ and FIQ mask bits to enable them
 
     Uart::useMutex = true;
 
@@ -276,6 +295,90 @@ void Core0()
     asm volatile ("dmb ish;sev");
     while (!Core3Ready) asm volatile ("wfe;dmb ish;sev" ::: "memory");
     Uart::Puts("Core 3 is going\n");
+
+    Mailbox::TagMessage<Mailbox::Tag::GET_BOARD_MAC_ADDRESS, 2> macAddressTag{{ 0, 0 }};
+    Mailbox::TagMessage<Mailbox::Tag::GET_VC_MEMORY, 2> armMemoryTag{{ 0, 0 }};
+    Mailbox::TagMessage<Mailbox::Tag::GET_ARM_MEMORY, 2> vcMemoryTag{{ 0, 0 }};
+    if (Mailbox::SendTags(armMemoryTag, vcMemoryTag, macAddressTag))
+    {
+        Uart::Puts("ARM Memory: ");
+        Uart::PutHex(armMemoryTag.args[0]);
+        Uart::Puts(" ");
+        Uart::PutHex(armMemoryTag.args[1]);
+        Uart::Puts("\n");
+        Uart::Puts("VC Memory: ");
+        Uart::PutHex(vcMemoryTag.args[0]);
+        Uart::Puts(" ");
+        Uart::PutHex(vcMemoryTag.args[1]);
+        Uart::Puts("\n");
+        Uart::Puts("MAC address: ");
+        Uart::PutHex(macAddressTag.args[0]);
+        Uart::Puts(" ");
+        Uart::PutHex(macAddressTag.args[1]);
+        Uart::Puts("\n");
+    }
+    else
+    {
+        Uart::Puts("Failed to get VC Memory info.\n");
+    }
+
+    SdCard sdCard{ Mmio::Base + SdCard::RegistersOffset };
+    if (sdCard.Init())
+    {
+        Uart::Puts("SD Card initialized successfully.\n");
+
+        uint8_t buffer[512];
+        if (sdCard.ReadBlock(0, buffer, 1))
+        {
+            Uart::Puts("Read block 0 successfully.\n");
+            Uart::Puts("Data: ");
+            for (size_t i = 0; i < sizeof(buffer) / 16; ++i)
+            {
+                for (size_t j = 0; j < 16; ++j)
+                {
+                    Uart::PutHex(buffer[i * 16 + j]);
+                    Uart::Putc(' ');
+                    if (j == 8)
+                    {
+                        Uart::Puts("- ");
+                    }
+                }
+                Uart::Puts("\n");
+            }
+            Uart::Puts("\n");
+        }
+        else
+        {
+            Uart::Puts("Failed to read block 0.\n");
+        }
+        if (sdCard.ReadBlock(0x800, buffer, 1))
+        {
+            Uart::Puts("Read block 0x800 successfully.\n");
+            Uart::Puts("Data: ");
+            for (size_t i = 0; i < sizeof(buffer) / 16; ++i)
+            {
+                for (size_t j = 0; j < 16; ++j)
+                {
+                    Uart::PutHex(buffer[i * 16 + j]);
+                    Uart::Putc(' ');
+                    if (j == 8)
+                    {
+                        Uart::Puts("- ");
+                    }
+                }
+                Uart::Puts("\n");
+            }
+            Uart::Puts("\n");
+        }
+        else
+        {
+            Uart::Puts("Failed to read block 0x800.\n");
+        }
+    }
+    else
+    {
+        Uart::Puts("Failed to initialize SD Card.\n");
+    }
 
     if (isRpi4)
     {

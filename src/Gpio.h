@@ -29,8 +29,9 @@ enum class Function : uint8_t
 void InitRpi3();
 void InitRpi4();
 
-void SetFunction  (uint32_t pin, Function func);
-void SetPullUpDown(uint32_t pin, PullUpDown pud);
+void SetFunction        (uint32_t pin, Function func);
+void SetPullUpDown      (uint32_t pin, PullUpDown pud);
+void SetHighDetectEnable(uint32_t pin, bool enable);
 
 }
 // namespace Gpio

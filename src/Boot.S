@@ -18,17 +18,18 @@
 // depending on which core is running at the time.
 .global _start
 _start:
-    mrs x0, mpidr_el1
+    mrs x4, mpidr_el1
 
-    adr x1, _start          // Stack buffers will use the 512 KB of space before the kernel image.
-    and x0, x0, #3          // x0 now contains the core number.
-    sub x1, x1, x0, LSL #16 // Each core takes 64 KB of stack space. That's enough room to get comfortably started.
-    mov sp, x1
+    adr x5, _start          // Stack buffers will use the 512 KB of space before the kernel image.
+    and x4, x4, #3          // x0 now contains the core number.
+    sub x5, x5, x4, LSL #16 // Each core takes 64 KB of stack space. That's enough room to get comfortably started.
+    mov sp, x5
 
     // And dispatch straight into C++.
-    adr x1, CoreFunctionTable
-    ldr x0, [x1, w0, UXTW #3]
-    br x0
+    adr x5, CoreFunctionTable
+    ldr x4, [x5, w4, UXTW #3]
+    //mov x0, x2 // DTB
+    br x4
 
 CoreFunctionTable:
     .quad Core0

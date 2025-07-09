@@ -45,35 +45,35 @@ struct Register
     Register(Register&&) = delete;
     Register& operator=(Register&&) = delete;
 
-    auto& RefUint32()       { return *(reinterpret_cast<uint32_t       volatile*>(this) + Offset / sizeof(uint32_t)); }
-    auto& RefUint32() const { return *(reinterpret_cast<uint32_t const volatile*>(this) + Offset / sizeof(uint32_t)); }
+    inline auto& RefUint32()       { return *(reinterpret_cast<uint32_t       volatile*>(this) + Offset / sizeof(uint32_t)); }
+    inline auto& RefUint32() const { return *(reinterpret_cast<uint32_t const volatile*>(this) + Offset / sizeof(uint32_t)); }
 
-    T get() const
+    inline T get() const
     {
         uint32_t const result = RefUint32();
         return reinterpret_cast<T const&>(result);
     }
 
-    T set(const T& value)
+    inline T set(const T& value)
     {
         RefUint32() = reinterpret_cast<uint32_t const&>(value);
         return value;
     }
 
-    T operator=(std::integral auto value) requires (sizeof(value) <= sizeof(uint32_t))
+    inline T operator=(std::integral auto value) requires (sizeof(value) <= sizeof(uint32_t))
     {
         uint32_t v = static_cast<uint32_t>(value);
         RefUint32() = v;
         return reinterpret_cast<T const&>(v);
     }
 
-    T operator=(const T& value)
+    inline T operator=(const T& value)
     {
         RefUint32() = reinterpret_cast<uint32_t const&>(value);
         return value;
     }
 
-    T operator=(std::invocable<T&> auto&& modify)
+    inline T operator=(std::invocable<T&> auto&& modify)
     {
         T value = get();
         modify(value);
@@ -81,15 +81,25 @@ struct Register
         return value;
     }
 
-    operator T() const
+    inline operator T() const { return get(); }
+    inline const T operator*() const { return get(); }
+
+
+    inline auto operator->() const requires (std::is_const_v<T>)
     {
-        return get();
+        struct DereferenceProxy
+        {
+            T const* operator->() { return &value; }
+            T const value;
+        };
+        return DereferenceProxy{ .value = get() };
     }
 
-    const T operator*() const
-    {
-        return get();
-    }
+    inline T operator&=(T const& value) requires (!std::is_const_v<T>) { return set(get() & value); }
+    inline T operator|=(T const& value) requires (!std::is_const_v<T>) { return set(get() | value); }
+    inline T operator^=(T const& value) requires (!std::is_const_v<T>) { return set(get() ^ value); }
+    inline T operator+=(T const& value) requires (!std::is_const_v<T>) { return set(get() + value); }
+    inline T operator-=(T const& value) requires (!std::is_const_v<T>) { return set(get() - value); }
 };
 
 template < RegisterType T, uint32_t Offset, uint32_t Count, uint32_t Stride = 4 >

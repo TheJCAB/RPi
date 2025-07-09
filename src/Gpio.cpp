@@ -13,6 +13,7 @@ struct BaseGpio
     Mmio::BaseRegisterArrayProxy<uint32_t, 5, 1, GpioMmioOffset + 0x00> GPFSEL;
     Mmio::BaseRegisterArrayProxy<uint32_t, 2, 1, GpioMmioOffset + 0x1C> GPSET ;
     Mmio::BaseRegisterArrayProxy<uint32_t, 2, 1, GpioMmioOffset + 0x28> GPCLR ;
+    Mmio::BaseRegisterArrayProxy<uint32_t, 2, 1, GpioMmioOffset + 0x64> GPHEN ;
 };
 
 struct Rpi3Gpio
@@ -42,6 +43,23 @@ void SetFunction(uint32_t pin, Function func)
     selreg = [shift, func](uint32_t& reg){
         reg &= ~(0b111 << shift);
         reg |= static_cast<uint32_t>(func) << shift;
+    };
+}
+
+void SetHighDetectEnable(uint32_t pin, bool enable)
+{
+    auto const shift = (pin % 32);
+    auto&& henreg = BaseRegisters.GPHEN[pin / 32];
+
+    henreg = [shift, enable](uint32_t& reg){
+        if (enable)
+        {
+            reg |= (1u << shift);
+        }
+        else
+        {
+            reg &= ~(1u << shift);
+        }
     };
 }
 

@@ -10,8 +10,8 @@
 _start:
     // Set up the stack buffer.
     // We'll use the 512 KB of space before the kernel image.
-    adr x1, _start
-    mov sp, x1
+    adr x4, _start
+    mov sp, x4
 
     // And dispatch straight into C++.
     .extern KernelMain

@@ -11,7 +11,7 @@ class PL011Uart
     union PL011Registers;
 
 public:
-    static constexpr uint32_t Uart0RegistersOffset = 0x201000u;
+    static constexpr uint32_t Uart0RegistersOffset = 0x20'1000u;
 
     PL011Uart(uintptr_t registersBase) : Registers(*reinterpret_cast<PL011Registers*>(registersBase)) {}
 

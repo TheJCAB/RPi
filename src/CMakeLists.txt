@@ -11,9 +11,12 @@ add_kernel_image(kernel8
     CppException.cpp
     CppTypeInfo.cpp
 
+    DeviceTree.cpp
+
     Cpu.cpp             Cpu.h
     Gpio.cpp            Gpio.h
     Uart.cpp            Uart.h
+    SdCard.cpp          SdCard.h
     Mailbox.cpp         Mailbox.h
     Framebuffer.cpp     Framebuffer.h
     Exception.cpp       Exception.h

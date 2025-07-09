@@ -10,9 +10,8 @@ namespace BootLib::Mmio
 
 // We handle the MMIO base dynamically so we can support multiple versions of Raspberry Pi.
 
-extern uintptr_t Base; // 0x2000'0000u for Raspberry Pi 1, 0x3F00'0000u for Raspberry Pi 2/3, 0x7E00'0000u or 0x4'7E00'0000u for Raspberry Pi 4
-
-void Init();
+// 0x2000'0000u for Raspberry Pi 1, 0x3F00'0000u for Raspberry Pi 2/3, 0x7E00'0000u or 0x4'7E00'0000u for Raspberry Pi 4
+uintptr_t GetPeripheralsPhysicalBase();
 
 }
 // namespace BootLib::Mmio

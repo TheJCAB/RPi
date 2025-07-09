@@ -1,5 +1,7 @@
 #pragma once
 
+#include <BootLib/Uart.h>
+
 #include <stdint.h>
 #include <stddef.h>
 

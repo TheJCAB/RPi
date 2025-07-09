@@ -66,7 +66,7 @@ void PutRawExceptionInfo(Uart::LockedStream& stream, uint32_t code, uint64_t esr
 {
     stream.Puts("Panic Exception Handler\n");
     stream.Puts("Code: ");
-    stream.PutDec(code);
+    stream.PutHex(code);
     stream.Puts("\nESR : ");
     stream.PutHex(esr);
     stream.Puts("\nELR : ");
@@ -83,16 +83,13 @@ void PutRawSynchronousExceptionInfo(Uart::LockedStream& stream, uint32_t code, u
 {
     stream.Puts("Synchronous exception\n");
     stream.Puts("Code: ");
-    stream.PutDec(code);
-    stream.Puts("Exception class: ");
+    stream.PutHex(code);
+    stream.Puts("\nException class: ");
     stream.PutBin(ec);
-    stream.Puts("\n");
-    stream.Puts("ISS: ");
+    stream.Puts("\nISS: ");
     stream.PutBin(iss);
-    stream.Puts("\n");
-    stream.Puts("ISS2: ");
+    stream.Puts("\nISS2: ");
     stream.PutBin(iss2);
-    stream.Puts("\n");
     stream.Puts("\nELR : ");
     stream.PutHex(elr);
     stream.Puts("\nSPSR: ");
@@ -151,9 +148,10 @@ extern "C" void MainExceptionHandler(uint32_t code)
             uint8_t  const ec   = (esr >> 26) & 0b11'1111;
             uint32_t const iss  = (esr >>  0) & 0x01FF'FFFF;
             uint32_t const iss2 = (esr >> 32) & 0x00FF'FFFF;
-            switch ((esr >> 26) & 0b11'1111)
+            switch (ec)
             {
                 case 0b00'0000: stream.Puts("Unknown exception class\n"); break;
+                case 0b00'0111: stream.Puts("FP/SIMD disabled exception class\n"); break;
                 case 0b01'0101: return SvcException(stream, (uint16_t)iss, elr);
                 case 0b10'0100: [[fallthrough]];
                 case 0b10'0101: return DataAbortException(stream, ec, iss, iss2, far);

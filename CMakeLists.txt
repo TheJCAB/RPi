@@ -10,6 +10,21 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 
+add_library(KernelRuntime INTERFACE)
+
+target_compile_options(KernelRuntime INTERFACE
+    -ffreestanding
+    -Wno-builtin-macro-redefined
+    -O3
+    -frtti
+    #-fPIC
+    -mcmodel=tiny
+    #-flto
+    #-H
+)
+
+target_link_libraries(KernelRuntime INTERFACE cxx-headers)
+
 function(add_kernel_image TargetName)
     add_executable(${TargetName}
         ${ARGN}
@@ -19,16 +34,6 @@ function(add_kernel_image TargetName)
         SUFFIX ".elf"
     )
 
-    target_compile_options(${TargetName} PRIVATE
-        -ffreestanding
-        -Wno-builtin-macro-redefined
-        -O3
-        -frtti
-        #-fPIC
-        -mcmodel=tiny
-        #-flto
-        #-H
-    )
     target_link_options(${TargetName} PRIVATE
         -Wl,--gc-sections
         -ffunction-sections
@@ -37,7 +42,7 @@ function(add_kernel_image TargetName)
         #-flto
     )
 
-    target_link_libraries(${TargetName} PRIVATE cxx-headers)
+    target_link_libraries(${TargetName} PRIVATE KernelRuntime)
 
     # Specify the linker script
     set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/kernel.ld")

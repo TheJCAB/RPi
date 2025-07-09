@@ -50,5 +50,10 @@ void DelayInMicroseconds(uint64_t us)
     }
 }
 
+void DelayInMilliseconds(uint64_t ms)
+{
+    return DelayInMicroseconds(ms * 1000);
+}
+
 }
 // namespace BootLib::Cpu

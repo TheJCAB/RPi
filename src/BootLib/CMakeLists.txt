@@ -9,24 +9,6 @@ add_library(BootLib STATIC
     inc/BootLib/RegisterProxy.h
 )
 
-target_compile_options(BootLib PRIVATE
-    -ffreestanding
-    -Wno-builtin-macro-redefined
-    -O3
-    -frtti
-    #-fPIC
-    -mcmodel=tiny
-    #-flto
-    #-H
-)
-target_Link_options(BootLib PRIVATE
-    -Wl,--gc-sections
-    -ffunction-sections
-    -fdata-sections
-    -fpie
-    #-flto
-)
+target_include_directories(BootLib PUBLIC inc)
 
-target_include_directories(BootLib PUBLIC inc )
-
-target_link_libraries(BootLib PRIVATE cxx-headers)
+target_link_libraries(BootLib PUBLIC KernelRuntime)
