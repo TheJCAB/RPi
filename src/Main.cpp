@@ -288,6 +288,45 @@ void Core0(void* dtb)
         Uart::Puts("Failed to get VC Memory info.\n");
     }
 
+    Mailbox::TagMessage<Mailbox::Tag::GET_CLOCK_RATE, 2> clockRateTag{{ 0, 0 }};
+    Mailbox::TagMessage<Mailbox::Tag::GET_MEASURED_CLOCK_RATE, 2> measuredClockRateTag{{ 0, 0 }};
+    Mailbox::TagMessage<Mailbox::Tag::GET_MAX_CLOCK_RATE, 2> maxClockRateTag{{ 0, 0 }};
+    Mailbox::TagMessage<Mailbox::Tag::GET_POWER_STATE, 2> powerStateTag{{ 0, 0 }};
+
+    // Get various clock rates
+    uint32_t clockIds[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}; // Common clock IDs
+    for (uint32_t clockId : clockIds)
+    {
+        clockRateTag.args[0] = clockId;
+        clockRateTag.args[1] = 0;
+        maxClockRateTag.args[0] = clockId;
+        maxClockRateTag.args[1] = 0;
+        measuredClockRateTag.args[0] = clockId;
+        measuredClockRateTag.args[1] = 0;
+        if (Mailbox::SendTags(clockRateTag, measuredClockRateTag, maxClockRateTag))
+        {
+            printf("Clock %2u rate: %10u Hz max: %10u Hz measured: %10u Hz\n", clockId, clockRateTag.args[1], maxClockRateTag.args[1], measuredClockRateTag.args[1]);
+        }
+        else
+        {
+            Uart::Puts("Clock ");
+            Uart::PutDec(clockId);
+            Uart::Puts(" not available.\n");
+        }
+    }
+
+    // Get various power states
+    uint32_t powerIds[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}; // Common power domain IDs
+    for (uint32_t powerId : powerIds)
+    {
+        powerStateTag.args[0] = powerId;
+        powerStateTag.args[1] = 0;
+        if (Mailbox::SendTags(powerStateTag))
+        {
+            printf("Power domain %2u state: %u\n", powerId, powerStateTag.args[1]);
+        }
+    }
+
     Mailbox::Send(0, 0x80); // UART 1 and USB enabled?
 
     SdCard sdCard{ Mmio::Base + SdCard::RegistersOffset };
@@ -380,11 +419,11 @@ void Core0(void* dtb)
     // Remote boot for development :-)      Done!
     // UART input       Done
     // Exceptions       Done
-    // VSync/flip       According to documentation, this is not doable from ARM, outside of the HW rendering.
+    // VSync/flip       According to documentation, Vsync is not doable from ARM, outside of the HW rendering. Flip works and doesn't appear to tear. Probably busy waits?
     // Interrupts       Done
     // Multicore        Done
-    // Storage
-    // USB              Done
+    // Storage          SD Blocks
+    // USB              Done Pi3
     // Networking?
 
     Run();

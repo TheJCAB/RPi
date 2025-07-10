@@ -197,6 +197,8 @@ enum class Tag : uint32_t
     GET_SDHOST_CLOCK	        = 0x00030042,			// Get SD Card EMCC clock
     SET_SDHOST_CLOCK	        = 0x00038042,			// Set SD Card EMCC clock
 
+    GET_MEASURED_CLOCK_RATE     = 0x00030047,			// Get measured clock rate
+
     /* Framebuffer commands */
     ALLOCATE_FRAMEBUFFER		= 0x00040001,			// Allocate Framebuffer address
     BLANK_SCREEN				= 0x00040002,			// Blank screen
