@@ -42,18 +42,15 @@ void el2_to_el1_return();
 
 void InitCore()
 {
-    uint64_t el = 0;
-    asm volatile ("mrs %0, CurrentEL" : "=r"(el));
+    // Enable the Floating point and SIMD unit for EL0 and EL1
+    Cpu::cpacr_el1.modify([](auto& reg){ reg.FPEN = 3; });
+    // Enable Stack alignment checks. For Hygiene.
+    Cpu::sctlr_el1.modify([](auto& reg){ reg.SA = true; });
+    Cpu::InstructionSynchronizationBarrier();
 
-    if (((el >> 2) & 0b11) == 2)
-    {
-        Exception::InitEL2();
-        el2_to_el1_return();
-    }
-
+    el2_to_el1_return();
     Mmu::Init();
-
-    asm volatile("msr daifclr,#3"); // Clear the IRQ and FIQ mask bits to enable them
+    Exception::Init();
 }
 
 volatile bool Core1Ready = false;
@@ -154,29 +151,18 @@ inline uint32_t AtomicAdd(uint32_t volatile& value, uint32_t increment)
     return old_value;
 }
 
-void Core0(void* dtb, void* p1, void* p2, void* p3)
+void Core0(void* dtb)
 {
     {
-        Cpu::cpacr_el1.modify([](auto& reg){
-            reg.FPEN = 3; // Enable the Floating point and SIMD unit for EL0 and EL1
-        });
-
         // Without MMU, we need to use physical addresses to access peripherals.
+        // It is handy to have a UART for log-debugging.
         BootLib::PL011Uart uart{ BootLib::Mmio::GetPeripheralsPhysicalBase() + BootLib::PL011Uart::Uart0RegistersOffset };
         uart.Puts("Core 0 starting\n");
 
-        // Clear the BSS.
+        // Clear the BSS soonest.
         for (auto p = &_bss_start; p < &_bss_end; ++p)
         {
             *p = 0; // Clear BSS
-        }
-
-        // Call all global initializers.
-        for (auto ctor = _init_array_start; ctor < _init_array_end; ++ctor) {
-            if (ctor != nullptr)
-            {
-                (*ctor)();
-            }
         }
 
         if (Cpu::IsRpi4())
@@ -189,86 +175,66 @@ void Core0(void* dtb, void* p1, void* p2, void* p3)
         }
 
         uart.Puts("Performance Frequency: ");
-        uart.PutDec(Cpu::PerformanceFrequency);
+        uart.PutDec(Cpu::GetPerformanceFrequency());
         uart.Puts("\n");
 
-        uart.Puts("Reading DTB at ");
-        uart.PutHex(reinterpret_cast<uintptr_t>(dtb));
-        uart.Puts("\n");
-
-        uart.Puts("p1 ");
-        uart.PutHex(reinterpret_cast<uintptr_t>(p1));
-        uart.Puts("\n");
-
-        uart.Puts("p2 ");
-        uart.PutHex(reinterpret_cast<uintptr_t>(p2));
-        uart.Puts("\n");
-
-        uart.Puts("p3 ");
-        uart.PutHex(reinterpret_cast<uintptr_t>(p3));
-        uart.Puts("\n");
-
-        Exception::InitEL2();
-        // Configure HCR_EL2 to route exceptions to EL2
-        asm volatile("mrs x0, hcr_el2");
-        asm volatile("orr x0, x0, #0x8");  // Set AMO bit to route SError to EL2
-        asm volatile("msr hcr_el2, x0");
-        asm volatile("isb");
-        Cpu::daifclr = 4; // Clear the SError mask bit to enable synchronous exceptions
+        // None of this seems to work. The exception vector doesn't get invoked.
+        //Exception::InitEL2();
+        //// Configure HCR_EL2 to route exceptions to EL2
+        //asm volatile("mrs x0, hcr_el2");
+        //asm volatile("orr x0, x0, #0x8");  // Set AMO bit to route SError to EL2
+        //asm volatile("msr hcr_el2, x0");
+        //asm volatile("isb");
+        //Cpu::daifclr = 4; // Clear the SError mask bit to enable synchronous exceptions
         //asm volatile ("svc #0");
         //*(volatile int32_t*)(0x1234567890123456) = 0; // Clear the mailbox status register
-    }
 
-    bool const isRpi4 = Cpu::IsRpi4();
-    if (isRpi4)
-    {
-        Mmio::Base    = 0x4'7E00'0000u; // RPi4 MMIO base address
-        Mmio::QA7Base = 0x4'C000'0000u; // RPi4 QA7 base address
-    }
+        uart.Puts("\r\n\nHello!\n");
 
-    Mailbox::Send(0, 0x80); // UART 1 and USB enabled
+        uart.Puts("CurrentEL (should be 2): ");
+        uart.PutDec(Cpu::CurrentEL->EL);
+        uart.Puts("\n");
 
-    Uart::Puts("\r\n\nHello!\n");
+        // Enable the Floating point and SIMD unit for EL0 and EL1
+        Cpu::cpacr_el1.modify([](auto& reg){ reg.FPEN = 3; });
+        // Enable Stack alignment checks. For Hygiene.
+        Cpu::sctlr_el1.modify([](auto& reg){ reg.SA = true; });
+        Cpu::InstructionSynchronizationBarrier();
 
-    uint64_t el = Cpu::CurrentEL->EL;
-    //asm volatile ("mrs %0, CurrentEL" : "=r"(el));
-    Uart::Puts("CurrentEL: ");
-    Uart::PutDec(el);
-    Uart::Puts("\n");
-
-    if (el == 2)
-    {
         el2_to_el1_return();
 
-        Uart::Puts("Lowered to EL1\n");
+        uart.Puts("Lowered to EL1\n");
 
-        Uart::Puts("CurrentEL: ");
-        Uart::PutDec(Cpu::CurrentEL->EL);
-        Uart::Puts("\n");
+        uart.Puts("CurrentEL: ");
+        uart.PutDec(Cpu::CurrentEL->EL);
+        uart.Puts("\n");
 
+        // Any further I/O operations will be done once the MMU is active.
+        if (Cpu::IsRpi4())
+        {
+            Mmio::Base    = 0x4'7E00'0000u; // RPi4 MMIO base address
+            Mmio::QA7Base = 0x4'C000'0000u; // RPi4 QA7 base address
+        }
+
+        // Initialize the MMU, and so all addresses will be virtual after this.
+        Mmu::Init();
     }
-
-    Mmu::Init();
 
     Uart::Puts("MMU enabled\n");
 
-    Uart::Puts("Performance Frequency: ");
+    // Call all global initializers.
+    for (auto ctor = _init_array_start; ctor < _init_array_end; ++ctor) {
+        if (ctor != nullptr)
+        {
+            (*ctor)();
+        }
+    }
+
+    Uart::Puts("Performance Frequency from the global: ");
     Uart::PutDec(Cpu::PerformanceFrequency);
     Uart::Puts("\n");
 
     Exception::Init();
-
-    Cpu::sctlr_el1.modify([](auto& reg){
-        //reg.A  = true; // Set A (Alignment check enable) bit
-        reg.SA = true; // Set SA (Stack Alignment Check Enable) bit
-    });
-
-    asm volatile ("isb"); // Ensure changes take effect
-
-    // Enable SError, IRQ and FIQ.
-    // Note: SError means synchronous exceptions, all caused by the executing code,
-    // but not necessarily means errors. It includes system calls, memory faults, etc...
-    Cpu::daifclr = 7;
 
     parse_dtb(dtb);
 
@@ -321,6 +287,8 @@ void Core0(void* dtb, void* p1, void* p2, void* p3)
     {
         Uart::Puts("Failed to get VC Memory info.\n");
     }
+
+    Mailbox::Send(0, 0x80); // UART 1 and USB enabled?
 
     SdCard sdCard{ Mmio::Base + SdCard::RegistersOffset };
     if (sdCard.Init())
@@ -380,7 +348,7 @@ void Core0(void* dtb, void* p1, void* p2, void* p3)
         Uart::Puts("Failed to initialize SD Card.\n");
     }
 
-    if (isRpi4)
+    if (Cpu::IsRpi4())
     {
         PCIe::examples::demonstrate_enumeration();
     }

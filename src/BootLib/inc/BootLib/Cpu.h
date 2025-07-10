@@ -149,7 +149,7 @@ struct sctlr_el1
 
 };
 
-struct cpacr_el1
+struct cpacr
 {
     uint64_t Reserved0 : 20;
     uint64_t FPEN      :  2; // Floating Point Enable (0b00 = Disabled, 0b01 = EL0, 0b10 = EL1, 0b11 = EL2/EL3)
@@ -163,9 +163,28 @@ struct cpacr_el1
 DEFINE_SYSREG_PROXY(CurrentEL       , SysRegData::CurrentEL const);
 DEFINE_SYSREG_PROXY(sctlr_el1       , SysRegData::sctlr_el1);
 DEFINE_SYSREG_PROXY(daif            , uint64_t);
-DEFINE_SYSREG_PROXY(cpacr_el1       , SysRegData::cpacr_el1);
+DEFINE_SYSREG_PROXY(cpacr_el1       , SysRegData::cpacr);
+DEFINE_SYSREG_PROXY(cptr_el2        , SysRegData::cpacr);
 
 DEFINE_IMMSYSREG_PROXY(daifclr);
+
+inline void InstructionSynchronizationBarrier()
+{
+    // Ensure that all previous instructions are completed before continuing
+    asm volatile ("isb");
+}
+
+inline void InnerDataSynchronizationBarrier()
+{
+    // Ensure that all previous memory accesses are completed and visible by other cores before continuing
+    asm volatile ("dsb ish");
+}
+
+inline void FullDataSynchronizationBarrier()
+{
+    // Ensure that all previous memory accesses are completed and visible everywhere (GPU? DRAM?) before continuing
+    asm volatile ("dsb sy");
+}
 
 }
 // namespace BootLib::Cpu

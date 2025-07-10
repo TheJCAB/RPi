@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include "Cpu.h"
 #include "Uart.h"
 #include "Processor.h"
 
@@ -185,12 +186,29 @@ extern "C" void ExceptionVectors(void);
 
 void Init()
 {
-    asm volatile ("msr vbar_el1, %0" :: "r"((uint64_t)&ExceptionVectors));
-}
+    if (Cpu::CurrentEL->EL == 1)
+    {
+        // If we are in EL1, we need to set the exception vector base address register (VBAR_EL1)
+        // to point to our exception vectors.
+        asm volatile ("msr vbar_el1, %0" :: "r"((uint64_t)&ExceptionVectors));
+    }
+    else if (Cpu::CurrentEL->EL == 2)
+    {
+        // If we are in EL2, we need to set the exception vector base address register (VBAR_EL2)
+        // to point to our exception vectors.
+        asm volatile ("msr vbar_el2, %0" :: "r"((uint64_t)&ExceptionVectors));
+    }
+    else
+    {
+        Cpu::Panic("Exception vectors initialized in an unsupported exception level.\n");
+    }
 
-void InitEL2()
-{
-    asm volatile ("msr vbar_el2, %0" :: "r"((uint64_t)&ExceptionVectors));
+    // Enable SError, IRQ and FIQ.
+    // Note: SError means synchronous exceptions, all caused by the executing code,
+    // but not necessarily means errors. It includes system calls, memory faults, etc...
+    Cpu::daifclr = 7;
+
+    Cpu::InstructionSynchronizationBarrier();
 }
 
 // Called by the C++ exception handling mechanism to continue unwinding after a cleanup.

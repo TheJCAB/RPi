@@ -18,19 +18,31 @@
 // depending on which core is running at the time.
 .global _start
 _start:
-    mrs x4, mpidr_el1
+    // Enable the Floating point and SIMD unit for EL2
+    // We're about to dive straight into C++,
+    // and the compiler might decide to use all those handy registers right away.
+    mrs x4, cptr_el2
+    orr x4, x4, #0x300000
+    msr cptr_el2, x4
+    isb // Make it stick immediately
 
-    adr x5, _start          // Stack buffers will use the 512 KB of space before the kernel image.
-    and x4, x4, #3          // x0 now contains the core number.
-    sub x5, x5, x4, LSL #16 // Each core takes 64 KB of stack space. That's enough room to get comfortably started.
+    // All cores start here, so find out which one is running
+    mrs x4, mpidr_el1
+    and x4, x4, #3          // x4 now contains the core number.
+
+    // Set up the stack pointer.
+    // Stack buffers will use the 512 KB of space before the kernel image.
+    // Each core takes 64 KB of stack space. That's enough room to get comfortably started.
+    adr x5, _start
+    sub x5, x5, x4, LSL #16
     mov sp, x5
 
     // And dispatch straight into C++.
     adr x5, CoreFunctionTable
     ldr x4, [x5, w4, UXTW #3]
-    //mov x0, x2 // DTB
     br x4
 
+    .align 3
 CoreFunctionTable:
     .quad Core0
     .quad Core1
