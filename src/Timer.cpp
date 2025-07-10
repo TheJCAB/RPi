@@ -3,6 +3,7 @@
 #include "Cpu.h"
 #include "Mmio.h"
 #include "Uart.h"
+#include "Interrupts.h"
 
 namespace Timer
 {
@@ -41,27 +42,6 @@ constexpr uint32_t Timer_Clear     = 0xB40Cu;
 constexpr uint32_t Timer_RawIRQ    = 0xB410u;
 constexpr uint32_t Timer_MaskedIRQ = 0xB414u;
 constexpr uint32_t Timer_Reload    = 0xB418u;
-*/
-
-
-// Calculate timer interval in counter ticks
-uint64_t interval;
-
-void SetPeriodicVirtualTimerInterrupt(uint64_t us)
-{
-    interval = us * Cpu::PerformanceFrequency / 1'000'000u;
-
-    // Set the timer interval
-    asm volatile ("msr cntv_tval_el0, %0" :: "r"(interval));
-
-    // Enable the timer and unmask interrupt
-    uint64_t ctl = 1; // Enable = 1, IMASK = 0, ISTATUS = don't care
-    asm volatile ("msr cntv_ctl_el0, %0" :: "r"(ctl));
-
-    uint64_t coreId;
-    asm volatile ("mrs %0, MPIDR_EL1" : "=r"(coreId));
-
-    //*reinterpret_cast<volatile uint32_t*>(0x8000'0040u) |= (1u << (coreId & 3)); // Enable the virtual timer interrupt for the current core
 
 // This stuff is RPi4
 //    // Enable the interrupt in the interrupt controller (GIC)
@@ -80,17 +60,30 @@ void SetPeriodicVirtualTimerInterrupt(uint64_t us)
 //    uintptr_t GIC_CPU_CTRL = GIC_CPU_BASE + 0x00;
 //    volatile uint32_t* cpu_ctrl = reinterpret_cast<volatile uint32_t*>(GIC_CPU_CTRL);
 //    *cpu_ctrl |= 1; // Enable the GIC CPU interface
+
+*/
+
+
+// Calculate timer interval in counter ticks
+uint64_t interval;
+
+void SetPeriodicVirtualTimerInterrupt(uint32_t us)
+{
+    interval = us * Cpu::PerformanceFrequency / 1'000'000u;
+
+    // Set the timer interval
+    Cpu::cntv_tval_el0 = interval;
+
+    Interrupts::EnableCoreVirtualTimerInterrupt(HandleArmVirtualTimerInterrupt);
+
 }
 
 // This should be called from the IRQ handler for the virtual timer
 void HandleArmVirtualTimerInterrupt()
 {
-    // Acknowledge the interrupt by resetting the timer interval
-    asm volatile ("msr cntv_tval_el0, %0" :: "r"(interval));
-
-    if (auto lockedStream = Uart::LockedStream(true)) {
-        lockedStream.Puts("Periodic interrupt handled\n");
-    }
+    // Acknowledge the interrupt by resetting the timer interval so we can go again.
+    Cpu::cntv_tval_el0 = interval;
+    //Uart::Raw::Puts("Periodic interrupt handled\n");
 }
 
 }

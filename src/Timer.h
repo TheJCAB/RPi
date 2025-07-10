@@ -5,7 +5,7 @@
 namespace Timer
 {
 
-void SetPeriodicVirtualTimerInterrupt(uint64_t us);
+void SetPeriodicVirtualTimerInterrupt(uint32_t us);
 void HandleArmVirtualTimerInterrupt();
 
 }

@@ -2,6 +2,7 @@
 
 #include "Interrupts.h"
 
+#include "Cpu.h"
 #include "Mmio.h"
 #include "Timer.h"
 #include "Uart.h"
@@ -167,6 +168,37 @@ Mmio::BaseRegisterProxy<BasicIrqEnables, Disable_Basic_IRQs> DisableBasicIrq;
 Mmio::BaseRegisterProxy<Irq1           , Disable_IRQs_1    > DisableIrq1;
 Mmio::BaseRegisterProxy<Irq2           , Disable_IRQs_2    > DisableIrq2;
 
+union CoreInterruptSource
+{
+    struct
+    {
+        bool CNTPSIRQ       : 1;
+        bool CNTPNSIRQ      : 1;
+        bool CNTHPIRQ       : 1;
+        bool CNTVIRQ        : 1;
+        bool Mailbox0       : 1;
+        bool Mailbox1       : 1;
+        bool Mailbox2       : 1;
+        bool Mailbox3       : 1;
+        bool GPU            : 1;
+        bool PMU            : 1;
+        bool AXIoutstanding : 1;
+        bool LocalTimer     : 1;
+        uint32_t Reserved   : 20; // The rest is unused.
+    };
+    uint32_t Raw32;
+
+    explicit operator bool() const { return Raw32 != 0; }
+};
+
+union CoreInterruptRegisters
+{
+    BootLib::Register<CoreInterruptSource, 0x40> TimerControl;
+    BootLib::Register<CoreInterruptSource, 0x50> MailboxControl;
+    BootLib::Register<CoreInterruptSource, 0x60> IrqPending;
+    BootLib::Register<CoreInterruptSource, 0x70> FiqPending;
+};
+
 HandlerFunction UsbHandler;
 
 void EnableUsb(HandlerFunction handler)
@@ -182,19 +214,69 @@ void EnableUsb(HandlerFunction handler)
     UsbHandler = handler;
 }
 
+struct CoreInterrupts
+{
+    HandlerFunction VirtualTimerHandler;
+};
+
+CoreInterrupts CoreInterruptsData[4];
+
+CoreInterruptRegisters& RefCoreInterruptRegisters(size_t coreId)
+{
+    return *reinterpret_cast<CoreInterruptRegisters*>(Mmio::QA7Base + 4 * coreId);
+}
+
+void EnableCoreVirtualTimerInterrupt(HandlerFunction handler)
+{
+    auto const coreId = Cpu::mpidr_el1->CoreId;
+
+    CoreInterruptsData[coreId].VirtualTimerHandler = handler;
+
+    // Enable the timer and unmask interrupt
+    Cpu::cntv_ctl_el0 = {
+        .Enable = 1,
+        .IMASK = 0,
+    };
+
+    auto& registers = RefCoreInterruptRegisters(coreId);
+    registers.TimerControl = [](auto&reg){
+        reg.CNTVIRQ = true; // Enable the virtual timer interrupt
+    };
+}
+
+void DisableCoreVirtualTimerInterrupt()
+{
+    auto const coreId = Cpu::mpidr_el1->CoreId;
+
+    CoreInterruptsData[coreId].VirtualTimerHandler = nullptr;
+
+    // Disable the timer and mask interrupt
+    Cpu::cntv_ctl_el0 = {
+        .Enable = 0,
+        .IMASK = 1,
+    };
+
+    auto& registers = RefCoreInterruptRegisters(coreId);
+    registers.TimerControl = [](auto&reg){
+        reg.CNTVIRQ = false; // Disable the virtual timer interrupt
+    };
+}
+
 extern "C" void InterruptDispatcher()
 {
-    uint64_t ctl = 1; // Enable = 1, IMASK = 0, ISTATUS = don't care
-    asm volatile ("mrs %0, cntv_ctl_el0" : "=r"(ctl));
-    if ((ctl & 4) != 0)
+    auto const coreId = Cpu::mpidr_el1->CoreId;
+    auto& registers = RefCoreInterruptRegisters(coreId);
+
+    while (auto pendingCoreInterrupts = registers.IrqPending.get())
     {
-        return Timer::HandleArmVirtualTimerInterrupt();
+        if (pendingCoreInterrupts.CNTVIRQ)
+        {
+            CoreInterruptsData[coreId].VirtualTimerHandler();
+        }
     }
 
     // If not core 0, return
-    uint64_t coreId;
-    asm volatile ("mrs %0, MPIDR_EL1" : "=r"(coreId));
-    if (coreId & 3)
+    if (coreId > 0)
     {
         return;
     }

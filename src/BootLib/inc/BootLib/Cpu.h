@@ -81,7 +81,7 @@ struct SystemRegisterProxy
 
     inline T operator=(T const& value) const requires (!std::is_const_v<T>) { return set(value); }
 
-    inline auto operator->() const requires (std::is_const_v<T>)
+    inline auto operator->() const
     {
         struct DereferenceProxy
         {
@@ -157,6 +157,20 @@ struct cpacr
 
 };
 
+struct mpidr_el1
+{
+    uint64_t CoreId    :  2; // RPi SoCs have just 4 cores.
+    uint64_t Reserved0 : 62; // The rest is unused.
+};
+
+struct cntv_ctl_el0
+{
+    uint64_t Enable    :  1; // Timer Enable
+    uint64_t IMASK     :  1; // Interrupt Mask
+    uint64_t ISTATUS   :  1; // Interrupt Status
+    uint64_t Reserved0 : 61; // The rest is unused.
+};
+
 }
 // namespace SysRegData
 
@@ -165,6 +179,11 @@ DEFINE_SYSREG_PROXY(sctlr_el1       , SysRegData::sctlr_el1);
 DEFINE_SYSREG_PROXY(daif            , uint64_t);
 DEFINE_SYSREG_PROXY(cpacr_el1       , SysRegData::cpacr);
 DEFINE_SYSREG_PROXY(cptr_el2        , SysRegData::cpacr);
+DEFINE_SYSREG_PROXY(mpidr_el1       , SysRegData::mpidr_el1);
+
+// Virtual timer.
+DEFINE_SYSREG_PROXY(cntv_tval_el0   , uint64_t);
+DEFINE_SYSREG_PROXY(cntv_ctl_el0    , SysRegData::cntv_ctl_el0);
 
 DEFINE_IMMSYSREG_PROXY(daifclr);
 

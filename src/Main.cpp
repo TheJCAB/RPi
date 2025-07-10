@@ -354,7 +354,7 @@ void Core0(void* dtb)
     }
     else
     {
-        Timer::SetPeriodicVirtualTimerInterrupt(1000'000); // Set a periodic interrupt every second
+        Timer::SetPeriodicVirtualTimerInterrupt(1000); // Set a periodic interrupt every second
         //Cpu::DelayInMicroseconds(3'000'000);
 
         UsbInitialise();
