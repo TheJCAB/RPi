@@ -346,6 +346,7 @@ void Core0(void* dtb)
     else
     {
         Uart::Puts("Failed to initialize SD Card.\n");
+        Cpu::Halt();
     }
 
     if (Cpu::IsRpi4())
@@ -358,23 +359,16 @@ void Core0(void* dtb)
         //Cpu::DelayInMicroseconds(3'000'000);
 
         UsbInitialise();
-        Cpu::DelayInMicroseconds(10'000);
-        Uart::Init();
 
-        Uart::Puts("Waiting...\n");
         Cpu::DelayInMicroseconds(1000'000);
 
         UsbCheckForChange();
-        Uart::Init();
 
         /* Display the USB tree */
         printf2("\n");
         UsbShowTree(UsbGetRootHub(), 1, '+');
         printf2("\n");
     }
-
-    Uart::Puts("Waiting...\n");
-    Cpu::DelayInMicroseconds(1000'000);
 
     uint32_t const w = 1280;
     uint32_t const h =  720;

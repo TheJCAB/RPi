@@ -190,9 +190,12 @@ enum class Tag : uint32_t
     GET_DISPMANX_HANDLE			= 0x00030014,			// Get displaymax handle
     GET_EDID_BLOCK				= 0x00030020,			// Get HDMI EDID block
 
+    GET_GPIO_PIN	            = 0x00030041,			// Get GPIO pin state
+    SET_GPIO_PIN	            = 0x00038041,			// Set GPIO pin state
+
     /* SD Card commands */
-    MAILBOX_GET_SDHOST_CLOCK	= 0x00030042,			// Get SD Card EMCC clock
-    MAILBOX_SET_SDHOST_CLOCK	= 0x00038042,			// Set SD Card EMCC clock
+    GET_SDHOST_CLOCK	        = 0x00030042,			// Get SD Card EMCC clock
+    SET_SDHOST_CLOCK	        = 0x00038042,			// Set SD Card EMCC clock
 
     /* Framebuffer commands */
     ALLOCATE_FRAMEBUFFER		= 0x00040001,			// Allocate Framebuffer address

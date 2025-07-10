@@ -3,6 +3,7 @@
 #include "Cpu.h"
 #include "Gpio.h"
 #include "Uart.h"
+#include "Mailbox.h"
 
 #include <BootLib/RegisterProxy.h>
 
@@ -218,9 +219,14 @@ bool SdCard::Init()
 
     if (Cpu::IsRpi4())
     {
-        *(uint32_t volatile*)0x7e2000d0 &= ~2u;
+        //Mailbox::TagMessage<Mailbox::Tag::SET_GPIO_PIN, 2> setEMMC2Voltage{{ 128 + 4, 0 }};
+        //Mailbox::SendTags(setEMMC2Voltage);
 
-        registers.CONTROL0 |= C0_VDD1_BUS_POWER_3_3V; // Set voltage to 3.3V
+        // We're using the legacy SDHCI device.
+        // Note that this disables access to WiFi.
+        *(uint32_t volatile*)0x4'7e20'00d0 |= 2u;
+
+        //registers.CONTROL0 |= C0_VDD1_BUS_POWER_3_3V; // Set voltage to 3.3V
     }
     else
     {
