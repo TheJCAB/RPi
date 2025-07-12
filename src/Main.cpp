@@ -18,7 +18,7 @@
 #include "Mmu.h"
 #include "Timer.h"
 #include "Run.h"
-#include "UsbDevices.h"
+#include "UsbStack.h"
 #include "PCIe.h"
 
 #include "emb-stdio.h"

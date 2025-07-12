@@ -33,7 +33,7 @@
 #include <stdint.h>
 
 #include "UsbSpec.h"
-#include "UsbDevices.h"
+#include "UsbStack.h"
 
 
 /***************************************************************************}

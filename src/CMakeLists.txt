@@ -24,7 +24,8 @@ add_kernel_image(kernel8
     Mmio.cpp            Mmio.h
     Mmu.cpp             Mmu.h
     Timer.cpp           Timer.h
-    UsbDevices.cpp      UsbDevices.h
+    UsbStack.cpp        UsbStack.h
+    UsbDevice.cpp       UsbDevice.h
     HidUsbDevices.cpp   HidUsbDevices.h
     Keyboard.cpp        Keyboard.h
     Gamepad.cpp         Gamepad.h

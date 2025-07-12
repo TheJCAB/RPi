@@ -30,7 +30,7 @@
 //    {++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 #include "HidUsbDevices.h"
 
-#include "UsbDevices.h"
+#include "UsbStack.h"
 #include "DesignWareUsb.h"
 
 #include "emb-stdio.h"				// Needed for printf

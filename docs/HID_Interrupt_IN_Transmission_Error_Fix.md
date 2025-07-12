@@ -36,7 +36,7 @@ After successful transfers:
 
 ### Code Changes
 
-**File**: `c:\repos\RPi\src\UsbDevices.cpp`
+**File**: `c:\repos\RPi\src\UsbStack.cpp`
 **Function**: `HCDEndpointTransfer`
 
 **Key Changes**:
