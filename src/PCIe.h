@@ -181,7 +181,7 @@ public:
     // BAR access
     [[nodiscard]] size_t enumerate_bars(std::span<BarInfo>) const;
     [[nodiscard]] BarInfo get_bar(std::uint8_t bar_number) const;
-    [[nodiscard]] std::span<uint8_t> map_bar(BarInfo& bar);
+    [[nodiscard]] std::span<std::byte> map_bar(BarInfo& bar);
 
     // Capability iteration
     [[nodiscard]] std::expected<std::vector<Capability>, PCIeError> enumerate_capabilities() const;

@@ -64,17 +64,17 @@ union HostChannelCharacteristic
 {
     struct PACKED
     {
-        unsigned max_packet_size    : 11; //  @0-10 Maximum packet size the endpoint is capable of sending or receiving
-        unsigned endpoint_number    :  4; // @11-14 Endpoint number (low 4 bits of bEndpointAddress)
-        unsigned endpoint_direction :  1; // @15    Endpoint direction 1=IN, 0=OUT
-        unsigned _reserved          :  1; // @16
-        unsigned low_speed          :  1; // @17    1 when the device being communicated with is at low speed, 0 otherwise
-        unsigned endpoint_type      :  2; // @18-19 Endpoint type (low 2 bits of bmAttributes)
-        unsigned packets_per_frame  :  2; // @20-21 Maximum number of transactions that can be executed per microframe
-        unsigned device_address     :  7; // @22-28 USB device address of the device on which the endpoint is located
-        unsigned odd_frame          :  1; // @29    Before enabling channel must be set to opposite of low bit of host_frame_number
-        unsigned channel_disable    :  1; // @30    Software can set this to 1 to halt the channel
-        unsigned channel_enable     :  1; // @31    Software can set this to 1 to enable the channel
+        unsigned          max_packet_size    : 11; //  @0-10 Maximum packet size the endpoint is capable of sending or receiving
+        unsigned          endpoint_number    :  4; // @11-14 Endpoint number (low 4 bits of bEndpointAddress)
+        unsigned          endpoint_direction :  1; // @15    Endpoint direction 1=IN, 0=OUT
+        unsigned          _reserved          :  1; // @16
+        unsigned          low_speed          :  1; // @17    1 when the device being communicated with is at low speed, 0 otherwise
+        usb_transfer_type endpoint_type      :  2; // @18-19 Endpoint type (low 2 bits of bmAttributes)
+        unsigned          packets_per_frame  :  2; // @20-21 Maximum number of transactions that can be executed per microframe
+        unsigned          device_address     :  7; // @22-28 USB device address of the device on which the endpoint is located
+        unsigned          odd_frame          :  1; // @29    Before enabling channel must be set to opposite of low bit of host_frame_number
+        unsigned          channel_disable    :  1; // @30    Software can set this to 1 to halt the channel
+        unsigned          channel_enable     :  1; // @31    Software can set this to 1 to enable the channel
     };
     uint32_t Raw32;
 };
@@ -298,7 +298,7 @@ void HCDChannel::Prepare(
     tempChar.endpoint_direction = Direction;
     tempChar.low_speed = pipe.Speed == USB_SPEED_LOW ? true : false;
     tempChar.endpoint_type = Type;
-    tempChar.max_packet_size = pipe.MaxPacketSizeInBits;
+    tempChar.max_packet_size = pipe.MaxPacketSizeInBytes;
     tempChar.channel_enable = false;
     tempChar.channel_disable = false;
     registers.Characteristic = tempChar;
@@ -307,7 +307,7 @@ void HCDChannel::Prepare(
     HostChannelSplitControl tempSplit = { 0 };
     if (pipe.Speed != USB_SPEED_HIGH) {
         LOG_DEBUG("Setting split control, addr: %i port: %i, packetSize: PacketSize: %u\n",
-            pipe.splitNodePoint, pipe.splitNodePort, pipe.MaxPacketSizeInBits);
+            pipe.splitNodePoint, pipe.splitNodePort, pipe.MaxPacketSizeInBytes);
         tempSplit.split_enable = true;
         tempSplit.hub_address = pipe.splitNodePoint;
         tempSplit.port_address = pipe.splitNodePort;
@@ -319,7 +319,7 @@ void HCDChannel::Prepare(
     HostTransferSize tempXfer{};
     tempXfer.size = transferSize;
     if (pipe.Speed == USB_SPEED_LOW) tempXfer.packet_count = (transferSize + 7) / 8;
-    else                             tempXfer.packet_count = (transferSize + pipe.MaxPacketSizeInBits - 1) / pipe.MaxPacketSizeInBits;
+    else                             tempXfer.packet_count = (transferSize + pipe.MaxPacketSizeInBytes - 1) / pipe.MaxPacketSizeInBytes;
     if (tempXfer.packet_count == 0) tempXfer.packet_count = 1;
     tempXfer.packet_id = packetId;
     registers.TransferSize = tempXfer;
@@ -357,7 +357,7 @@ void HCDChannel::StartInTransfer()
     // Clear any left over split
     registers.SplitCtrl = [](auto& reg){ reg.complete_split = false; };
 
-    uint8_t* dmaBuffer  = Mailbox::AsGpuPointer(m_DmaBuffer);
+    std::byte* dmaBuffer  = Mailbox::AsGpuPointer(m_DmaBuffer);
 
     registers.DmaAddr = Mailbox::AsGpuAddress(dmaBuffer) | 0xC000'0000u;
 
@@ -432,84 +432,68 @@ void HCDChannel::HandleInTransferInterrupt()
  Sends/recieves data from the given buffer and size directed by pipe settings.
  19Feb17 LdB
  --------------------------------------------------------------------------*/
-DWCRESULT HCDChannel::Transfer(UsbPipe const& pipe, usb_transfer_type Type, UsbDirection Direction, uint8_t* buffer, uint32_t& bufferLength, PacketId packetId) 
+uint32_t HCDChannel::TransferIn(UsbPipe const& pipe, usb_transfer_type Type, std::span<std::byte> buffer, PacketId packetId)
 {
-    LOG_DEBUG("HCD: Channel %u %s transfer, length %d, packetId %d, address %u, endpoint %u, type %u, speed %u%s",
-        channel.GetChannelNumber(), Direction == USB_DIRECTION_IN ? "in" : "out", bufferLength, packetId, pipe.Number, pipe.EndPoint, Type, pipe.Speed,
-        Direction == USB_DIRECTION_IN ? "\n" : ", "
+    LOG_DEBUG("HCD: Channel %u IN transfer, length %zu, packetId %d, address %u, endpoint %u, type %u, speed %u\n",
+        channel.GetChannelNumber(), buffer.size(), packetId, pipe.Number, pipe.EndPoint, Type, pipe.Speed
     );
-    if (bufferLength >= 8 && Direction == USB_DIRECTION_OUT)
-    {
-        LOG_DEBUG("Data = 0x%08X'%08X\n", ((uint32_t*)buffer)[1], ((uint32_t*)buffer)[0]);
-    }
-
-    DWCRESULT result;
-    ChannelInterrupts tempInt;
-    UsbSendControl sendCtrl = { 0 };
-    uint32_t offset = 0;
 
     // Program the channel.
-    registers.Interrupt = 0xFFFFFFFF;
-    registers.InterruptMask = 0x0;
-
-    HostChannelCharacteristic tempChar = { 0 };
-    tempChar.device_address = pipe.Number;
-    tempChar.endpoint_number = pipe.EndPoint;
-    tempChar.endpoint_direction = Direction;
-    tempChar.low_speed = pipe.Speed == USB_SPEED_LOW ? true : false;
-    tempChar.endpoint_type = Type;
-    tempChar.max_packet_size = pipe.MaxPacketSizeInBits;
-    tempChar.channel_enable = false;
-    tempChar.channel_disable = false;
-    registers.Characteristic = tempChar;
+    registers.Characteristic = HostChannelCharacteristic{
+        .device_address     = pipe.Number,
+        .endpoint_number    = pipe.EndPoint,
+        .endpoint_direction = USB_DIRECTION_IN,
+        .low_speed          = pipe.Speed == USB_SPEED_LOW ? true : false,
+        .endpoint_type      = Type,
+        .max_packet_size    = pipe.MaxPacketSizeInBytes,
+    };
 
     // Clear and setup split control to low speed devices
-    HostChannelSplitControl tempSplit = { 0 };
-    if (pipe.Speed != USB_SPEED_HIGH) {
+    bool const isLowSpeed = pipe.Speed != USB_SPEED_HIGH;
+    if (isLowSpeed)
+    {
         LOG_DEBUG("Setting split control, addr: %i port: %i, packetSize: PacketSize: %u\n",
-            pipe.splitNodePoint, pipe.splitNodePort, pipe.MaxPacketSizeInBits);
-        tempSplit.split_enable = true;
-        tempSplit.hub_address = pipe.splitNodePoint;
-        tempSplit.port_address = pipe.splitNodePort;
-        tempSplit.transaction_position = 0;//3;
+            pipe.splitNodePoint, pipe.splitNodePort, pipe.MaxPacketSizeInBytes);
+        registers.SplitCtrl = HostChannelSplitControl
+        {
+            .split_enable         = true,
+            .hub_address          = pipe.splitNodePoint,
+            .port_address         = pipe.splitNodePort,
+            .transaction_position = 0,//3;
+        };
     }
-    registers.SplitCtrl = tempSplit;
+    else
+    {
+        registers.SplitCtrl = HostChannelSplitControl{};
+    }
 
     // Set transfer size
-    HostTransferSize tempXfer = { 0 };
-    tempXfer.size = bufferLength;
-    if (pipe.Speed == USB_SPEED_LOW) tempXfer.packet_count = (bufferLength + 7) / 8;
-    else tempXfer.packet_count = (bufferLength + pipe.MaxPacketSizeInBits - 1) / pipe.MaxPacketSizeInBits;
-    if (tempXfer.packet_count == 0) tempXfer.packet_count = 1;
-    tempXfer.packet_id = packetId;
+    uint32_t const packetSizeInBytes = pipe.Speed == USB_SPEED_LOW ? 8 : pipe.MaxPacketSizeInBytes;
+    uint32_t const transferSizeInBytes = static_cast<uint32_t>(buffer.size());
+    uint32_t const packetCount = transferSizeInBytes == 0 ? 1 : (transferSizeInBytes + pipe.MaxPacketSizeInBytes - 1) / pipe.MaxPacketSizeInBytes;
+
+    HostTransferSize tempXfer{};
+    tempXfer.size         = transferSizeInBytes;
+    tempXfer.packet_count = packetCount;
+    tempXfer.packet_id    = packetId;
     registers.TransferSize = tempXfer;
 
     LOG_DEBUG("HCD: Channel %u transfer size set to %#08X bytes.\n", channel.GetNumber(), tempXfer.Raw32);
 
-    sendCtrl.PacketTries = 0;
-    do {
+    uint32_t offset = 0;
+    auto currentPacketCount = packetCount;
+    UsbSendControl sendCtrl{};
 
+    while (currentPacketCount > 0)
+    {
         // Clear any left over channel interrupts
         registers.Interrupt = 0xFFFFFFFF;
         registers.InterruptMask = 0x0;
 
         // Clear any left over split
-        tempSplit = *registers.SplitCtrl;
-        tempSplit.complete_split = false;
-        registers.SplitCtrl = tempSplit;
+        registers.SplitCtrl = [](auto& reg) { reg.complete_split = false; };
 
-        uint8_t* dmaBuffer  = Mailbox::AsGpuPointer(m_DmaBuffer);
-
-        // Since our buffer is unaligned for OUT endpoints, copy the data
-        // From the buffer to the aligned buffer
-        if (Direction == USB_DIRECTION_OUT)
-        {
-            for (int i = 0; i < bufferLength-offset; ++i)
-            {
-                dmaBuffer[i] = buffer[offset + i];
-            }
-            //memcpy(&m_DmaBuffer, &buffer[offset], bufferLength-offset);
-        }
+        std::byte* dmaBuffer = Mailbox::AsGpuPointer(m_DmaBuffer);
 
         //Processor::FlushDataCache(dmaBuffer, bufferLength - offset);
 
@@ -518,29 +502,32 @@ DWCRESULT HCDChannel::Transfer(UsbPipe const& pipe, usb_transfer_type Type, UsbD
         auto nextFrame = m_Host.GetCurrentFrame() + 1;
 
         /* Launch transmission */
-        tempChar = *registers.Characteristic;// Read host channel characteristic
-        tempChar.odd_frame = nextFrame & 1;
-        tempChar.packets_per_frame = 1;                                // Set 1 frame per packet
-        tempChar.channel_enable = true;                                // Set enable channel
-        tempChar.channel_disable = false;                            // Clear channel disable
-        registers.Characteristic = tempChar;// Write channel characteristic
+        registers.Characteristic = [&](auto& reg)
+        {
+            reg.channel_enable    = true;
+            reg.odd_frame         = nextFrame & 1;
+            reg.packets_per_frame = 1;
+            reg.channel_disable   = false;
+        };
 
         // Polling wait on transmission only option right now .. other options soon :-)
-        tempInt = WaitOnTransmissionResult(5000);
+        auto tempInt = WaitOnTransmissionResult(5000);
         if (!tempInt.Halt)
         {
-            LOG("HCD: Request on channel %i has timed out.\n", m_Number);// Log the error
-            return DWCRESULT::ErrorTimeout;                                    // Return timeout error
+            LOG("HCD: Request on channel %i has timed out.\n", m_Number);
+            return 0;
         }
         LOG_DEBUG("HCD: Channel %u transmission result: 0x%08X\n", m_Number, tempInt.Raw32);
 
-        tempSplit = *registers.SplitCtrl;    // Fetch the split details
-        result = HCDCheckErrorAndAction(tempInt,
-            tempSplit.split_enable, &sendCtrl);                        // Check transmisson DWCRESULT and set action flags
-        if (result != DWCRESULT::Ok) LOG_DEBUG("Result: %i Action: 0x%08x tempInt: 0x%08x tempSplit: 0x%08x Bytes sent: %i\n",
-            result, (unsigned int)sendCtrl.Raw32, (unsigned int)tempInt.Raw32, 
-            (unsigned int)tempSplit.Raw32, result != DWCRESULT::Ok ? 0 : (*registers.TransferSize).size);
-        if (sendCtrl.ActionFatalError) return result;                // Fatal error occured we need to bail
+        HostChannelSplitControl tempSplit = *registers.SplitCtrl;    // Fetch the split details
+        auto result = HCDCheckErrorAndAction(tempInt, isLowSpeed, &sendCtrl);
+        if (result != DWCRESULT::Ok)
+        {
+            LOG_DEBUG("Result: %i Action: 0x%08x tempInt: 0x%08x tempSplit: 0x%08x Bytes received: %i\n",
+                result, (unsigned int)sendCtrl.Raw32, (unsigned int)tempInt.Raw32, 
+                (unsigned int)tempSplit.Raw32, result != DWCRESULT::Ok ? 0 : (*registers.TransferSize).size);
+        }
+        if (sendCtrl.ActionFatalError) return 0;
 
         sendCtrl.SplitTries = 0;
         while (sendCtrl.ActionResendSplit) {                        // Decision was made to resend split
@@ -550,72 +537,237 @@ DWCRESULT HCDChannel::Transfer(UsbPipe const& pipe, usb_transfer_type Type, UsbD
             registers.InterruptMask = 0x0;
 
             // Set we are completing the split
-            tempSplit = *registers.SplitCtrl;
-            tempSplit.complete_split = true;                        // Set complete split flag
-            registers.SplitCtrl = tempSplit;
+            registers.SplitCtrl = [](auto& reg) { reg.complete_split = true; };
 
             // Launch transmission
-            tempChar = *registers.Characteristic;
-            tempChar.channel_enable = true;
-            tempChar.channel_disable = false;
-            registers.Characteristic = tempChar;
+            registers.Characteristic = [](auto& reg) { reg.channel_enable = true; };
 
             // Polling wait on transmission only option right now .. other options soon :-)
             tempInt = WaitOnTransmissionResult(5000);
             if (!tempInt.Halt)
             {
-                LOG("HCD: Request split completion on channel:%i has timed out.\n", m_Number);// Log error
-                return DWCRESULT::ErrorTimeout;                                // Return timeout error
+                LOG("HCD: Request split completion on channel:%i has timed out.\n", m_Number);
+                return 0;
             }
             LOG_DEBUG("HCD: Channel %u transmission result: 0x%08X\n", m_Number, tempInt.Raw32);
 
             tempSplit = *registers.SplitCtrl;// Fetch the split details again
-            result = HCDCheckErrorAndAction(tempInt,
-                tempSplit.split_enable, &sendCtrl);                    // Check DWCRESULT of split resend and set action flags
+            result = HCDCheckErrorAndAction(tempInt, isLowSpeed, &sendCtrl);
             LOG_DEBUG("Result: %i Action: 0x%08x tempInt: 0x%08x tempSplit: 0x%08x Bytes sent: %i\n",
-                result, (unsigned int)sendCtrl.Raw32, (unsigned int)tempInt.Raw32,
-                (unsigned int)tempSplit.Raw32, result != DWCRESULT::Ok ? 0 : (*registers.TransferSize).size);
-            if (sendCtrl.ActionFatalError) return result;            // Fatal error occured bail
+                result, sendCtrl.Raw32, tempInt.Raw32, tempSplit.Raw32, result != DWCRESULT::Ok ? 0 : (*registers.TransferSize).size);
+            if (sendCtrl.ActionFatalError) return 0;            // Fatal error occured bail
             if (sendCtrl.LongerDelay) Cpu::DelayInMicroseconds(10000);            // Not yet response slower delay
                 else Cpu::DelayInMicroseconds(2500);                                // Small delay between split resends
         }
 
-        if (sendCtrl.Success) {                                        // Send successful adjust buffer position
-            // BUGBUG: In an out transfer, this_transfer doesn't mean what we think it means.
-            uint32_t const this_transfer = (*registers.TransferSize).size;
-            uint32_t const transferred = bufferLength - this_transfer - offset;
-            LOG_DEBUG("Transferred %u bytes on channel %u. Remaining: %u\n", transferred, m_Number, this_transfer);
+        uint32_t const newPacketCount = registers.TransferSize->packet_count;
+
+        if (sendCtrl.Success)
+        {
+            uint32_t const transferred = newPacketCount > 0
+                ? (currentPacketCount - newPacketCount) * packetSizeInBytes
+                : transferSizeInBytes - currentPacketCount * packetSizeInBytes;
 
             // Since our buffer is unaligned for IN endpoints
             // Copy the data from the the aligned buffer to the buffer
             // We know the aligned buffer was used because it is unaligned
-            if (Direction == USB_DIRECTION_IN)
+
+            //Processor::InvalidateDataCache(dmaBuffer, transferred);
+            for (int i = 0; i < transferred; ++i)
             {
-                //Processor::InvalidateDataCache(dmaBuffer, transferred);
-                for (int i = 0; i < transferred; ++i)
-                {
-                    buffer[offset + i] = dmaBuffer[i];
-                }
-                //memcpy(&buffer[offset], m_DmaBuffer, this_transfer);
-                if (transferred >= 8)
-                {
-                    LOG_DEBUG("Data = 0x%08X'%08X at %8p\n", ((uint32_t*)&buffer[offset])[1], ((uint32_t*)&buffer[offset])[0], &buffer[offset]);
-                    LOG_DEBUG("Data = 0x%08X'%08X at %8p\n", ((uint32_t*)dmaBuffer)[1], ((uint32_t*)dmaBuffer)[0], dmaBuffer);
-                }
+                buffer[offset + i] = dmaBuffer[i];
+            }
+            if (transferred >= 8)
+            {
+                LOG_DEBUG("Data = 0x%08X'%08X at %8p\n", ((uint32_t*)&buffer[offset])[1], ((uint32_t*)&buffer[offset])[0], &buffer[offset]);
             }
 
             offset += transferred;
+            LOG_DEBUG("Received %u bytes on channel %u. Remaining: %u\n", transferred, m_Number, transferSizeInBytes - offset);
         }
 
-    } // Loop if packets remain.
-    while ((*registers.TransferSize).packet_count > 0);
-
-    if (Direction == USB_DIRECTION_IN)
-    {
-        bufferLength -= (*registers.TransferSize).size;
+        currentPacketCount = newPacketCount;
     }
 
-    return DWCRESULT::Ok;
+    return transferSizeInBytes;
+}
+
+uint32_t HCDChannel::TransferOut(UsbPipe const& pipe, usb_transfer_type Type, std::span<std::byte const> buffer, PacketId packetId) 
+{
+    LOG_DEBUG("HCD: Channel %u OUT transfer, length %zu, packetId %d, address %u, endpoint %u, type %u, speed %u, ",
+        channel.GetChannelNumber(), buffer.size(), packetId, pipe.Number, pipe.EndPoint, Type, pipe.Speed
+    );
+    if (buffer.size() >= 8)
+    {
+        LOG_DEBUG("Data = 0x%08X'%08X\n", ((uint32_t*)buffer.data())[1], ((uint32_t*)buffer.data())[0]);
+    }
+    else if (buffer.size() >= 4)
+    {
+        LOG_DEBUG("Data = 0x%08X\n", ((uint32_t*)buffer.data())[0]);
+    }
+    else if (buffer.size() >= 2)
+    {
+        LOG_DEBUG("Data = 0x%04X\n", ((uint16_t*)buffer.data())[0]);
+    }
+    else if (buffer.size() >= 1)
+    {
+        LOG_DEBUG("Data = 0x%02X\n", ((uint8_t*)buffer.data())[0]);
+    }
+    else
+    {
+        LOG_DEBUG("Data = <empty>\n");
+    }
+
+    if (buffer.size() > std::size(m_DmaBuffer))
+    {
+        LOG("HCD: Channel %u transfer size exceeds DMA buffer size (%zu > %zu).\n",
+            channel.GetChannelNumber(), buffer.size(), std::size(m_DmaBuffer));
+        return 0; // Nothing to transfer
+    }
+
+    // Program the channel.
+    registers.Characteristic = HostChannelCharacteristic{
+        .device_address     = pipe.Number,
+        .endpoint_number    = pipe.EndPoint,
+        .endpoint_direction = USB_DIRECTION_OUT,
+        .low_speed          = pipe.Speed == USB_SPEED_LOW ? true : false,
+        .endpoint_type      = Type,
+        .max_packet_size    = pipe.MaxPacketSizeInBytes,
+    };
+
+    // Clear and setup split control to low speed devices
+    bool const isLowSpeed = pipe.Speed != USB_SPEED_HIGH;
+    if (isLowSpeed)
+    {
+        LOG_DEBUG("Setting split control, addr: %i port: %i, packetSize: PacketSize: %u\n",
+            pipe.splitNodePoint, pipe.splitNodePort, pipe.MaxPacketSizeInBytes);
+        registers.SplitCtrl = HostChannelSplitControl
+        {
+            .split_enable         = true,
+            .hub_address          = pipe.splitNodePoint,
+            .port_address         = pipe.splitNodePort,
+            .transaction_position = 0,//3;
+        };
+    }
+    else
+    {
+        registers.SplitCtrl = HostChannelSplitControl{};
+    }
+
+    // Set transfer size
+    uint32_t const packetSizeInBytes = pipe.Speed == USB_SPEED_LOW ? 8 : pipe.MaxPacketSizeInBytes;
+    uint32_t const transferSizeInBytes = static_cast<uint32_t>(buffer.size());
+    uint32_t const packetCount = transferSizeInBytes == 0 ? 1 : (transferSizeInBytes + pipe.MaxPacketSizeInBytes - 1) / pipe.MaxPacketSizeInBytes;
+
+    HostTransferSize tempXfer{};
+    tempXfer.size         = transferSizeInBytes;
+    tempXfer.packet_count = packetCount;
+    tempXfer.packet_id    = packetId;
+    registers.TransferSize = tempXfer;
+
+    LOG_DEBUG("HCD: Channel %u transfer size set to %#08X bytes.\n", channel.GetNumber(), tempXfer.Raw32);
+
+    uint32_t offset = 0;
+    auto currentPacketCount = packetCount;
+    UsbSendControl sendCtrl{};
+
+    while (currentPacketCount > 0)
+    {
+        // Clear any left over channel interrupts
+        registers.Interrupt = 0xFFFFFFFF;
+        registers.InterruptMask = 0x0;
+
+        // Clear any left over split
+        registers.SplitCtrl = [](auto& reg) { reg.complete_split = false; };
+
+        std::byte* dmaBuffer = Mailbox::AsGpuPointer(m_DmaBuffer);
+
+        // Copy the data to the DMA buffer
+        for (size_t i = 0; i < buffer.size() - offset; ++i)
+        {
+            dmaBuffer[i] = buffer[offset + i];
+        }
+
+        //Processor::FlushDataCache(dmaBuffer, buffer.size() - offset);
+
+        registers.DmaAddr = Mailbox::AsGpuAddress(dmaBuffer) | 0xC000'0000u;
+
+        auto nextFrame = m_Host.GetCurrentFrame() + 1;
+
+        /* Launch transmission */
+        registers.Characteristic = [&](auto& reg)
+        {
+            reg.channel_enable    = true;
+            reg.odd_frame         = nextFrame & 1;
+            reg.packets_per_frame = 1;
+            reg.channel_disable   = false;
+        };
+
+        // Polling wait on transmission only option right now .. other options soon :-)
+        auto tempInt = WaitOnTransmissionResult(5000);
+        if (!tempInt.Halt)
+        {
+            LOG("HCD: Request on channel %i has timed out.\n", m_Number);
+            return 0;
+        }
+        LOG_DEBUG("HCD: Channel %u transmission result: 0x%08X\n", m_Number, tempInt.Raw32);
+
+        HostChannelSplitControl tempSplit = *registers.SplitCtrl;    // Fetch the split details
+        auto result = HCDCheckErrorAndAction(tempInt, isLowSpeed, &sendCtrl);
+        if (result != DWCRESULT::Ok)
+        {
+            LOG_DEBUG("Result: %i Action: 0x%08x tempInt: 0x%08x tempSplit: 0x%08x Bytes sent: %i\n",
+                result, (unsigned int)sendCtrl.Raw32, (unsigned int)tempInt.Raw32, 
+                (unsigned int)tempSplit.Raw32, result != DWCRESULT::Ok ? 0 : (*registers.TransferSize).size);
+        }
+        if (sendCtrl.ActionFatalError) return 0;
+
+        sendCtrl.SplitTries = 0;
+        while (sendCtrl.ActionResendSplit) {                        // Decision was made to resend split
+            Cpu::DelayInMicroseconds(250);
+            // Clear channel interrupts
+            registers.Interrupt = 0xFFFFFFFF;
+            registers.InterruptMask = 0x0;
+
+            // Set we are completing the split
+            registers.SplitCtrl = [](auto& reg) { reg.complete_split = true; };
+
+            // Launch transmission
+            registers.Characteristic = [](auto& reg) { reg.channel_enable = true; };
+
+            // Polling wait on transmission only option right now .. other options soon :-)
+            tempInt = WaitOnTransmissionResult(5000);
+            if (!tempInt.Halt)
+            {
+                LOG("HCD: Request split completion on channel:%i has timed out.\n", m_Number);
+                return 0;
+            }
+            LOG_DEBUG("HCD: Channel %u transmission result: 0x%08X\n", m_Number, tempInt.Raw32);
+
+            tempSplit = *registers.SplitCtrl;// Fetch the split details again
+            result = HCDCheckErrorAndAction(tempInt, isLowSpeed, &sendCtrl);
+            LOG_DEBUG("Result: %i Action: 0x%08x tempInt: 0x%08x tempSplit: 0x%08x Bytes sent: %i\n",
+                result, sendCtrl.Raw32, tempInt.Raw32, tempSplit.Raw32, result != DWCRESULT::Ok ? 0 : (*registers.TransferSize).size);
+            if (sendCtrl.ActionFatalError) return 0;            // Fatal error occured bail
+            if (sendCtrl.LongerDelay) Cpu::DelayInMicroseconds(10000);            // Not yet response slower delay
+                else Cpu::DelayInMicroseconds(2500);                                // Small delay between split resends
+        }
+
+        uint32_t const newPacketCount = registers.TransferSize->packet_count;
+
+        if (sendCtrl.Success)
+        {
+            uint32_t const transferred = newPacketCount > 0
+                ? (currentPacketCount - newPacketCount) * packetSizeInBytes
+                : transferSizeInBytes - currentPacketCount * packetSizeInBytes;
+            offset += transferred;
+            LOG_DEBUG("Sent %u bytes on channel %u. Remaining: %u\n", transferred, m_Number, transferSizeInBytes - offset);
+        }
+
+        currentPacketCount = newPacketCount;
+    }
+
+    return transferSizeInBytes;
 }
 
 HCDChannel::HCDChannel(HCDHost& host, uintptr_t baseAddress, uint8_t channelNumber)
