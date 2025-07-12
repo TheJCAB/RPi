@@ -9,6 +9,7 @@
 #include <wchar.h>
 
 #include <new>
+#include <memory>
 
 
 extern "C"
@@ -144,37 +145,29 @@ uintptr_t HeapSizeInBytes  = 0x1000'0000u;
 
 static uintptr_t currentHeapPos = 0;
 
-void* operator new(size_t size)
+void* operator new(size_t size, std::align_val_t align)
 {
-    size = (size + 15) & ~size_t{ 15 }; // Align to 16 bytes
-    if (currentHeapPos + size > HeapSizeInBytes)
+    auto const pos = (currentHeapPos + static_cast<size_t>(align) - 1) & ~(static_cast<size_t>(align) - 1);
+    if (pos + size > HeapSizeInBytes)
     {
         Cpu::Panic("Out of memory in operator new");
     }
-    void* result = reinterpret_cast<void*>(HeapStartAddress + currentHeapPos);
-    currentHeapPos += size;
+    void* result = reinterpret_cast<void*>(HeapStartAddress + pos);
+    currentHeapPos = pos + size;
     return result;
 }
 
-void* operator new[](size_t size)
-{
-    size = (size + 15) & ~size_t{ 15 }; // Align to 16 bytes
-    if (currentHeapPos + size > HeapSizeInBytes)
-    {
-        Cpu::Panic("Out of memory in operator new[]");
-    }
-    void* result = reinterpret_cast<void*>(HeapStartAddress + currentHeapPos);
-    currentHeapPos += size;
-    return result;
-}
+void* operator new[](size_t size, std::align_val_t align) { return operator new(size, align); }
 
-void operator delete(void* ptr, size_t size) noexcept
+void* operator new(size_t size) { return operator new(size, std::align_val_t{ 16 }); }
+void* operator new[](size_t size) { return operator new(size, std::align_val_t{ 16 }); }
+
+void operator delete(void* ptr, size_t size, std::align_val_t) noexcept
 {
     if (ptr == nullptr)
     {
         return; // No action for null pointer
     }
-    size = (size + 15) & ~size_t{ 15 }; // Align to 16 bytes
     if (reinterpret_cast<uintptr_t>(ptr) == HeapStartAddress + currentHeapPos - size)
     {
         currentHeapPos -= size; // Deallocate only if it matches the last allocation
@@ -183,7 +176,12 @@ void operator delete(void* ptr, size_t size) noexcept
     // Simple heap implementation - no actual deallocation unless it's from the top.
 }
 
-void operator delete[](void* ptr) noexcept
+void operator delete[](void* ptr, size_t size, std::align_val_t align) noexcept { return operator delete(ptr, size, align); }
+
+void operator delete(void* ptr, size_t size) noexcept { return operator delete(ptr, size, std::align_val_t{ 16 }); }
+void operator delete[](void* ptr, size_t size) noexcept { return operator delete(ptr, size, std::align_val_t{ 16 }); }
+
+void operator delete(void* ptr, std::align_val_t) noexcept
 {
     if (ptr == nullptr)
     {
@@ -193,6 +191,11 @@ void operator delete[](void* ptr) noexcept
 
     // Simple heap implementation - no actual deallocation
 }
+
+void operator delete[](void* ptr, std::align_val_t align) noexcept { return operator delete(ptr, align); }
+
+void operator delete(void* ptr) noexcept { return operator delete(ptr, std::align_val_t{ 16 }); }
+void operator delete[](void* ptr) noexcept { return operator delete(ptr, std::align_val_t{ 16 }); }
 
 extern "C" void* malloc(size_t size)
 {
@@ -223,6 +226,14 @@ extern "C" void abort()
     Cpu::Halt();
 }
 
+extern "C" void __cxa_pure_virtual()
+{
+    Uart::Raw::Puts("Pure virtual function called\n");
+    Cpu::Halt();
+}
+
+
+
 namespace std
 {
 
@@ -230,6 +241,21 @@ void terminate()
 {
     Uart::Raw::Puts("std::terminate called\n");
     Cpu::Halt();
+}
+
+
+ABI::__shared_count     ::~__shared_count     () = default;
+ABI::__shared_weak_count::~__shared_weak_count() = default;
+
+void ABI::__shared_weak_count::__release_weak() noexcept
+{
+    // TODO: Do this. For now, we won't be using weak pointers.
+}
+
+void const* ABI::__shared_weak_count::__get_deleter(std::type_info const&) const noexcept
+{
+    // TODO: Implement this
+    return nullptr;
 }
 
 }

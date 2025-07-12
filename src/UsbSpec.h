@@ -302,7 +302,7 @@ struct __attribute__((__packed__)) UsbEndpointDescriptor {
     struct __attribute__((__packed__, aligned(1))) {
         uint8_t Number : 4;					    		// @0
         uint8_t _reserved4_6 : 3;						// @4
-        uint8_t Direction : 1;							// @7
+        UsbDirection Direction : 1;							// @7
     } EndpointAddress;												// +0x2  Endpoint address. Bit 7 indicates direction (0=OUT, 1=IN).
     struct __attribute__((__packed__, aligned(1))) {
         enum usb_transfer_type Type : 2;				// @0
@@ -338,13 +338,13 @@ static_assert(sizeof(UsbEndpointDescriptor) == 0x07, "Structure should be 7 byte
 {       USB string descriptor structure as per 9.6.7 of USB2.0 manual       }
 {---------------------------------------------------------------------------}*/
 struct __attribute__((__packed__)) UsbStringDescriptor {
-    struct UsbDescriptorHeader Header;								// +0x0 Length of this descriptor, +0x1 DEVICE descriptor type (enum DescriptorType)
+    UsbDescriptorHeader Header;								// +0x0 Length of this descriptor, +0x1 DEVICE descriptor type (enum DescriptorType)
     uint16_t Data[];												// +0x2 Amount varies with string length
 };
 
 template < size_t N >
 struct __attribute__((__packed__)) UsbStringDescriptorT {
-    struct UsbDescriptorHeader Header;								// +0x0 Length of this descriptor, +0x1 DEVICE descriptor type (enum DescriptorType)
+    UsbDescriptorHeader Header;								// +0x0 Length of this descriptor, +0x1 DEVICE descriptor type (enum DescriptorType)
     // This is a template for a string descriptor with a fixed size.
     // It allows us to create a string descriptor with a specific length.
     static constexpr size_t Length = N;
@@ -517,8 +517,8 @@ constexpr uint8_t bmREQ_HUB_FEATURE		      = USB_SETUP_HOST_TO_DEVICE | USB_SETU
 constexpr uint8_t bmREQ_PORT_FEATURE		  = USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER;
 constexpr uint8_t bmREQ_HUB_STATUS			  = USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_DEVICE;
 constexpr uint8_t bmREQ_PORT_STATUS           = USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_OTHER;
-constexpr uint8_t bmREQ_GET_HUB_DESCRIPTOR    = USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS|USB_SETUP_RECIPIENT_DEVICE;
-constexpr uint8_t bmREQ_SET_HUB_DESCRIPTOR    = USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_CLASS|USB_SETUP_RECIPIENT_DEVICE;
+constexpr uint8_t bmREQ_GET_HUB_DESCRIPTOR    = USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_DEVICE;
+constexpr uint8_t bmREQ_SET_HUB_DESCRIPTOR    = USB_SETUP_HOST_TO_DEVICE | USB_SETUP_TYPE_CLASS | USB_SETUP_RECIPIENT_DEVICE;
 
 
 constexpr uint8_t bmREQ_DEVICE_STATUS		  = USB_SETUP_DEVICE_TO_HOST | USB_SETUP_TYPE_STANDARD | USB_SETUP_RECIPIENT_DEVICE;

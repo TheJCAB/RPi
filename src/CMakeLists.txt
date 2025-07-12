@@ -32,6 +32,8 @@ add_kernel_image(kernel8
 
     emb-stdio.cpp       emb-stdio.h
     DesignWareUsb.cpp   DesignWareUsb.h
+    DesignWareUsbHost.cpp
+    DesignWareUsbChannel.cpp DesignWareUsbChannel.h
     Interrupts.cpp      Interrupts.h
 
     Processor.h

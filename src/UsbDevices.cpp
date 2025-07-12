@@ -31,6 +31,8 @@
 #include "UsbDevices.h"
 
 #include "DesignWareUsb.h"
+#include "DesignWareUsbHost.h"
+#include "DesignWareUsbChannel.h"
 
 #include "Cpu.h"
 #include "Timer.h"
@@ -46,6 +48,8 @@
 //#define LOG(...) printf2(__VA_ARGS__)
 #define LOG_DEBUG(...)
 //#define LOG_DEBUG(...) printf2(__VA_ARGS__)
+
+static std::shared_ptr<HCDHost> Host;
 
 static RESULT ResultFromDwcResult(DWCRESULT dwcResult)
 {
@@ -214,21 +218,21 @@ struct __attribute__((__packed__)) RootHubConfig {
     struct UsbEndpointDescriptor Endpoint;
 };
 
-alignas(4) struct RootHubConfig root_hub_configuration = {
+alignas(4) constexpr RootHubConfig root_hub_configuration = {
     .Configuration = []() constexpr {
-        ConfigurationDescriptor desc = {
-            .bLength = sizeof(ConfigurationDescriptor),
-            .bDescriptorType = USB_DESCRIPTOR_TYPE_CONFIGURATION,
-            .wTotalLength = sizeof(root_hub_configuration),
-            .bNumInterfaces = 1,
-            .bConfigurationValue = 1,
-            .iConfiguration = 2,
-            .bMaxPower = 0,
-        };
-        // These are in unnamed structs/unions, so not reachable via designated initializers.
+        // Some fields are in unnamed structs/unions, not reachable via designated initializers.
+        ConfigurationDescriptor desc{};
+        desc.bLength = sizeof(ConfigurationDescriptor);
+        desc.bDescriptorType = USB_DESCRIPTOR_TYPE_CONFIGURATION;
+        desc.wTotalLength = sizeof(root_hub_configuration);
+        desc.bNumInterfaces = 1;
+        desc.bConfigurationValue = 1;
+        desc.iConfiguration = 2;
+        desc.bMaxPower = 0;
         desc.RemoteWakeup = false;
         desc.SelfPowered = true;
         desc._reserved7 = 1;
+        desc._reserved0_4 = 0;
         return desc;
     }(),
     .Interface = {
@@ -263,22 +267,14 @@ alignas(4) struct RootHubConfig root_hub_configuration = {
     },
 };
 
-/*--------------------------------------------------------------------------}
-{		  USB2.0 DESCRIPTION STRING0 FOR OUR "FAKED" ROOTHUB 				}
-{--------------------------------------------------------------------------*/
-constexpr char16_t RootHubString0Buffer[] = { char16_t{0x0409} };
-alignas(4) constexpr auto RootHubString0 = LiteralUsbStringDescriptor(RootHubString0Buffer);
+// USB2.0 DESCRIPTION STRINGS FOR OUR "FAKED" ROOTHUB
+// Note: UTF-16
+constexpr char16_t RootHubLocaleString[] = { char16_t{0x0409} };   // LCID (Locale Identifier) for en-US
+constexpr char16_t RootHubString      [] = u"FAKED Root Hub (tm)";
+constexpr char16_t RootHubConfigString[] = u"FAKE config string";
 
-#define RootHubString u"FAKED Root Hub (tm)"				// UTF string
-/*--------------------------------------------------------------------------}
-{		  USB2.0 DESCRIPTION STRING1 FOR OUR "FAKED" ROOTHUB				}
-{--------------------------------------------------------------------------*/
+alignas(4) constexpr auto RootHubString0 = LiteralUsbStringDescriptor(RootHubLocaleString);
 alignas(4) constexpr auto RootHubString1 = LiteralUsbStringDescriptor(RootHubString);
-
-#define RootHubConfigString u"FAKE config string"				// UTF string
-/*--------------------------------------------------------------------------}
-{		  USB2.0 DESCRIPTION STRING3 FOR OUR "FAKED" ROOTHUB				}
-{--------------------------------------------------------------------------*/
 alignas(4) constexpr auto RootHubString2 = LiteralUsbStringDescriptor(RootHubConfigString);
 
 /*--------------------------------------------------------------------------}
@@ -304,207 +300,260 @@ alignas(4) struct HubDescriptor RootHubDescriptor = {
 };
 
 /*==========================================================================}
-{	 MY MEMORY COPY .. YEAH I AM OVER THE ARM MEMCOPY ALIGNMENT	ISSUES	    }
+{			    INTERNAL FAKE ROOT HUB MESSAGE HANDLER					    }
 {==========================================================================*/
-void myMemCopy (uint8_t* dest, uint8_t* source, uint32_t size){
-    while (size) {													// While data to copy
-        *dest++ = *source++;										// Copy 1 byte from source to dest and increment pointers
-        size--;														// Decerement size
+
+
+static RESULT Reply(std::span<uint8_t> const buffer, uint32_t* const bytesTransferred, std::span<uint8_t const> const value)
+{
+    // Truncate if needed.
+    auto const replyLength = value.size() > buffer.size() ? buffer.size() : value.size();
+    if (replyLength > 0)
+    {
+        memcpy(buffer.data(), value.data(), replyLength);
+    }
+    if (bytesTransferred) *bytesTransferred = static_cast<uint32_t>(replyLength);
+    return Ok;
+}
+
+static RESULT Reply(std::span<uint8_t> const buffer, uint32_t* const bytesTransferred, auto const& value)
+{
+    if constexpr (requires{ { value.Header } -> std::convertible_to<UsbDescriptorHeader>; })
+    {
+        return Reply(buffer, bytesTransferred, std::span{ reinterpret_cast<uint8_t const*>(&value), value.Header.DescriptorLength });
+    }
+    else if constexpr (std::convertible_to<decltype(value), std::span<uint8_t const>>)
+    {
+        return Reply(buffer, bytesTransferred, static_cast<std::span<uint8_t const*>>(value));
+    }
+    else
+    {
+        return Reply(buffer, bytesTransferred, std::span{ reinterpret_cast<uint8_t const*>(&value), sizeof(value) });
     }
 }
 
-/*==========================================================================}
-{			    INTERNAL FAKE ROOT HUB MESSAGE HANDLER					    }
-{==========================================================================*/
-RESULT HcdProcessRootHubMessage (uint8_t* buffer, uint32_t bufferLength, struct UsbDeviceRequest *request, uint32_t *bytesTransferred)
+RESULT HcdProcessRootHubMessage (uint8_t* buffer, uint32_t bufferLength, UsbDeviceRequest *request, uint32_t *bytesTransferred)
 {
+    std::span replyBuffer{ buffer, bufferLength };
+    if (bytesTransferred) *bytesTransferred = 0;		// Default to no bytes transferred
+
     RESULT result = Ok;
-    uint32_t replyLength = 0;
-    union {										// Place a union over these to stop having to mess around .. its a 4 bytes whatever the case .. look carefully
-        uint8_t* replyBytes;					// Pointer to bytes to return can be anything 
-        uint8_t	reply8;							// 8 bit return
-        uint16_t reply16;						// 16 bit return
-        uint32_t reply32;						// 32 bit return
-        struct HubFullStatus replyHub;			// Hub status return
-        struct HubPortFullStatus replyPort;		// Port status return
-    } replyBuf;
-    bool ptrTransfer = false;					// Default is not a pointer transfer
-    switch (request->Request) {
-    /* Details on GetStatus from here http://www.beyondlogic.org/usbnutshell/usb6.shtml */
+    //uint32_t replyLength = 0;
+    //union {										// Place a union over these to stop having to mess around .. its a 4 bytes whatever the case .. look carefully
+    //    uint8_t* replyBytes;					// Pointer to bytes to return can be anything 
+    //    uint8_t	reply8;							// 8 bit return
+    //    uint16_t reply16;						// 16 bit return
+    //    uint32_t reply32;						// 32 bit return
+    //    struct HubFullStatus replyHub;			// Hub status return
+    //    struct HubPortFullStatus replyPort;		// Port status return
+    //} replyBuf;
+    //bool ptrTransfer = false;					// Default is not a pointer transfer
+    switch (request->Request)
+    {
+    // Details on GetStatus from here http://www.beyondlogic.org/usbnutshell/usb6.shtml
     case GetStatus:
         switch (request->Type) {
-        case bmREQ_DEVICE_STATUS  /*0x80*/: 						// Device status request .. returns a 16 bit device status
-            replyBuf.reply16 = 1;									// Only two bits in D0 = Self Powered, D1 = Remote Wakeup .. So 1 just self powered 
-            replyLength = 2;										// Two byte response
-            break;
-        case bmREQ_INTERFACE_STATUS /* 0x81 */:						// Interface status request .. returns a 16 bit status
-            replyBuf.reply16 = 0;									// Spec says two bytes of 0x00, 0x00. (Both bytes are reserved for future use)
-            replyLength = 2;										// Two byte response
-        case bmREQ_ENDPOINT_STATUS /* 0x82 */:						// Endpoint status request .. return a 16 bit status 
-            replyBuf.reply16 = 0;									// Two bytes indicating the status (Halted/Stalled) of a endpoint. D0 = Stall .. 0 No stall for us 
-            replyLength = 2;										// Two byte response
-            break;
-        case bmREQ_HUB_STATUS  /*0xa0*/:							// We are a hub class so we need a standard hub class get status return
-            replyBuf.replyHub.Raw32 = 0;							// Zero all the status bits
-            replyBuf.replyHub.Status.LocalPower = true;				// So we will return a HubFullStatus ... Just set LocalPower bit
-            replyLength = 4;										// 4 bytes in size .. remember we checked all that in static asserts
-            break;
-        case bmREQ_PORT_STATUS /* 0xa3 */:							// PORT request .. Remember we have 1 port which is the actual physical hardware
-            if (request->Index == 1) {								// Remember we have only one port so any other port is an error
-                replyBuf.replyPort = DwcGetPortStatus();
-                replyLength = sizeof(replyBuf.replyPort);			// 4 bytes in size .. remember we checked all that in static asserts
-            } else result = ErrorArgument;							// Any other port than number 1 means the arguments are garbage
-            break;
+        case bmREQ_DEVICE_STATUS  /*0x80*/:
+            // Device status request .. returns a 16 bit status
+            // D0 = Self Powered, D1 = Remote Wakeup, D2 = Test Mode, D3 = Reserved
+            // We are self powered and not in test mode so we return 0x0001
+            return Reply(replyBuffer, bytesTransferred, uint16_t{1});
+
+        case bmREQ_INTERFACE_STATUS /* 0x81 */:
+            // Interface status request .. returns a 16 bit status
+            // Spec says two bytes of 0x00, 0x00. (Both bytes are reserved for future use)
+            return Reply(replyBuffer, bytesTransferred, uint16_t{0});
+
+        case bmREQ_ENDPOINT_STATUS /* 0x82 */:
+            // Endpoint status request .. return a 16 bit status
+            // Two bytes indicating the status (Halted/Stalled) of a endpoint.
+            // D0 = Stall .. 0 No stall for us
+            return Reply(replyBuffer, bytesTransferred, uint16_t{0});
+
+        case bmREQ_HUB_STATUS  /*0xa0*/:
+            // We are a hub class so we need a standard hub class get status return
+            // So we will return a cleared HubFullStatus ...
+            // Just set LocalPower bit
+            return Reply(replyBuffer, bytesTransferred, HubFullStatus{ .Status{ .LocalPower = true } });
+
+        case bmREQ_PORT_STATUS /* 0xa3 */:
+            // PORT request .. Remember we have 1 port which is the actual physical hardware
+            if (request->Index != 1)
+            {
+                // Remember we have only one port so any other port is an error
+                return ErrorArgument;
+            }
+            return Reply(replyBuffer, bytesTransferred, Host->DwcGetPortStatus());
+
         default:
-            result = ErrorArgument;									// Unknown argument provided on request GetStatus
-            break;
+            return ErrorArgument;
         };
-        break;
-    /* Details on ClearFeature from here http://www.beyondlogic.org/usbnutshell/usb6.shtml */
+
+    // Details on ClearFeature from here http://www.beyondlogic.org/usbnutshell/usb6.shtml
     case ClearFeature:
-        replyLength = 0;
         switch (request->Type) {
-        case bmREQ_INTERFACE_FEATURE /*0x01*/:						// Interface clear feature requet
-            break;													// Current USB Specification Revision 2 specifies no interface features.
-        case bmREQ_ENDPOINT_FEATURE /*0x02*/:						// Endpoint set feature request
-            break;													// 16 bits only option is Halt on D0 which we dont support
-        case bmREQ_HUB_FEATURE      /*0x20*/:						// Hub clear feature request
-            break;													// Only options DEVICE_REMOTE_WAKEUP and TEST_MODE neither which we support
-        case  bmREQ_PORT_FEATURE /*0x23*/:							// Port clear feature request
-            if (request->Index == 1) {								// Remember we have only one port so any other port is an error
-                switch ((enum HubPortFeature)request->Value) {		// Check what request to clear is
-                case FeatureEnable:
-                    DwcClearEnable();
-                    break;
-                case FeatureSuspend:
-                    DwcResume();
-                    break;
-                case FeaturePower:
-                    LOG("Physical host power off\n");
-                    DwcPowerOff();
-                    break;
-                case FeatureConnectionChange:
-                    DwcConnectionChange();
-                    break;
-                case FeatureEnableChange:
-                    DwcEnableChange();
-                    break;
-                case FeatureOverCurrentChange:
-                    DwcOverCurrentChange();
-                    break;
-                default:
-                    break;											// Any other clear feature rtequest just ignore
-                }
-            } else result = ErrorArgument;							// Any other port than number 1 means the arguments are garbage
-            break;
+        case bmREQ_INTERFACE_FEATURE /*0x01*/:
+            // Interface clear feature request
+            // Current USB Specification Revision 2 specifies no interface features.
+            return Ok;
+        case bmREQ_ENDPOINT_FEATURE /*0x02*/:
+            // Endpoint set feature request
+            // 16 bits only option is Halt on D0 which we dont support
+            return Ok;
+        case bmREQ_HUB_FEATURE      /*0x20*/:
+            // Hub clear feature request
+            // Only options DEVICE_REMOTE_WAKEUP and TEST_MODE neither which we support
+            return Ok;
+        case  bmREQ_PORT_FEATURE /*0x23*/:
+            // Port clear feature request
+            if (request->Index != 1)
+            {
+                // Remember we have only one port so any other port is an error
+                return ErrorArgument;
+            }
+            switch ((enum HubPortFeature)request->Value) {		// Check what request to clear is
+            case FeatureEnable:
+                Host->DwcClearEnable();
+                return Ok;
+
+            case FeatureSuspend:
+                Host->DwcResume();
+                return Ok;
+
+            case FeaturePower:
+                LOG("Physical host power off\n");
+                Host->DwcPowerOff();
+                return Ok;
+
+            case FeatureConnectionChange:
+                Host->DwcConnectionChange();
+                return Ok;
+
+            case FeatureEnableChange:
+                Host->DwcEnableChange();
+                return Ok;
+
+            case FeatureOverCurrentChange:
+                Host->DwcOverCurrentChange();
+                return Ok;
+
+            default:
+                // Any other clear feature request just ignore
+                return Ok;
+            }
         default:
-            result = ErrorArgument;									// If it's not a device/interface/classor endpoint ClearFeature message is garbage
-            break;
+            // If it's not a device/interface/classor endpoint ClearFeature message is garbage
+            return ErrorArgument;
         }
         break;
-    /* Details on SetFeature from here http://www.beyondlogic.org/usbnutshell/usb6.shtml */
+    // Details on SetFeature from here http://www.beyondlogic.org/usbnutshell/usb6.shtml
     case SetFeature:
-        replyLength = 0;
         switch (request->Type) {
-        case bmREQ_INTERFACE_FEATURE /*0x01*/:						// Interface set feature requet
-            break;													// Current USB Specification Revision 2 specifies no interface features.
-        case bmREQ_ENDPOINT_FEATURE /*0x02*/:						// Endpoint set feature request
-            break;													// 16 bits only option is Halt on D0 which we dont support
-        case bmREQ_HUB_FEATURE      /*0x20*/:						// Hub set feature request
-            break;													// 16 bits only options DEVICE_REMOTE_WAKEUP and TEST_MODE neither which we support
-        case bmREQ_PORT_FEATURE /* 0x23 */:							// Port set feature request
-            if (request->Index == 1) {								// Remember we have only one port so any other port is an error
-                switch ((enum HubPortFeature)request->Value) {
-                case FeatureReset:			
-                    DwcReset();
-                    LOG_DEBUG("Reset physical port .. rootHub %i\n", RootHubDeviceNumber);
-                    break;
-                case FeaturePower:
-                    LOG("Physical host power on\n");
-                    DwcPowerOn();
-                    break;
-                default:
-                    break;
-                }
-            } else result = ErrorArgument;							// Any other port than number 1 means the argument are garbage .. remember 1 port on this hub
-            break;
+        case bmREQ_INTERFACE_FEATURE /*0x01*/:
+        	// Interface set feature request
+            // Current USB Specification Revision 2 specifies no interface features.
+            return Ok;
+
+        case bmREQ_ENDPOINT_FEATURE /*0x02*/:
+            // Endpoint set feature request
+            // 16 bits only option is Halt on D0 which we dont support
+            return Ok;
+
+        case bmREQ_HUB_FEATURE      /*0x20*/:
+            // Hub set feature request
+            // 16 bits only options DEVICE_REMOTE_WAKEUP and TEST_MODE neither which we support
+            return Ok;
+
+        case bmREQ_PORT_FEATURE /* 0x23 */:
+            // Port set feature request
+            if (request->Index != 1)
+            {
+                // Remember we have only one port so any other port is an error
+                return ErrorArgument;
+            }
+            switch ((enum HubPortFeature)request->Value) {
+            case FeatureReset:
+                Host->DwcReset();
+                LOG_DEBUG("Reset physical port .. rootHub %i\n", RootHubDeviceNumber);
+                return Ok;
+
+            case FeaturePower:
+                LOG("Physical host power on\n");
+                Host->DwcPowerOn();
+                return Ok;
+
+            default:
+                return Ok;
+            }
+
         default:
-            result = ErrorArgument;									// If it's not a device/interface/class or endpoint SetFeature message is garbage
-            break;
+            // If it's not a device/interface/class or endpoint SetFeature message is garbage
+            return ErrorArgument;
         }
-        break;
+
     case SetAddress:
-        replyLength = 0;
-        RootHubDeviceNumber = request->Value;						// Move the roothub to address requested .. should always be from zero to 1
-        break;
-    /* Details on GetDescriptor from here http://www.beyondlogic.org/usbnutshell/usb5.shtml#DeviceDescriptors */
+        // Move the roothub to address requested .. should always be from zero to 1
+        RootHubDeviceNumber = request->Value;
+        return Ok;
+
+    // Details on GetDescriptor from here http://www.beyondlogic.org/usbnutshell/usb5.shtml#DeviceDescriptors
     case GetDescriptor:
-        replyLength = 0;											// Preset no return data length	
-        switch (request->Type) {
-        case bmREQ_GET_DEVICE_DESCRIPTOR /*0x80*/:					// Device descriptor request
-            switch ((request->Value >> 8) & 0xff) {
+        switch (request->Type)
+        {
+        case bmREQ_GET_DEVICE_DESCRIPTOR /*0x80*/:
+            // Device descriptor request
+            switch ((request->Value >> 8) & 0xff)
+            {
             case USB_DESCRIPTOR_TYPE_DEVICE:
-                replyLength = sizeof(RootHubDeviceDescriptor);		// Size of our fake hub descriptor
-                replyBuf.replyBytes = (uint8_t*)&RootHubDeviceDescriptor;// Pointer to our fake roothub descriptor
-                ptrTransfer = true;									// Set pointer transfer flag
-                break;
+                // Return our fake roothub device descriptor
+                return Reply(replyBuffer, bytesTransferred, RootHubDeviceDescriptor);
+
             case USB_DESCRIPTOR_TYPE_CONFIGURATION:
-                replyLength = sizeof(root_hub_configuration);		// Size of our fake config descriptor
-                replyBuf.replyBytes = (uint8_t*)&root_hub_configuration;// Pointer to our fake roothub configuration
-                ptrTransfer = true;									// Set pointer transfer flag
-                break;
+                return Reply(replyBuffer, bytesTransferred, root_hub_configuration);
+
             case USB_DESCRIPTOR_TYPE_STRING:
-                switch (request->Value & 0xff) {
-                case 0x0:											
-                    replyLength = RootHubString0.Header.DescriptorLength;// Length of string decriptor 0
-                    replyBuf.replyBytes = (uint8_t*)&RootHubString0;// Pointer to string 0
-                    ptrTransfer = true;								// Set pointer transfer flag
-                    break;
-                case 0x1:				
-                    replyLength = RootHubString1.Header.DescriptorLength;// Length of string descriptor 1
-                    replyBuf.replyBytes = (uint8_t*)&RootHubString1;// Pointer to string 1
-                    ptrTransfer = true;								// Set pointer transfer flag
-                    break;
-                case 0x2:											// Return our fake roothub string2				
-                    replyLength = RootHubString2.Header.DescriptorLength;// Length of string descriptor 2
-                    replyBuf.replyBytes = (uint8_t*)&RootHubString2;// Pointer to string 2
-                    ptrTransfer = true;								// Set pointer transfer flag
-                    break;
+                switch (request->Value & 0xff)
+                {
+                case 0x0:
+                    return Reply(replyBuffer, bytesTransferred, RootHubString0);
+
+                case 0x1:
+                    return Reply(replyBuffer, bytesTransferred, RootHubString1);
+
+                case 0x2:
+                    return Reply(replyBuffer, bytesTransferred, RootHubString2);
+
                 default:
-                    break;
+                    return Ok;
                 }
-                break;
+
             default:
                 LOG("Unknown get descriptor type %x\n", (request->Value >> 8) & 0xff);
-                result = ErrorArgument;								// Unknown get descriptor type
+                return ErrorArgument;
             }
             break;
-        case  bmREQ_GET_HUB_DESCRIPTOR /*0xa0*/:					// RootHub descriptor requested
-            replyLength = RootHubDescriptor.Header.DescriptorLength;// Length of our descriptor for our fake hub
-            replyBuf.replyBytes = (uint8_t*)&RootHubDescriptor;		// Pointer to our fake roothu descriptor
-            ptrTransfer = true;										// Set pointer transfer flag
-            break;
+        case  bmREQ_GET_HUB_DESCRIPTOR /*0xa0*/:
+            // RootHub descriptor requested
+            return Reply(replyBuffer, bytesTransferred, RootHubDescriptor);
+
         default:
-            result = ErrorArgument;									// Besides HUB and DEVICE descriptors our fake hub doesn't know
-            break;
+            return ErrorArgument;
         }
-        break;
-    case GetConfiguration:											// Get configuration message
-        replyBuf.reply8 = 0x1;										// Return 1 rememeber we only have 1 config so can't be anything else
-        replyLength = 1;											// Reply is a byte
-        break;
-    case SetConfiguration:											// Set configuration message
-        replyLength = 0;											// Just ignore it we have 1 fixed config
-        break;
-    default:														// Any other message is unknown
-        result = ErrorArgument;										// Return error with argument
-        break;
+
+    case GetConfiguration:
+        // Get configuration message
+        // Return 1 as a byte. Rememeber we only have 1 config so can't be anything else
+        return Reply(replyBuffer, bytesTransferred, uint8_t{1});
+
+    case SetConfiguration:
+        // Set configuration message
+        // Just ignore it we have 1 fixed config
+        return Ok;
+
+    default:
+        // Any other message is unknown
+        return ErrorArgument;
     }
-    if (replyLength > bufferLength) replyLength = bufferLength;		// The buffer length does not have enough room so truncate our respone to fit
-    if (ptrTransfer) myMemCopy(&buffer[0], replyBuf.replyBytes, replyLength); // For a pointer transfer replyBuf has the pointer
-       else myMemCopy(&buffer[0], (uint8_t*)&replyBuf, replyLength);// Otherwise we want the raw data in the replyBuf
-    if (bytesTransferred) *bytesTransferred = replyLength;			// If bytes transferred return requested provide it
-    return result;													// Return result
 }
 
 /*-HCDSumbitControlMessage --------------------------------------------------
@@ -515,7 +564,8 @@ RESULT HcdProcessRootHubMessage (uint8_t* buffer, uint32_t bufferLength, struct 
  24Feb17 LdB
  --------------------------------------------------------------------------*/
 RESULT HCDSumbitControlMessage (UsbDevice* device,
-                                UsbPipeControl const& pipectrl,// Pipe control structure 					
+                                HCDChannel& channel,
+                                UsbDirection Direction,
                                 uint8_t* buffer,					// Data buffer both send and recieve				 
                                 uint32_t bufferLength,				// Buffer length for send or recieve
                                 UsbDeviceRequest&& request,	// USB request message
@@ -534,11 +584,8 @@ RESULT HCDSumbitControlMessage (UsbDevice* device,
 
     LOG_DEBUG("Setup phase\n");
     // Setup phase
-    UsbPipeControl intPipeCtrl = pipectrl;					// Copy the pipe control (We want channel really)										
-    intPipeCtrl.Type = USB_TRANSFER_TYPE_CONTROL;					// Set pipe to control	
-    intPipeCtrl.Direction = USB_DIRECTION_OUT;						// Set pipe to out
     uint32_t transferLength = 8;
-    if ((result = HCDChannelTransfer(device->Pipe0, intPipeCtrl,
+    if ((result = channel.Transfer(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, USB_DIRECTION_OUT,
         (uint8_t*)&request, transferLength, USB_PID_SETUP)) != DWCRESULT::Ok) {				// Send the 8 byte setup request packet
         LOG("HCD: SETUP packet to device: %#x req: %#x req Type: %#x Speed: %i PacketSize: %i LowNode: %i LowPort: %i Error: %i\n",
             device->Pipe0.Number, request.Request, request.Type, device->Pipe0.Speed, device->Pipe0.MaxPacketSizeInBits, device->Pipe0.splitNodePoint, device->Pipe0.splitNodePort, result);// Some parameter issue
@@ -547,21 +594,21 @@ RESULT HCDSumbitControlMessage (UsbDevice* device,
     LOG_DEBUG("Transfer phase\n");
     // Data transfer phase
     if (buffer != NULL) {											// Buffer must be valid for any transfer to occur
-        intPipeCtrl.Direction = pipectrl.Direction;					// Set pipe direction as requested	
         lastTransfer = bufferLength;
-        if ((result = HCDChannelTransfer(device->Pipe0, intPipeCtrl,
+        if ((result = channel.Transfer(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, Direction,
             buffer,	lastTransfer, USB_PID_DATA1)) != DWCRESULT::Ok) {		// Send or recieve the data
             LOG("HCD: Could not transfer DATA to device %i.\n",
                 device->Pipe0.Number);										// Log error
-        return ResultFromDwcResult(result);
+            return ResultFromDwcResult(result);
         }
     }
 
     LOG_DEBUG("Status phase\n");
     // Status phase		
-    intPipeCtrl.Direction = ((bufferLength == 0) || pipectrl.Direction == USB_DIRECTION_OUT) ? USB_DIRECTION_IN : USB_DIRECTION_OUT;
+    Direction = ((bufferLength == 0) || Direction == USB_DIRECTION_OUT) ? USB_DIRECTION_IN : USB_DIRECTION_OUT;
     transferLength = 0;
-    if ((result = HCDChannelTransfer(device->Pipe0, intPipeCtrl, buffer, transferLength, USB_PID_DATA1)) != DWCRESULT::Ok)	// Send or recieve the status
+    if ((result = channel.Transfer(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, Direction,
+        buffer, transferLength, USB_PID_DATA1)) != DWCRESULT::Ok)	// Send or recieve the status
     {
         LOG("HCD: Could not transfer STATUS to device %i.\n",
             device->Pipe0.Number);											// Log error
@@ -584,22 +631,18 @@ RESULT HCDSumbitControlMessageOUT(
     uint32_t* bytesTransferred			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)				
 )
 {
-    UsbPipeControl const pipectrl
-    {
-        .Type      = USB_TRANSFER_TYPE_CONTROL,
-        .Channel   = dwc_get_free_channel(),
-        .Direction = USB_DIRECTION_OUT,
-    };
+    auto const channel = Host->GetChannel();
+
     RESULT result = HCDSumbitControlMessage(
         device,
-        pipectrl,
+        *channel,
+        USB_DIRECTION_OUT,
         buffer,
         bufferLength,
         std::move(request),
         timeout,
         bytesTransferred
     );
-    dwc_release_channel(pipectrl.Channel);
     return result;
 }
 
@@ -612,22 +655,18 @@ RESULT HCDSumbitControlMessageIN(
     uint32_t* bytesTransferred			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)				
 )
 {
-    UsbPipeControl const pipectrl
-    {
-        .Type      = USB_TRANSFER_TYPE_CONTROL,
-        .Channel   = dwc_get_free_channel(),
-        .Direction = USB_DIRECTION_IN,
-    };
+    auto const channel = Host->GetChannel();
+
     RESULT result = HCDSumbitControlMessage(
         device,
-        pipectrl,
+        *channel,
+        USB_DIRECTION_IN,
         buffer,
         bufferLength,
         std::move(request),
         timeout,
         bytesTransferred
     );
-    dwc_release_channel(pipectrl.Channel);
     return result;
 }
 
@@ -637,20 +676,13 @@ RESULT HCDSumbitControlMessageIN(
  is a restricted address for the rootHub and will return if attempted.
  24Feb17 LdB
  --------------------------------------------------------------------------*/
-RESULT HCDSetAddress (UsbDevice* device,
-                      uint8_t channel,								// Channel to use
-                      uint8_t address)								// Address to set
+RESULT HCDSetAddress (UsbDevice* device, HCDChannel& channel, uint8_t address)
 {
-    RESULT result;
-    UsbPipeControl pipectrl = {
-        .Type = USB_TRANSFER_TYPE_CONTROL,							// Control packet
-        .Channel = channel,											// Use given channel channel
-        .Direction = USB_DIRECTION_OUT,								// We are writing to host
-    };
     if (address == 0) return ErrorArgument;							// You can't set address zero that is strictly reserved for roothub
-    result = HCDSumbitControlMessage(
+    RESULT result = HCDSumbitControlMessage(
         device,														// Pipe which points to current device endpoint
-        pipectrl,													// Pipe control
+        channel,
+        USB_DIRECTION_OUT,
         NULL,														// No data its a command
         0,															// Zero size transfer as no data
         UsbDeviceRequest {
@@ -666,16 +698,12 @@ RESULT HCDSetAddress (UsbDevice* device,
  Sets a given USB device configuration to the config index number requested.
  28Feb17 LdB
  --------------------------------------------------------------------------*/
-RESULT HCDSetConfiguration (UsbDevice* device, uint8_t channel, uint8_t configuration) {
+RESULT HCDSetConfiguration (UsbDevice* device, HCDChannel& channel, uint8_t configuration) {
     RESULT result;
-    UsbPipeControl pipectrl = {
-        .Type = USB_TRANSFER_TYPE_CONTROL,							// Control packet
-        .Channel = channel,											// Use given channel
-        .Direction = USB_DIRECTION_OUT,								// We are writing to host
-    };
     result = HCDSumbitControlMessage(
         device,
-        pipectrl,
+        channel,
+        USB_DIRECTION_OUT,
         NULL,
         0,
         UsbDeviceRequest {
@@ -704,17 +732,15 @@ RESULT HCDReadHubPortStatus (UsbDevice* device,
                              uint8_t port,							// Port to get status  OR  0 = Gateway node
                              uint8_t *Status)						// HubPortFullStatus or HubFullStatus .. use Raw union  
 {
+    auto const channel = Host->GetChannel();
+
     RESULT result;
     uint32_t transfer = 0;
-    UsbPipeControl pipectrl = {
-        .Type = USB_TRANSFER_TYPE_CONTROL,							// Control packet
-        .Channel = dwc_get_free_channel(),							// Find first free channel
-        .Direction = USB_DIRECTION_IN,								// We are reading to host
-    };
     if (Status == NULL) return ErrorArgument;						// Make sure return pointer is valid
     if ((result = HCDSumbitControlMessage(
         device,														// Pass control pipe thru unchanged
-        pipectrl,
+        *channel,
+        USB_DIRECTION_IN,
         (uint8_t*)Status,											// Pass in pointer to status
         sizeof(uint32_t),											// We want full structure for either call which is 32 bits
         UsbDeviceRequest {								// Construct a USB request
@@ -726,12 +752,10 @@ RESULT HCDReadHubPortStatus (UsbDevice* device,
         ControlMessageTimeout,										// Standard control message timeouts
         &transfer)) != Ok)											// We will check transfer size so pass in pointer to our local
     {
-        dwc_release_channel(pipectrl.Channel);						// Release the channel
         LOG("HCD Hub read status failed on device: %i, port: %i, Result: %#x, Pipe Speed: %#x, Pipe MaxPacket: %u\n",
             device->Pipe0.Number, port, result, device->Pipe0.Speed, device->Pipe0.MaxPacketSizeInBits);	// Log any error
         return result;												// Return error result
     }
-    dwc_release_channel(pipectrl.Channel);							// Release the channel
     if (transfer < sizeof(uint32_t)) {								// Hub did not read amount requested
         LOG("HUB: Failed to read hub device:%i port:%i status\n",
             device->Pipe0.Number, port);										// Log error
@@ -751,15 +775,13 @@ RESULT HCDChangeHubPortFeature (UsbDevice* device,
                                 uint8_t port,						// Port to change feature  OR  0 = Gateway node
                                 bool set)							// Set or clear the feature
 {
+    auto const channel = Host->GetChannel();
+
     RESULT result;
-    UsbPipeControl pipectrl = {
-        .Type = USB_TRANSFER_TYPE_CONTROL,							// Control packet
-        .Channel = dwc_get_free_channel(),							// Find first free channel
-        .Direction = USB_DIRECTION_OUT,								// We are writing to host
-    };
     if ((result = HCDSumbitControlMessage(
         device,														// Pipe settings passed thru as is
-        pipectrl,
+        *channel,
+        USB_DIRECTION_OUT,
         NULL,														// No buffer as no data
         0,															// Length zero as no data
         UsbDeviceRequest {
@@ -771,13 +793,11 @@ RESULT HCDChangeHubPortFeature (UsbDevice* device,
         ControlMessageTimeout,										// Standard control message timeouts
         NULL)) != Ok)												// Ignore transfer pointer as zero data
     {
-        dwc_release_channel(pipectrl.Channel);						// Release the channel
         LOG("HUB: Failed to change port feature for device: %i, Port:%d feature:%d set:%d.\n",
             device->Pipe0.Number, port, feature, set);						// Log any error
-        return result;												// Return error result
+        return result;
     }
-    dwc_release_channel(pipectrl.Channel);							// Release the channel
-    return Ok;														// Return success
+    return Ok;
 }
 
 
@@ -1314,20 +1334,18 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
     DeviceDescriptor desc = { 0 };
     char buffer[256] __attribute__((aligned(4)));					// Text buffer
 
+    auto const channel = Host->GetChannel();
+
     /* Store the unique address until it is actually assigned. */
     address = device->Pipe0.Number;									// Hold unique address we will set device to
     device->Pipe0.Number = 0;										// Initially it starts as zero
     LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 1 = Read first 8 Bytes of Device Descriptor\n");
     device->Pipe0.MaxPacketSizeInBits = 8;							// Set max packet size to 8 ( So exchange will be exactly 1 packet)
-    UsbPipeControl pipectrl = {
-        .Type = USB_TRANSFER_TYPE_CONTROL,							// Control packet
-        .Channel = dwc_get_free_channel(),							// Find first free channel
-        .Direction = USB_DIRECTION_IN,								// We are reading to host
-    };
 
     result = HCDSumbitControlMessage(
         device,												// Pipe as given to us
-        pipectrl,													// Pipe control structure
+        *channel,
+        USB_DIRECTION_IN,
         (uint8_t*)&desc,											// Pointer to descriptor
         8,															// Ask for first 8 bytes as per USB specification
         UsbDeviceRequest {								// We will build a request structure
@@ -1340,7 +1358,6 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
         ControlMessageTimeout,										// The standard timeout for any control message
         &transferred);												// Pass in pointer to get bytes transferred back
     if ((result != Ok) || (transferred != 8)) {						// This should pass on any valid device
-        dwc_release_channel(pipectrl.Channel);						// Release the channel we are exiting
         LOG("Enumeration: Step 1 on device %i failed, Result: %#x, transferred: %u.\n",
             address, result, transferred);										// Log any error
         return result != Ok ? result : RESULT::ErrorTransmission;	// Fatal enumeration error of this device
@@ -1353,7 +1370,6 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
     if (ParentHub != NULL) {										// Roothub is the only one who will have a NULL parent and you can't reset a FAKE hub
         // Reset the port for what will be the second time.
         if ((result = HubPortReset(ParentHub, PortNum)) != Ok) {
-            dwc_release_channel(pipectrl.Channel);					// Release the channel we are exiting
             LOG("HCD: Failed to reset port again for new device %s.\n", UsbGetDescription(device));
             device->Pipe0.Number = address;
             return result;
@@ -1361,8 +1377,7 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
     }
     
     LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 3 = Set Device Address %u\n", address);
-    if ((result = HCDSetAddress(device, pipectrl.Channel, address)) != Ok) {
-        dwc_release_channel(pipectrl.Channel);					   // Release the channel we are exiting
+    if ((result = HCDSetAddress(device, *channel, address)) != Ok) {
         LOG("Enumeration: Failed to assign address to %#x.\n", address);// Log the error
         device->Pipe0.Number = address;								// Set device number just so it stays valid
         return result;												// Fatal enumeration error of this device
@@ -1384,14 +1399,12 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
     if (result == RESULT::Ok && transferred != sizeof(device->Descriptor))
     {
         // This should pass on any valid device
-        dwc_release_channel(pipectrl.Channel);						// Release the channel we are exiting
         LOG("Enumeration: Step 4 on device %i failed, Got %u bytes != %u.\n",
             device->Pipe0.Number, transferred, (uint32_t)sizeof(device->Descriptor));
         return RESULT::ErrorTransmission;
     }
     if (result != RESULT::Ok)
     {
-        dwc_release_channel(pipectrl.Channel);						// Release the channel we are exiting
         LOG("Enumeration: Step 4 on device %i failed, Result: %#x.\n",
             device->Pipe0.Number, result);						// Log any error
         return result;
@@ -1408,13 +1421,11 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
         &transfer, true);											// Read the config descriptor 	
     if (result == RESULT::Ok && transfer != sizeof(configDesc))
     {
-        dwc_release_channel(pipectrl.Channel);						// Release the channel we are exiting
         LOG("HCD: Got %u bytes != %u reading configuration descriptor for device: %i\n",
             transfer, (uint32_t)sizeof(device->Descriptor), device->Pipe0.Number);
         return RESULT::ErrorTransmission;
     }
     if (result != RESULT::Ok) {
-        dwc_release_channel(pipectrl.Channel);						// Release the channel we are exiting
         LOG("HCD: Error: %i, reading configuration descriptor for device: %i\n",
             result, device->Pipe0.Number);
         return RESULT::ErrorDevice;											// No idea what problem is so bail
@@ -1429,7 +1440,8 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
     uint8_t configBuffer[1024];										// Largest config I have ever seen is few hundred bytes this is 1K buffer
     result = HCDSumbitControlMessage(
         device,												// Device 
-        pipectrl,											        // Create pipe control structure 
+        *channel,
+        USB_DIRECTION_IN,
         &configBuffer[0],											// Buffer pointer passed in as is
         configDesc.wTotalLength,									// Length of whole config descriptor
         UsbDeviceRequest {								// We will build a request structure
@@ -1442,7 +1454,6 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
         ControlMessageTimeout,										// The standard timeout for any control message
         &transfer);													// Set pointer to fetch transfer bytes
     if ((result != Ok) || (transfer != configDesc.wTotalLength)) {	// Check if anything went wrong
-        dwc_release_channel(pipectrl.Channel);						// Release the channel
         LOG("HCD: Failed to read configuration descriptor for device %i, %u bytes read, Error: %i.\n",
             device->Pipe0.Number, (unsigned int)transfer, result);				// Log error
         if (result != Ok) return result;							// Return error result
@@ -1456,7 +1467,7 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
     while (i < configDesc.wTotalLength - 1) {						// So while we havent reached end of config data
         switch (configBuffer[i + 1]) {								// i will be on a descriptor header i+1 is decsriptor type 
         case USB_DESCRIPTOR_TYPE_INTERFACE: {						// Ok we have an interface descriptor we need to add it
-            myMemCopy((uint8_t*)&device->Interfaces[device->MaxInterface],
+            memcpy((uint8_t*)&device->Interfaces[device->MaxInterface],
                 &configBuffer[i], 
                 sizeof(struct UsbInterfaceDescriptor));				// configBuffer[i] is descriptor size as well as first byte
             device->MaxInterface++;									// One interface added
@@ -1464,7 +1475,7 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
             break;
         }
         case USB_DESCRIPTOR_TYPE_ENDPOINT: {						// Ok we have an endpoint descriptor we need to add it
-            myMemCopy((uint8_t*)&device->Endpoints[device->MaxInterface - 1][EndPtCnt], 
+            memcpy((uint8_t*)&device->Endpoints[device->MaxInterface - 1][EndPtCnt], 
                 &configBuffer[i],
                 sizeof(struct UsbEndpointDescriptor));				// configBuffer[i] is descriptor size as well as first byte
             EndPtCnt++;												// One endpoint added so move index
@@ -1473,7 +1484,6 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
         case USB_DESCRIPTOR_TYPE_HID: {								// HID Interface found
             if (hidCount == 0) {									// First HID descriptor found
                 if ((result = AddHidPayload(device)) != RESULT::Ok) {		// Ok so we need to add a hid payload to device
-                    dwc_release_channel(pipectrl.Channel);			// Release the channel we are exiting
                     LOG("Could not allocate hid payload, Error ID %i\n", result);
                     return result;									// We must have to fouled up device allocation code
                 };
@@ -1492,8 +1502,7 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
     }
 
     LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 6 = Set Configuration to Device\n");
-    if (auto const thisResult = HCDSetConfiguration(device, pipectrl.Channel, configNum); thisResult != Ok) {
-        dwc_release_channel(pipectrl.Channel);					   // Release the channel we are exiting
+    if (auto const thisResult = HCDSetConfiguration(device, *channel, configNum); thisResult != Ok) {
         LOG("HCD: Failed to set configuration %#x for device %i.\n",
             configNum, device->Pipe0.Number);
         return thisResult;
@@ -1542,7 +1551,6 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
     if (device->Descriptor.bDeviceClass == DeviceClassHub) {		// If device is a hub then enumerate it
         LOG_DEBUG("Device is a hub, enumerating ports.\n");
         if ((result = EnumerateHub(device)) != RESULT::Ok) {				// Run hub enumeration
-            dwc_release_channel(pipectrl.Channel);					// Release the channel we are exiting
             LOG("Could not enumerate HUB device %i, Error ID %i\n",
                 device->Pipe0.Number, result);						// Log error
             return result;											// Return the error
@@ -1550,7 +1558,6 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
     } else if (hidCount > 0) {										// HID interface on the device
         LOG_DEBUG("Device hidCount: %u, enumerating ports.\n", hidCount);
         if ((result = EnumerateHID(device)) != RESULT::Ok) {	// Ok so enumerate the HID device
-            dwc_release_channel(pipectrl.Channel);					// Release the channel we are exiting
             LOG("Could not enumerate HID device %i, Error ID %i\n",
                 device->Pipe0.Number, result);
             return result;											// return the error
@@ -1559,7 +1566,7 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
     else {														// If not a hub or HID then just log the device
         LOG_DEBUG("Device is not a hub or HID, skipping enumeration.\n");
     }
-    dwc_release_channel(pipectrl.Channel);							// Release the channel we are exiting
+
     return Ok;
 }
 
@@ -1615,18 +1622,16 @@ RESULT HCDGetDescriptor (UsbDevice* device,
                          uint32_t *bytesTransferred,     			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)								
                          bool runHeaderCheck)						// Whether to run header check
 {
+    auto const channel = Host->GetChannel();
+
     RESULT result;
     uint32_t transfer;
     alignas(4) struct UsbDescriptorHeader header  = { 0 };
-    UsbPipeControl pipectrl = {
-        .Type = USB_TRANSFER_TYPE_CONTROL,							// This is a control request
-        .Channel = dwc_get_free_channel(),							// Find first free channel
-        .Direction = USB_DIRECTION_IN,								// In to host as we are getting
-    };
     if (runHeaderCheck) {
         result = HCDSumbitControlMessage(
             device,													// Pipe passed in as is
-            pipectrl,											    // Pipe control structure 
+            *channel,
+            USB_DIRECTION_IN,
             (uint8_t*)&header,										// Buffer to description header
             sizeof(header),											// Size of the header
             UsbDeviceRequest {							// We will build a request structure
@@ -1641,17 +1646,17 @@ RESULT HCDGetDescriptor (UsbDevice* device,
         if ((result == Ok) && (header.DescriptorType != type))
             result = ErrorGeneral;									// For some strange reason descriptor type is not right
         if (result != Ok) {											// RESULT in error
-            dwc_release_channel(pipectrl.Channel);					// Release the channel
             LOG("HCD: Fail to get descriptor %#x:%#x recepient: %#x, device:%i. RESULT %#x.\n",
                 type, index, recipient, device->Pipe0.Number, result);		// Log any error
-            return result;											// Error reading descriptor header
+            return result;
         }
         if (length > header.DescriptorLength)						// Check descriptor length vs buffer space
             length = header.DescriptorLength;						// The descriptor is shorter than buffer space provided
     }
     result = HCDSumbitControlMessage(
         device,														// Pipe passed in as is
-        pipectrl,												    // Pipe control structure 
+        *channel,
+        USB_DIRECTION_IN,
         (uint8_t*)buffer,														// Buffer pointer passed in as is
         length,														// Length transferred (it may be shorter from above)
         UsbDeviceRequest {								// We will build a request structure
@@ -1665,40 +1670,37 @@ RESULT HCDGetDescriptor (UsbDevice* device,
         &transfer);													// Set pointer to fetch transfer bytes
     if (length != transfer) result = ErrorTransmission; 			// The requested length does not match read length
     if (result != Ok) {
-        dwc_release_channel(pipectrl.Channel);						// Release the channel
         LOG("HCD: Failed to get descriptor %#x:%#x for device:%i. RESULT %#x.\n",
-            type, index, device->Pipe0.Number, result);						// Log any error
+            type, index, device->Pipe0.Number, result);
     }
-    dwc_release_channel(pipectrl.Channel);							// Release the channel
-    if (bytesTransferred) *bytesTransferred = transfer;				// Return the bytes transferred
-    return result;													// Return the result
+    if (bytesTransferred) *bytesTransferred = transfer;
+    return result;
 }
 
 /*--------------------------------------------------------------------------}
 {					 PUBLIC GENERIC USB INTERFACE ROUTINES					}
 {--------------------------------------------------------------------------*/
 
-/*-UsbInitialise-------------------------------------------------------------
- Initialises the USB driver by performing necessary interfactions with the
- host controller driver, and enumerating the initial device tree.
- 24Feb17 LdB
- --------------------------------------------------------------------------*/
-RESULT UsbInitialise (void) {
-    DWCRESULT result;
-    if ((result = HCDInitialise()) != DWCRESULT::Ok) {							// Initialize host control driver
-        LOG("FATAL ERROR: HCD failed to initialise.\n");			// Some hardware issue
-        return ResultFromDwcResult(result);												// Return any fatal error
+/// Initializes the USB driver by performing necessary interfactions with the
+/// host controller driver, and enumerating the initial device tree.
+RESULT UsbInitialize (void)
+{
+    auto hostEx = HCDInitialize();
+    if (!hostEx.has_value())
+    {
+        LOG("FATAL ERROR: HCD failed to Initialize.\n");
+        return ResultFromDwcResult(hostEx.error());
     }
 
-    if ((result = HCDStart()) != DWCRESULT::Ok) {								// Start the host control driver						
-        LOG("USBD: Abort, HCD failed to start.\n");
-        return ResultFromDwcResult(result);												// Return any fatal error
-    }
-    if (auto const thisResult = UsbAttachRootHub(); thisResult != RESULT::Ok) {						// Attach the root hub .. which will launch enumeration
+    Host = std::move(hostEx).value();
+
+    // Attach the root hub .. which will launch enumeration
+    if (auto const thisResult = UsbAttachRootHub(); thisResult != RESULT::Ok)
+    {
         LOG("USBD: Failed to enumerate devices.\n");
-        return thisResult;												// Retrn any fatal error
+        return thisResult;
     }
-    return Ok;														// Return success
+    return Ok;
 }
 
 DeviceDescriptor GetDeviceDescriptor(uint8_t devNumber)
@@ -2231,7 +2233,9 @@ RESULT HCDEndpointTransfer(UsbDevice* device, UsbEndpointDescriptor endpoint, ui
     LOG_DEBUG("HCD: %s transfer called for device %i, endpoint %i for %u bytes.\n",
         endpoint.EndpointAddress.Direction == USB_DIRECTION_IN ? "IN" : "OUT",
         device->Pipe0.Number, endpoint.EndpointAddress.Number, bufferLength);
-    
+
+    auto const channel = Host->GetChannel();
+
     // Set up the pipe for interrupt transfer
     UsbPipe pipe = {
         .MaxPacketSizeInBits = endpoint.Packet.MaxSize,         // Endpoint max packet size
@@ -2240,12 +2244,6 @@ RESULT HCDEndpointTransfer(UsbDevice* device, UsbEndpointDescriptor endpoint, ui
         .Number              = device->Pipe0.Number,            // Same device address
         .splitNodePort    = device->Pipe0.splitNodePort,  // Copy low speed info
         .splitNodePoint   = device->Pipe0.splitNodePoint, // Copy low speed info
-    };
-
-    UsbPipeControl pipectrl = {
-        .Type      = endpoint.Attributes.Type,
-        .Channel   = dwc_get_free_channel(),
-        .Direction = endpoint.EndpointAddress.Direction,
     };
 
     // Determine the correct data toggle (PID) for this endpoint
@@ -2290,7 +2288,7 @@ RESULT HCDEndpointTransfer(UsbDevice* device, UsbEndpointDescriptor endpoint, ui
     }
 
     // Start the interrupt transfer with the correct data toggle
-    auto const result = HCDChannelTransfer(pipe, pipectrl, buffer, bufferLength, packetId);
+    auto const result = channel->Transfer(pipe, endpoint.Attributes.Type, endpoint.EndpointAddress.Direction, buffer, bufferLength, packetId);
 
     // Update data toggle on successful transfer for interrupt endpoints
     if (result == DWCRESULT::Ok && endpoint.Attributes.Type == USB_TRANSFER_TYPE_INTERRUPT) {
@@ -2314,6 +2312,5 @@ RESULT HCDEndpointTransfer(UsbDevice* device, UsbEndpointDescriptor endpoint, ui
         toggle_updated:;
     }
 
-    dwc_release_channel(pipectrl.Channel);                         // Release the channel
     return ResultFromDwcResult(result);
 }

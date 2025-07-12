@@ -697,7 +697,7 @@ static int prn_to_func(int c, void* prn_func)
 {***************************************************************************/
 
 /*-[Init_EmbStdio]----------------------------------------------------------}
-. Initialises the EmbStdio by setting the handler that will be called for
+. Initializes the EmbStdio by setting the handler that will be called for
 . Each character to be output to the standard console. That routine could be 
 . a function that puts the character to a screen or something like a UART.
 . Until this function is called with a valid handler output will not occur.

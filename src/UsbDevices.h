@@ -72,12 +72,12 @@ struct HidDevice;
 {					 PUBLIC GENERIC USB INTERFACE ROUTINES					}
 {---------------------------------------------------------------------------}*/
 
-/*-UsbInitialise-------------------------------------------------------------
- Initialises the USB driver by performing necessary interfactions with the
+/*-UsbInitialize-------------------------------------------------------------
+ Initializes the USB driver by performing necessary interfactions with the
  host controller driver, and enumerating the initial device tree.
  24Feb17 LdB
  --------------------------------------------------------------------------*/
-RESULT UsbInitialise ();
+RESULT UsbInitialize ();
 
 DeviceDescriptor GetDeviceDescriptor(uint8_t devNumber);
 
