@@ -16,6 +16,7 @@
 #include "Exception.h"
 #include "Processor.h"
 #include "Mmu.h"
+#include "Scheduler.h"
 #include "Timer.h"
 #include "Run.h"
 #include "UsbDevices.h"
@@ -327,6 +328,13 @@ void Core0(void* dtb)
         }
     }
 
+    Scheduler::Init();
+
+    Scheduler::AddSpark([](uintptr_t){ Uart::Puts("Core 0 Spark running\n"); }, 0);
+    Uart::Puts("Core 0 Spark is scheduled\n");
+
+    Scheduler::DelayInMilliseconds(1'000); // Wait for 1 second
+
     Mailbox::Send(0, 0x80); // UART 1 and USB enabled?
 
     SdCard sdCard{ Mmio::Base + SdCard::RegistersOffset };
@@ -404,9 +412,9 @@ void Core0(void* dtb)
         UsbCheckForChange();
 
         /* Display the USB tree */
-        printf2("\n");
+        printf("\n");
         UsbShowTree(UsbGetRootHub(), 1, '+');
-        printf2("\n");
+        printf("\n");
     }
 
     uint32_t const w = 1280;

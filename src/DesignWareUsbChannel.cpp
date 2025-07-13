@@ -53,9 +53,9 @@
 #include <concepts>
 
 #define LOG(...)
-//#define LOG(...) printf2(__VA_ARGS__)
+//#define LOG(...) printf(__VA_ARGS__)
 #define LOG_DEBUG(...)
-//#define LOG_DEBUG(...) printf2(__VA_ARGS__)
+//#define LOG_DEBUG(...) printf(__VA_ARGS__)
 
 // Explicitly packing bitfields of different types keeps VSCode's IntelliSense happier.
 #define PACKED __attribute__((__packed__))

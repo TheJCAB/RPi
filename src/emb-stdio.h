@@ -70,7 +70,6 @@ CHAR_OUTPUT_HANDLER Init_EmbStdio (CHAR_OUTPUT_HANDLER handler);
 . 19Oct17 LdB
 .--------------------------------------------------------------------------*/
 int printf (const char* fmt, ...);
-int printf2 (const char* fmt, ...);
 
 /*-[ sprintf ]--------------------------------------------------------------}
 . Writes the C string formatted by fmt to the given buffer, replacing any

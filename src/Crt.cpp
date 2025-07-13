@@ -17,37 +17,37 @@ extern "C"
 
 void* memset(void* const dst, int val, size_t size)
 {
-    unsigned char* p = static_cast<unsigned char*>(dst);
+    uint8_t* p = static_cast<uint8_t*>(dst);
     size_t firstBytes = (uintptr_t)p & 7;
     firstBytes = firstBytes > size ? size : firstBytes;
     size -= firstBytes;
     for (; firstBytes > 0; --firstBytes)
     {
-        *p++ = static_cast<unsigned char>(val);
+        *p++ = static_cast<uint8_t>(val);
     }
     size_t wholeQwords = size / 8;
     if (wholeQwords > 0)
     {
         size -= wholeQwords * 8;
-        uint64_t const val64 = static_cast<unsigned char>(val) * 0x0101'0101'0101'0101u;
+        uint64_t const val64 = static_cast<uint8_t>(val) * 0x0101'0101'0101'0101u;
         uint64_t* q = reinterpret_cast<uint64_t*>(p);
         for (; wholeQwords > 0; --wholeQwords)
         {
             *q++ = val64;
         }
-        p = reinterpret_cast<unsigned char*>(q);
+        p = reinterpret_cast<uint8_t*>(q);
     }
     for (; size > 0; --size)
     {
-        *p++ = static_cast<unsigned char>(val);
+        *p++ = static_cast<uint8_t>(val);
     }
     return dst;
 }
 
 void* memcpy(void* restrict s1, const void* restrict s2, size_t n)
 {
-    unsigned char* d = static_cast<unsigned char*>(s1);
-    const unsigned char* s = static_cast<const unsigned char*>(s2);
+    uint8_t* d = static_cast<uint8_t*>(s1);
+    const uint8_t* s = static_cast<const uint8_t*>(s2);
     size_t firstBytes = (uintptr_t)d & 7;
     firstBytes = firstBytes > n ? n : firstBytes;
     n -= firstBytes;
@@ -65,14 +65,36 @@ void* memcpy(void* restrict s1, const void* restrict s2, size_t n)
         {
             *qd++ = *qs++;
         }
-        d = reinterpret_cast<unsigned char*>(qd);
-        s = reinterpret_cast<const unsigned char*>(qs);
+        d = reinterpret_cast<uint8_t*>(qd);
+        s = reinterpret_cast<const uint8_t*>(qs);
     }
     for (; n > 0; --n)
     {
         *d++ = *s++;
     }
     return s1;
+}
+
+void* memmove(void* dest, const void* src, size_t n)
+{
+    uint8_t* d = static_cast<uint8_t*>(dest);
+    const uint8_t* s = static_cast<const uint8_t*>(src);
+    if (d < s || d >= s + n)
+    {
+        // No overlap or forward copy
+        return memcpy(dest, src, n);
+    }
+    else
+    {
+        // Backward copy
+        d += n;
+        s += n;
+        while (n-- > 0)
+        {
+            *(--d) = *(--s);
+        }
+        return dest;
+    }
 }
 
 int wctob(wint_t c)
@@ -101,7 +123,7 @@ int strcmp(const char* s1, const char* s2)
         ++s1;
         ++s2;
     }
-    return static_cast<unsigned char>(*s1) - static_cast<unsigned char>(*s2);
+    return static_cast<uint8_t>(*s1) - static_cast<uint8_t>(*s2);
 }
 
 int strncmp(const char* s1, const char* s2, size_t n)
@@ -123,7 +145,7 @@ int strncmp(const char* s1, const char* s2, size_t n)
         return 0;
     }
     
-    return static_cast<unsigned char>(*s1) - static_cast<unsigned char>(*s2);
+    return static_cast<uint8_t>(*s1) - static_cast<uint8_t>(*s2);
 }
 
 int __cxa_atexit(void (*func)(void*), void* arg, void* dso_handle)
@@ -196,6 +218,24 @@ void operator delete[](void* ptr, std::align_val_t align) noexcept { return oper
 
 void operator delete(void* ptr) noexcept { return operator delete(ptr, std::align_val_t{ 16 }); }
 void operator delete[](void* ptr) noexcept { return operator delete(ptr, std::align_val_t{ 16 }); }
+
+extern "C" void *aligned_alloc(size_t alignment, size_t size)
+{
+    if (alignment == 0 || (alignment & (alignment - 1)) != 0)
+    {
+        return nullptr; // Invalid alignment
+    }
+
+    auto const pos = (currentHeapPos + static_cast<size_t>(alignment) - 1) & ~(static_cast<size_t>(alignment) - 1);
+    if (pos + size > HeapSizeInBytes)
+    {
+        return nullptr; // Out of memory
+    }
+
+    void* result = reinterpret_cast<void*>(HeapStartAddress + pos);
+    currentHeapPos = pos + size;
+    return result;
+}
 
 extern "C" void* malloc(size_t size)
 {

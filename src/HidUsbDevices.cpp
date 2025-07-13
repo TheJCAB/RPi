@@ -36,9 +36,9 @@
 #include "emb-stdio.h"				// Needed for printf
 
 #define LOG(...)
-//#define LOG(...) printf2(__VA_ARGS__)
+//#define LOG(...) printf(__VA_ARGS__)
 #define LOG_DEBUG(...)
-//#define LOG_DEBUG(...) printf2(__VA_ARGS__)
+//#define LOG_DEBUG(...) printf(__VA_ARGS__)
 
 #define MaxHIDPerDevice 4
 #define MaximumHids 16												// Maximum number of HID payloads we will allow
@@ -181,7 +181,7 @@ void describe_hid_descriptor(const uint8_t* data, size_t length)
         uint8_t tag  = (prefix >> 4) & 0x0F;
 
         if (prefix == 0xFE) { // Long item (rare)
-            printf2("Long item not supported\n");
+            printf("Long item not supported\n");
             break;
         }
 

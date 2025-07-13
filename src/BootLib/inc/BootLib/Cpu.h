@@ -20,6 +20,16 @@ inline uint64_t GetPerformanceTicksForUs(uint64_t us)
     return (us * GetPerformanceFrequency() / 1'000'000u);
 }
 
+inline uint64_t GetPerformanceTicksForMs(uint64_t ms)
+{
+    return (ms * GetPerformanceFrequency() / 1'000u);
+}
+
+inline int64_t GetPerformanceDifference(uint64_t a, uint64_t b)
+{
+    return static_cast<int64_t>(a - b);
+}
+
 void DelayInMicroseconds(uint64_t us);
 void DelayInMilliseconds(uint64_t ms);
 

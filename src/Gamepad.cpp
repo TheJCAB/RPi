@@ -247,27 +247,27 @@ void Init()
     }
     if (firstGamepad > 0)
     {
-        printf2("Gamepad detected\r\n");
-        printf2("Vendor ID: %04X, Product ID: %04X\r\n", descriptor.idVendor, descriptor.idProduct);
+        printf("Gamepad detected\r\n");
+        printf("Vendor ID: %04X, Product ID: %04X\r\n", descriptor.idVendor, descriptor.idProduct);
         char buffer[256];
         if (size_t length = GetDeviceProductString(firstGamepad, buffer))
         {
-            printf2("Product: %s\r\n", buffer);
+            printf("Product: %s\r\n", buffer);
         }
         if (size_t length = GetDeviceManufacturerString(firstGamepad, buffer))
         {
-            printf2("Manufacturer: %s\r\n", buffer);
+            printf("Manufacturer: %s\r\n", buffer);
         }
         if (size_t length = GetDeviceSerialNumberString(firstGamepad, buffer))
         {
-            printf2("Serial Number: %s\r\n", buffer);
+            printf("Serial Number: %s\r\n", buffer);
         }
         if (size_t length = GetDeviceConfigStringString(firstGamepad, buffer))
         {
-            printf2("Configuration: %s\r\n", buffer);
+            printf("Configuration: %s\r\n", buffer);
         }
         HIDEnableInterruptINSimple(firstGamepad, 0);
-        printf2("Gamepad configured\r\n");
+        printf("Gamepad configured\r\n");
     }
 }
 

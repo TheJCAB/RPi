@@ -76,9 +76,9 @@ size_t mbstowcs(wchar_t* restrict pwcs, const char* restrict s, size_t n);
 size_t wcstombs(char* restrict s, const wchar_t* restrict pwcs, size_t n);
 int at_quick_exit(void (*func)(void))                                     // C++11
 void quick_exit(int status);                                              // C++11
+*/
 void *aligned_alloc(size_t alignment, size_t size);                       // C11
 
-*/
 
 }
 

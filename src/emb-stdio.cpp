@@ -738,15 +738,15 @@ int printf (const char *fmt, ...)
 	return count;													// Return number of characters printed
 }
 
-int printf2 (const char *fmt, ...)
-{
-    va_list args;													// Argument list
-	int count;														// Number of characters printed
-	va_start(args, fmt);											// Create argument list
-	count = _doprnt(fmt, args, prn_to_func, reinterpret_cast<void*>(Console_WriteChar));
-	va_end(args);													// Done with argument list
-	return count;													// Return number of characters printed
-}
+//int printf (const char *fmt, ...)
+//{
+//    va_list args;													// Argument list
+//	int count;														// Number of characters printed
+//	va_start(args, fmt);											// Create argument list
+//	count = _doprnt(fmt, args, prn_to_func, reinterpret_cast<void*>(Console_WriteChar));
+//	va_end(args);													// Done with argument list
+//	return count;													// Return number of characters printed
+//}
 
 /*-[ sprintf ]--------------------------------------------------------------}
 . Writes the C string formatted by fmt to the given buffer, replacing any
@@ -774,4 +774,28 @@ int sprintf (char* buf, const char* fmt, ...)
 	*s = '\0';
 
 	return s - buf;
+}
+
+int putchar(int c)
+{
+    Console_WriteChar(c);
+    return c;
+}
+
+int puts(const char* str)
+{
+    if (str == NULL)
+    {
+        str = "(null)";
+    }
+
+    while (*str != '\0')
+    {
+        Console_WriteChar(*str);
+        str++;
+    }
+
+    Console_WriteChar('\n');
+
+    return 0; // Success
 }

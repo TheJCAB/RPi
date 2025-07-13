@@ -23,6 +23,7 @@ add_kernel_image(kernel8
     Run.cpp             Run.h
     Mmio.cpp            Mmio.h
     Mmu.cpp             Mmu.h
+    Scheduler.cpp       Scheduler.h
     Timer.cpp           Timer.h
     UsbDevices.cpp      UsbDevices.h
     HidUsbDevices.cpp   HidUsbDevices.h

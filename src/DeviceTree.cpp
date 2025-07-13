@@ -46,7 +46,7 @@ void parse_dtb(void* dtb) {
         return;
     }
 
-    printf2("DTB magic found\n");
+    printf("DTB magic found\n");
     printf("DTB total size: %u bytes\n", fdt32_to_cpu(hdr->totalsize));
     printf("DTB structure offset: %u bytes\n", fdt32_to_cpu(hdr->off_dt_struct));
     printf("DTB strings offset: %u bytes\n", fdt32_to_cpu(hdr->off_dt_strings));

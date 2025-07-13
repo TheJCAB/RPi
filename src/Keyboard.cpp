@@ -55,9 +55,9 @@ void Init()
     }
     if (firstKbd)
     {
-        printf2("Keyboard detected\r\n");
+        printf("Keyboard detected\r\n");
         HIDEnableInterruptINSimple(firstKbd, 0);
-        printf2("Keyboard configured\r\n");
+        printf("Keyboard configured\r\n");
     }
 }
 
