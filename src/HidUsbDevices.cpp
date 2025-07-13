@@ -127,7 +127,7 @@ void FreeHidPayload(HidDevice* device)
     *device = {};
 }
 
-bool SetHidDescriptor(HidDevice* hidDevice, uint8_t hidIndex, uint8_t interface, uint8_t const* buffer, uint8_t size)
+bool SetHidDescriptor(HidDevice* hidDevice, uint8_t hidIndex, uint8_t interface, std::byte const* buffer, uint8_t size)
 {
     if (sizeof(struct HidDescriptor) != size)
     {
@@ -340,7 +340,7 @@ RESULT HIDReadDescriptor (uint8_t devNumber,						// Device number (address) of 
 RESULT HIDReadReport (uint8_t devNumber,							// Device number (address) of the device to read
                       uint8_t hidIndex,								// Which hid configuration information is requested from
                       uint16_t reportValue,							// Hi byte = enum HidReportType  Lo Byte = Report Index (0 = default) 
-                      uint8_t* Buffer,								// Pointer to a buffer to recieve the report
+                      std::byte* Buffer,								// Pointer to a buffer to recieve the report
                       uint16_t Length)								// Length of the report
 {
     RESULT result;
@@ -419,7 +419,7 @@ RESULT HIDSetIdle (uint8_t devNumber, uint8_t hidIndex)
 RESULT HIDWriteReport (uint8_t devNumber,							// Device number (address) of the device to write report to
                        uint8_t hidIndex,							// Which hid configuration information is writing to
                        uint16_t reportValue,						// Hi byte = enum HidReportType  Lo Byte = Report Index (0 = default) 
-                       uint8_t* Buffer,								// Pointer to a buffer containing the report
+                       std::byte* Buffer,								// Pointer to a buffer containing the report
                        uint16_t Length)								// Length of the report
 {
     RESULT result;
@@ -583,7 +583,7 @@ RESULT HIDSetProtocol (uint8_t devNumber,							// Device number (address) of th
  --------------------------------------------------------------------------*/
 RESULT HIDStartInterruptIN (uint8_t devNumber,                      // Device number (address) of the HID device
                            uint8_t hidIndex,                        // Which HID configuration to use
-                           uint8_t* Buffer,                         // Buffer to receive interrupt data
+                           std::byte* Buffer,                         // Buffer to receive interrupt data
                            uint16_t BufferLength,                   // Length of the buffer
                            uint32_t* BytesTransferred)             // Pointer to store actual bytes transferred
 {
@@ -694,7 +694,7 @@ RESULT HIDStopInterruptIN (uint8_t devNumber,                       // Device nu
  --------------------------------------------------------------------------*/
 RESULT HIDReadInterruptReport (uint8_t devNumber,                   // Device number (address) of the HID device
                               uint8_t hidIndex,                     // Which HID configuration to use
-                              uint8_t* Buffer,                      // Buffer to receive the report
+                              std::byte* Buffer,                      // Buffer to receive the report
                               uint16_t BufferLength,                // Length of the buffer
                               uint32_t* BytesTransferred)          // Pointer to store actual bytes transferred
 {

@@ -6,6 +6,7 @@
 #include <stddef.h>
 
 #include <memory>
+#include <span>
 
 union ChannelInterrupts;
 
@@ -47,7 +48,8 @@ public:
 
     void HandleInTransferInterrupt();
 
-    DWCRESULT Transfer(UsbPipe const&, usb_transfer_type, UsbDirection, uint8_t* buffer, uint32_t& bufferLength, PacketId);
+    uint32_t TransferIn (UsbPipe const& pipe, usb_transfer_type Type, std::span<std::byte      > buffer, PacketId packetId);
+    uint32_t TransferOut(UsbPipe const& pipe, usb_transfer_type Type, std::span<std::byte const> buffer, PacketId packetId);
 
     uint32_t GetNumber() const noexcept { return m_Number; }
 
@@ -75,8 +77,8 @@ private:
     InCallback        m_Callback;
     uintptr_t         m_Context;
 
-    // Aligned buffers for DMA which need to also be multiple of 4 bytes
+    // Aligned buffer for DMA which need to also be multiple of 4 bytes
     // Fortunately max packet size under USB2 is 1024 so that is a given
     // Aligning to cache line size so we can flush/invalidate with impunity.
-    alignas(64) uint8_t m_DmaBuffer[MaxPacketSize];
+    alignas(64) std::byte m_DmaBuffer[MaxPacketSize];
 };

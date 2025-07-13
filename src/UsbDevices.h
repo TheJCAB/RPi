@@ -224,7 +224,7 @@ RESULT HCDGetDescriptor (UsbDevice* device,
  --------------------------------------------------------------------------*/
 RESULT HCDSumbitControlMessageOUT(
     UsbDevice* device,
-    uint8_t* buffer,					// Data buffer both send and recieve				 
+    std::byte* buffer,					// Data buffer both send and recieve				 
     uint32_t bufferLength,				// Buffer length for send or recieve
     UsbDeviceRequest&& request,	// USB request message
     uint32_t timeout,					// Timeout in microseconds on message
@@ -233,7 +233,7 @@ RESULT HCDSumbitControlMessageOUT(
 
 RESULT HCDSumbitControlMessageIN(
     UsbDevice* device,
-    uint8_t* buffer,					// Data buffer both send and recieve				 
+    std::byte* buffer,					// Data buffer both send and recieve				 
     uint32_t bufferLength,				// Buffer length for send or recieve
     UsbDeviceRequest&& request,	// USB request message
     uint32_t timeout,					// Timeout in microseconds on message
@@ -241,4 +241,4 @@ RESULT HCDSumbitControlMessageIN(
 );
 
 // Sends/recieves data from/to the given buffer to/from the given endpoint.
-RESULT HCDEndpointTransfer(UsbDevice* device, UsbEndpointDescriptor endpoint, uint8_t* buffer, uint32_t& bufferLength);
+RESULT HCDEndpointTransfer(UsbDevice* device, UsbEndpointDescriptor endpoint, std::byte* buffer, uint32_t& bufferLength);

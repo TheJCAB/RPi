@@ -85,7 +85,7 @@ struct Register
     inline const T operator*() const { return get(); }
 
 
-    inline auto operator->() const requires (std::is_const_v<T>)
+    inline auto operator->() const
     {
         struct DereferenceProxy
         {

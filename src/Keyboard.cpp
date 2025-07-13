@@ -73,7 +73,7 @@ static void RefreshStateIfNeeded()
     if (time >= nextRefresh)
     {
         uint16_t const USB_HID_REPORT_TYPE_INPUT = 1;
-        uint8_t buf[8];
+        std::byte buf[8];
         auto const status = HIDReadInterruptReport(firstKbd, 0, buf, sizeof(buf), nullptr);
         //auto const status = HIDReadReport(firstKbd, 0, USB_HID_REPORT_TYPE_INPUT << 8 | 1, &buf[0], 8);
         if (status == RESULT::Ok)
@@ -90,7 +90,7 @@ static void RefreshStateIfNeeded()
             for (int i = 0; i < 6; ++i)
             {
                 // Don't clear keys where the report contains rollover errors (too many keys pressed).
-                if (buf[i + 2] != 1)
+                if (buf[i + 2] != std::byte{1})
                 {
                     KeyStates[PressedKeys[i]] = false;
                     PressedKeys[i] = 0;
@@ -98,7 +98,7 @@ static void RefreshStateIfNeeded()
             }
             for (int i = 0; i < 6; ++i)
             {
-                auto const key = buf[i + 2];
+                auto const key = static_cast<uint8_t>(buf[i + 2]);
                 
                 // Ignore rollover errors
                 if (key == 1) continue;

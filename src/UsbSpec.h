@@ -33,6 +33,9 @@
 #include <stdint.h>
 #include <stddef.h>
 
+// Explicitly packing bitfields of different types keeps VSCode's IntelliSense happier.
+#define PACKED __attribute__((__packed__))
+
 /***************************************************************************}
 {           PUBLIC USB 2.0 STRUCTURE DEFINITIONS AS PER THE MANUAL          }
 ****************************************************************************/
@@ -407,38 +410,47 @@ static_assert(sizeof(HubDescriptor) == 0x09, "Structure should be 9 bytes");
 /*--------------------------------------------------------------------------}
 { 	     USB HUB status (16 bits) as per 11.24.2.6 of USB2.0 manual			}
 {---------------------------------------------------------------------------}*/
-struct __attribute__((__packed__)) HubStatus {
-    unsigned LocalPower : 1;							// @0
-    unsigned OverCurrent : 1;							// @1
-    unsigned _reserved2_15 : 14;						// @2
+union HubStatus
+{
+    struct PACKED
+    {
+        uint16_t LocalPower    :  1; // @0
+        uint16_t OverCurrent   :  1; // @1
+        uint16_t _reserved2_15 : 14; // @2
+    };
+    uint16_t Raw16;
 };
+
+static_assert(sizeof(HubStatus) == 0x02, "Structure should be 16 bits (2 bytes)");
+
 
 /*--------------------------------------------------------------------------}
 { 	  USB HUB status change (16 Bits) as per 11.24.2.6 of USB2.0 manual		}
 {---------------------------------------------------------------------------}*/
-struct __attribute__((__packed__)) HubStatusChange {
-    unsigned LocalPowerChanged : 1;						// @0
-    unsigned OverCurrentChanged : 1;					// @1
-    unsigned _reserved2_15 : 14;						// @2
+union HubStatusChange
+{
+    struct PACKED
+    {
+        uint16_t LocalPowerChanged  :  1; // @0
+        uint16_t OverCurrentChanged :  1; // @1
+        uint16_t _reserved2_15      : 14; // @2
+    };
+    uint16_t Raw16;
 };
+
+static_assert(sizeof(HubStatusChange) == 0x02, "Structure should be 16 bits (2 bytes)");
 
 /*--------------------------------------------------------------------------}
 { 	    USB HUB full status (32 Bits) as per 11.24.2.6 of USB2.0 manual		}
 {---------------------------------------------------------------------------}*/
-struct __attribute__((__packed__)) HubFullStatus {
-    union {
-        struct __attribute__((__packed__, aligned(1))) {
-            union {
-                struct HubStatus Status;							// 16 bit hub status as hub status structure
-                uint16_t RawStatus;									// The same 16 bit status as raw bits
-            };
-            union {
-                struct HubStatusChange Change;						// 16 bit change status as a hub port chnage structure
-                uint16_t RawChange;									// The same 16  bit change status as raw bits
-            };
-        };
-        uint32_t Raw32;												// Both status joined as one raw 32 bits
+union HubFullStatus
+{
+    struct PACKED
+    {
+        HubStatus       Status;
+        HubStatusChange Change;
     };
+    uint32_t Raw32;
 };
 
 static_assert(sizeof(HubFullStatus) == 0x04, "Structure should be 32bits (4 bytes)");

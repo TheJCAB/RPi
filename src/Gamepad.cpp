@@ -61,7 +61,7 @@ static uint64_t RefreshState()
 {
     uint16_t const USB_HID_REPORT_TYPE_INPUT = 1;
     Report report;
-    auto const status = HIDReadInterruptReport(firstGamepad, 0, reinterpret_cast<uint8_t*>(&report), sizeof(report), nullptr);
+    auto const status = HIDReadInterruptReport(firstGamepad, 0, reinterpret_cast<std::byte*>(&report), sizeof(report), nullptr);
     //auto const status = HIDReadReport(firstKbd, 0, USB_HID_REPORT_TYPE_INPUT << 8 | 1, &buf[0], 8);
     if (status == RESULT::Ok)
     {
@@ -149,7 +149,7 @@ static uint64_t RefreshState()
 {
     uint16_t const USB_HID_REPORT_TYPE_INPUT = 1;
     Report report;
-    auto const status = HIDReadInterruptReport(firstGamepad, 0, reinterpret_cast<uint8_t*>(&report), sizeof(report), nullptr);
+    auto const status = HIDReadInterruptReport(firstGamepad, 0, reinterpret_cast<std::byte*>(&report), sizeof(report), nullptr);
     //auto const status = HIDReadReport(firstKbd, 0, USB_HID_REPORT_TYPE_INPUT << 8 | 1, &buf[0], 8);
     if (status == RESULT::Ok)
     {
@@ -230,7 +230,7 @@ void Init()
             firstGamepad = i;
             firstGamepadType = Device::NintendoSwitchPro;
 
-            uint8_t buf[2] = { 0x80, 0x04 }; // Request to stay on USB instead of reverting to Bluetooth
+            std::byte buf[2] = { std::byte{0x80}, std::byte{0x04} }; // Request to stay on USB instead of reverting to Bluetooth
             auto const status = HIDReadReport(firstGamepad, 0, USB_HID_REPORT_TYPE_FEATURE << 8 | 0x80, &buf[0], 8);
             if (status != RESULT::Ok)
             {

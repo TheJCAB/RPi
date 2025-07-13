@@ -28,7 +28,8 @@
 //    {   copyright notices.                                          }
 //    {                                                               }
 //    {++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
-#include "UsbDevices.h"
+#include "UsbStack.h"
+#include "UsbDevice.h"
 
 #include "DesignWareUsb.h"
 #include "DesignWareUsbHost.h"
@@ -43,13 +44,21 @@
 #include <wchar.h>
 
 #include <span>
+#include <atomic>
 
 #define LOG(...)
 //#define LOG(...) printf2(__VA_ARGS__)
 #define LOG_DEBUG(...)
 //#define LOG_DEBUG(...) printf2(__VA_ARGS__)
 
-static std::shared_ptr<HCDHost> Host;
+namespace USB
+{
+
+std::shared_ptr<HCDHost> Host;
+
+}
+
+using namespace USB;
 
 static RESULT ResultFromDwcResult(DWCRESULT dwcResult)
 {
@@ -184,9 +193,40 @@ struct MassStorageDevice {
 
 uint8_t RootHubDeviceNumber = 0;
 
-UsbDevice DeviceTable[MaximumDevices] = { 0 };				// Usb node device allocation table
+USB::Device* DeviceTable[MaximumDevices]{};
+
 #define MaximumHubs	16												// Maximum number of HUB payloads we will allow
 HubDevice HubTable[MaximumHubs] = { 0 };						// Usb hub device allocation table
+
+
+
+
+DeviceHandler::~DeviceHandler() = default;
+
+DeviceHandler* HidDeviceHandler = nullptr;
+
+void RegisterHidDeviceHandler(DeviceHandler& handler)
+{
+    // There can be only one.
+    std::atomic_ref ref{ HidDeviceHandler };
+    DeviceHandler* expected = nullptr;
+    if (!ref.compare_exchange_strong(expected, &handler))
+    {
+        LOG("HID Device handler already registered, ignoring.\n");
+    }
+    else
+    {
+        LOG("HID Device handler registered.\n");
+        // Notify the handler about existing devices.
+        for (auto device : DeviceTable)
+        {
+            if (device && device->IsHid())
+            {
+                handler.NewDeviceAdded(*device);
+            }
+        }
+    }
+}
 
 /*--------------------------------------------------------------------------}
 {			USB2.0 DEVICE DESCRIPTOR BLOCK FOR OUR "FAKED" ROOTHUB 			}
@@ -320,7 +360,7 @@ static RESULT Reply(std::span<std::byte> const buffer, uint32_t* const bytesTran
 {
     if constexpr (requires{ { value.Header } -> std::convertible_to<UsbDescriptorHeader>; })
     {
-        return Reply(buffer, bytesTransferred, std::span{ reinterpret_cast<std::byte const*>(&value), value.Header.DescriptorLength });
+        return Reply(buffer, bytesTransferred, std::span{ reinterpret_cast<uint8_t const*>(&value), value.Header.DescriptorLength });
     }
     else if constexpr (std::convertible_to<decltype(value), std::span<std::byte const>>)
     {
@@ -328,7 +368,7 @@ static RESULT Reply(std::span<std::byte> const buffer, uint32_t* const bytesTran
     }
     else
     {
-        return Reply(buffer, bytesTransferred, std::span{ reinterpret_cast<std::byte const*>(&value), sizeof(value) });
+        return Reply(buffer, bytesTransferred, std::span{ reinterpret_cast<uint8_t const*>(&value), sizeof(value) });
     }
 }
 
@@ -387,12 +427,10 @@ RESULT HcdProcessRootHubMessageIn(std::span<std::byte> replyBuffer, UsbDeviceReq
         {
         case bmREQ_GET_DEVICE_DESCRIPTOR /*0x80*/:
             // Device descriptor request
-            LOG("Get descriptor type %x\n", (request.Value >> 8) & 0xff);
             switch ((request.Value >> 8) & 0xff)
             {
             case USB_DESCRIPTOR_TYPE_DEVICE:
                 // Return our fake roothub device descriptor
-                LOG("Get descriptor type DEVICE\n");
                 return Reply(replyBuffer, bytesTransferred, RootHubDeviceDescriptor);
 
             case USB_DESCRIPTOR_TYPE_CONFIGURATION:
@@ -560,142 +598,6 @@ RESULT HcdProcessRootHubMessageOut(UsbDeviceRequest const& request)
     }
 }
 
-/*-HCDSumbitControlMessage --------------------------------------------------
- Sends a control message to a device. Handles all necessary channel creation
- and other processing. The sequence of a control transfer is defined in the
- USB 2.0 manual section 5.5.  Success is indicated by return of Ok (0) all
- other codes indicate an error.
- 24Feb17 LdB
- --------------------------------------------------------------------------*/
-RESULT HCDSumbitControlMessage (UsbDevice* device,
-                                HCDChannel& channel,
-                                UsbDirection Direction,
-                                std::byte* buffer,					// Data buffer both send and recieve				 
-                                uint32_t bufferLength,				// Buffer length for send or recieve
-                                UsbDeviceRequest&& request,	// USB request message
-                                uint32_t timeout,					// Timeout in microseconds on message
-                                uint32_t* bytesTransferred)			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)				
-{
-    DWCRESULT result;
-
-    LOG_DEBUG("HCD: SETUP packet to device: %#x req: %#x req Type: %#x Speed: %i PacketSize: %i LowNode: %i LowPort: %i\n",
-        device->Pipe0.Number, request.Request, request.Type, device->Pipe0.Speed, device->Pipe0.MaxPacketSizeInBytes, device->Pipe0.splitNodePoint, device->Pipe0.splitNodePort);
-
-    if (device->Pipe0.Number == RootHubDeviceNumber) {
-        if (Direction == USB_DIRECTION_IN) {
-            // Root hub IN message
-            LOG_DEBUG("Root hub IN message\n");
-            return HcdProcessRootHubMessageIn({ buffer, bufferLength }, request, bytesTransferred);
-        }
-        else if (Direction == USB_DIRECTION_OUT) {
-            // Root hub OUT message
-            LOG_DEBUG("Root hub OUT message\n");
-            return HcdProcessRootHubMessageOut(request);
-        }
-    }
-    uint32_t lastTransfer = 0;
-
-    LOG_DEBUG("Setup phase\n");
-    // Setup phase
-    uint32_t transferLength = channel.TransferOut(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, { (std::byte const*)&request, sizeof(request) }, USB_PID_SETUP);
-    if (transferLength != sizeof(request))
-    {
-        LOG("HCD: SETUP packet to device: %#x req: %#x req Type: %#x Speed: %i PacketSize: %i LowNode: %i LowPort: %i Error: %i\n",
-            device->Pipe0.Number, request.Request, request.Type, device->Pipe0.Speed, device->Pipe0.MaxPacketSizeInBytes, device->Pipe0.splitNodePoint, device->Pipe0.splitNodePort, result);// Some parameter issue
-        return ResultFromDwcResult(result);
-    }
-
-    if (buffer == nullptr)
-    {
-        if (Direction == USB_DIRECTION_IN) {
-            LOG("HCD: No buffer provided for IN transfer to device %i.\n", device->Pipe0.Number);
-            return ErrorArgument;
-        }
-
-        lastTransfer = 0;
-
-        // Nothing more to send, just receive the status.
-        LOG_DEBUG("No transfer phase, just status phase\n");
-        channel.TransferIn(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, {}, USB_PID_DATA1);
-    }
-    else if (Direction == USB_DIRECTION_OUT)
-    {
-        LOG_DEBUG("Transfer phase\n");
-        lastTransfer = channel.TransferOut(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, { buffer, bufferLength }, USB_PID_DATA1);
-        if (lastTransfer != bufferLength)
-        {
-            LOG("HCD: OUT transfer to device %i failed, expected %u bytes, got %u bytes.\n",
-                device->Pipe0.Number, bufferLength, lastTransfer);
-            return ErrorGeneral; // Some parameter or communication issue.
-        }
-        LOG_DEBUG("Status phase\n");
-        channel.TransferIn(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, {}, USB_PID_DATA1);
-    }
-    else
-    {
-        LOG_DEBUG("Transfer phase\n");
-        lastTransfer = channel.TransferIn(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, { buffer, bufferLength }, USB_PID_DATA1);
-        if (lastTransfer != bufferLength)
-        {
-            LOG("HCD: IN transfer to device %i failed, expected %u bytes, got %u bytes.\n",
-                device->Pipe0.Number, bufferLength, lastTransfer);
-            return ErrorGeneral; // Some parameter or communication issue.
-        }
-        LOG_DEBUG("Status phase\n");
-        channel.TransferOut(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, {}, USB_PID_DATA1);
-    }
-
-    if (bytesTransferred) *bytesTransferred = lastTransfer;
-    return Ok;
-}
-
-RESULT HCDSumbitControlMessageOUT(
-    UsbDevice* device,
-    std::byte* buffer,					// Data buffer both send and recieve				 
-    uint32_t bufferLength,				// Buffer length for send or recieve
-    UsbDeviceRequest&& request,	// USB request message
-    uint32_t timeout,					// Timeout in microseconds on message
-    uint32_t* bytesTransferred			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)				
-)
-{
-    auto const channel = Host->GetChannel();
-
-    RESULT result = HCDSumbitControlMessage(
-        device,
-        *channel,
-        USB_DIRECTION_OUT,
-        buffer,
-        bufferLength,
-        std::move(request),
-        timeout,
-        bytesTransferred
-    );
-    return result;
-}
-
-RESULT HCDSumbitControlMessageIN(
-    UsbDevice* device,
-    std::byte* buffer,					// Data buffer both send and recieve				 
-    uint32_t bufferLength,				// Buffer length for send or recieve
-    UsbDeviceRequest&& request,	// USB request message
-    uint32_t timeout,					// Timeout in microseconds on message
-    uint32_t* bytesTransferred			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)				
-)
-{
-    auto const channel = Host->GetChannel();
-
-    RESULT result = HCDSumbitControlMessage(
-        device,
-        *channel,
-        USB_DIRECTION_IN,
-        buffer,
-        bufferLength,
-        std::move(request),
-        timeout,
-        bytesTransferred
-    );
-    return result;
-}
 
 
 /*-HCDSetAddress ------------------------------------------------------------
@@ -768,7 +670,7 @@ RESULT HCDReadHubPortStatus (UsbDevice* device,
         device,														// Pass control pipe thru unchanged
         *channel,
         USB_DIRECTION_IN,
-        (std::byte*)Status,											// Pass in pointer to status
+        (uint8_t*)Status,											// Pass in pointer to status
         sizeof(uint32_t),											// We want full structure for either call which is 32 bits
         UsbDeviceRequest {								// Construct a USB request
             .Type = port ? bmREQ_PORT_STATUS : bmREQ_HUB_STATUS,	// Request bit mask is for hub if port = 0, hub port otherwise 
@@ -934,7 +836,7 @@ RESULT HCDReadStringDescriptor (UsbDevice* device,
 HidDevice* AllocateHidPayload();
 void FreeHidPayload(HidDevice* device);
 uint8_t GetHidCount(HidDevice* device);
-bool SetHidDescriptor(HidDevice* hidDevice, uint8_t hidIndex, uint8_t interface, std::byte const* buffer, uint8_t size);
+bool SetHidDescriptor(HidDevice* hidDevice, uint8_t hidIndex, uint8_t interface, uint8_t const* buffer, uint8_t size);
 void PrintHid(HidDevice* device, uint8_t hidIndex, char const* indent);
 
 /*-INTERNAL: AddHidPayload---------------------------------------------------
@@ -1290,8 +1192,8 @@ RESULT EnumerateHID (UsbDevice* device);
 RESULT EnumerateHub (struct UsbDevice *device) {
     RESULT result;
     uint32_t transfer;
-    HubDevice *data;
-    HubFullStatus status;
+    struct HubDevice *data;
+    struct HubFullStatus status;
 
     if (auto const thisResult = AddHubPayload(device); thisResult != Ok) {					// We are a hub so we need a hub payload
         LOG("Could not allocate hub payload, Error ID %i\n", thisResult);
@@ -1304,9 +1206,9 @@ RESULT EnumerateHub (struct UsbDevice *device) {
         data->Children[i] = NULL;									// For safety make sure all children pointers are NULL
 
     result = HCDGetDescriptor(device, USB_DESCRIPTOR_TYPE_HUB, 
-        0, 0, &data->Descriptor, sizeof(HubDescriptor),
+        0, 0, &data->Descriptor, sizeof(struct HubDescriptor),
         bmREQ_GET_HUB_DESCRIPTOR, &transfer, true);					// Fetch the HUB descriptor and hold in the hub payload, we use it a bit so saves USB bus
-    if ((result != RESULT::Ok) || (transfer != sizeof(HubDescriptor)))
+    if ((result != RESULT::Ok) || (transfer != sizeof(struct HubDescriptor)))
     {
         LOG("HCD: Could not fetch hub descriptor for device: %i\n",
             device->Pipe0.Number);									// Log the error
@@ -1373,7 +1275,7 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
         device,												// Pipe as given to us
         *channel,
         USB_DIRECTION_IN,
-        (std::byte*)&desc,											// Pointer to descriptor
+        (uint8_t*)&desc,											// Pointer to descriptor
         8,															// Ask for first 8 bytes as per USB specification
         UsbDeviceRequest {								// We will build a request structure
             .Type = bmREQ_GET_DEVICE_DESCRIPTOR,					// Recipient is a flag usually 0x0 for normal device, 0x20 for a hub
@@ -1390,7 +1292,15 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
         return result != Ok ? result : RESULT::ErrorTransmission;	// Fatal enumeration error of this device
     }
     LOG_DEBUG("Max packet size: %u\n", desc.bMaxPacketSize0);
-    device->Pipe0.MaxPacketSizeInBytes = desc.bMaxPacketSize0;	    // Set the maximum endpoint packet size to pipe from response
+    if (device->Pipe0.Speed == USB_SPEED_LOW && desc.bMaxPacketSize0 > 8)
+    {
+        LOG_DEBUG("LOW speed device, lowering Max packet size to 8\n");
+        device->Pipe0.MaxPacketSizeInBytes = 8;
+    }
+    else
+    {
+        device->Pipe0.MaxPacketSizeInBytes = desc.bMaxPacketSize0;
+    }
     device->Config.Status = USB_STATUS_DEFAULT;						// Move device enumeration to default
 
     LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 2 = Reset Port (old device support)\n");
@@ -1464,7 +1374,7 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
     // Read it by that index it's probably the same but just do it
     uint8_t configNum = configDesc.bConfigurationValue;
     // Okay we have the total length of config so we will read it in entirity
-    std::byte configBuffer[1024];										// Largest config I have ever seen is few hundred bytes this is 1K buffer
+    uint8_t configBuffer[1024];										// Largest config I have ever seen is few hundred bytes this is 1K buffer
     result = HCDSumbitControlMessage(
         device,												// Device 
         *channel,
@@ -1492,7 +1402,7 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
     uint8_t hidCount = 0;											// Preset hid count to zero
     uint32_t i = 0;													// Start array search at zero
     while (i < configDesc.wTotalLength - 1) {						// So while we havent reached end of config data
-        switch (static_cast<usb_descriptor_type>(configBuffer[i + 1])) {								// i will be on a descriptor header i+1 is decsriptor type 
+        switch (configBuffer[i + 1]) {								// i will be on a descriptor header i+1 is decsriptor type 
         case USB_DESCRIPTOR_TYPE_INTERFACE: {						// Ok we have an interface descriptor we need to add it
             memcpy((uint8_t*)&device->Interfaces[device->MaxInterface],
                 &configBuffer[i], 
@@ -1516,7 +1426,7 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
                 };
             }
             // Set the HID descriptor in the payload
-            if (SetHidDescriptor(device->HidPayload, hidCount, device->MaxInterface - 1, &configBuffer[i], static_cast<uint8_t>(configBuffer[i])))
+            if (SetHidDescriptor(device->HidPayload, hidCount, device->MaxInterface - 1, &configBuffer[i], configBuffer[i]))
             {
                 hidCount++;
             }
@@ -1525,7 +1435,7 @@ RESULT EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, ui
         default:
             break;
         }
-        i = i + static_cast<uint8_t>(configBuffer[i]);									// Add config descriptor size .. which moves us to next descriptor
+        i = i + configBuffer[i];									// Add config descriptor size .. which moves us to next descriptor
     }
 
     LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 6 = Set Configuration to Device\n");
@@ -1659,7 +1569,7 @@ RESULT HCDGetDescriptor (UsbDevice* device,
             device,													// Pipe passed in as is
             *channel,
             USB_DIRECTION_IN,
-            (std::byte*)&header,										// Buffer to description header
+            (uint8_t*)&header,										// Buffer to description header
             sizeof(header),											// Size of the header
             UsbDeviceRequest {							// We will build a request structure
                 .Type = recipient,									// Recipient is a flag usually bmREQ_GET_DEVICE_DESCRIPTOR, bmREQ_GET_HUB_DESCRIPTOR etc
@@ -1671,13 +1581,9 @@ RESULT HCDGetDescriptor (UsbDevice* device,
             ControlMessageTimeout,									// The standard timeout for any control message
             NULL);													// Ignore bytes transferred
         if ((result == Ok) && (header.DescriptorType != type))
-        {
-            LOG("HCD: Descriptor type mismatch, expected %#x got %#x for device:%i.\n",
-                type, header.DescriptorType, device->Pipe0.Number);	// Log error
             result = ErrorGeneral;									// For some strange reason descriptor type is not right
-        }
         if (result != Ok) {											// RESULT in error
-            LOG("HCD: Fail to get descriptor header %#x:%#x recepient: %#x, device:%i. RESULT %#x.\n",
+            LOG("HCD: Fail to get descriptor %#x:%#x recepient: %#x, device:%i. RESULT %#x.\n",
                 type, index, recipient, device->Pipe0.Number, result);		// Log any error
             return result;
         }
@@ -1688,7 +1594,7 @@ RESULT HCDGetDescriptor (UsbDevice* device,
         device,														// Pipe passed in as is
         *channel,
         USB_DIRECTION_IN,
-        (std::byte*)buffer,														// Buffer pointer passed in as is
+        (uint8_t*)buffer,														// Buffer pointer passed in as is
         length,														// Length transferred (it may be shorter from above)
         UsbDeviceRequest {								// We will build a request structure
             .Type = recipient,										//  Recipient is a flag usually bmREQ_GET_DEVICE_DESCRIPTOR, bmREQ_GET_HUB_DESCRIPTOR etc
@@ -1701,8 +1607,8 @@ RESULT HCDGetDescriptor (UsbDevice* device,
         &transfer);													// Set pointer to fetch transfer bytes
     if (length != transfer) result = ErrorTransmission; 			// The requested length does not match read length
     if (result != Ok) {
-        LOG("HCD: Failed to get descriptor %#x:%#x recepient: %#x, device:%i. RESULT %#x.\n",
-            type, index, recipient, device->Pipe0.Number, result);
+        LOG("HCD: Failed to get descriptor %#x:%#x for device:%i. RESULT %#x.\n",
+            type, index, device->Pipe0.Number, result);
     }
     if (bytesTransferred) *bytesTransferred = transfer;
     return result;
@@ -1711,6 +1617,7 @@ RESULT HCDGetDescriptor (UsbDevice* device,
 /*--------------------------------------------------------------------------}
 {					 PUBLIC GENERIC USB INTERFACE ROUTINES					}
 {--------------------------------------------------------------------------*/
+
 
 /// Initializes the USB driver by performing necessary interfactions with the
 /// host controller driver, and enumerating the initial device tree.
@@ -2319,13 +2226,10 @@ RESULT HCDEndpointTransfer(UsbDevice* device, UsbEndpointDescriptor endpoint, st
     }
 
     // Start the interrupt transfer with the correct data toggle
-    auto const transferred = endpoint.EndpointAddress.Direction == USB_DIRECTION_IN
-        ? channel->TransferIn (pipe, endpoint.Attributes.Type, { buffer, bufferLength }, packetId)
-        : channel->TransferOut(pipe, endpoint.Attributes.Type, { buffer, bufferLength }, packetId);
+    auto const result = channel->Transfer(pipe, endpoint.Attributes.Type, endpoint.EndpointAddress.Direction, buffer, bufferLength, packetId);
 
     // Update data toggle on successful transfer for interrupt endpoints
-    if (transferred > 0 && endpoint.Attributes.Type == USB_TRANSFER_TYPE_INTERRUPT)
-    {
+    if (result == DWCRESULT::Ok && endpoint.Attributes.Type == USB_TRANSFER_TYPE_INTERRUPT) {
         // Find the endpoint again and toggle the data toggle bit
         for (uint8_t i = 0; i < device->MaxInterface; i++) {
             for (uint8_t j = 0; j < MaxEndpointsPerDevice; j++) {
@@ -2346,5 +2250,5 @@ RESULT HCDEndpointTransfer(UsbDevice* device, UsbEndpointDescriptor endpoint, st
         toggle_updated:;
     }
 
-    return transferred > 0 ? RESULT::Ok : RESULT::ErrorTransmission;
+    return ResultFromDwcResult(result);
 }

@@ -613,7 +613,7 @@ std::expected<std::optional<Capability>, PCIeError> Configuration::find_capabili
 
 uintptr_t NextUnusedMapOffsetAddress = 0;
 
-std::span<uint8_t> Configuration::map_bar(BarInfo& bar)
+std::span<std::byte> Configuration::map_bar(BarInfo& bar)
 {
     if (!bar.is_memory_space || bar.size == 0) {
         return {};
@@ -631,7 +631,7 @@ std::span<uint8_t> Configuration::map_bar(BarInfo& bar)
     bar.physical_address = 0x6'0000'0000ull + NextUnusedMapOffsetAddress;
     NextUnusedMapOffsetAddress += bar.size;
 
-    return { reinterpret_cast<uint8_t*>(bar.physical_address), bar.size };
+    return { reinterpret_cast<std::byte*>(bar.physical_address), bar.size };
 }
 
 PCIeError Configuration::enable_device()
