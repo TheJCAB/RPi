@@ -13,7 +13,7 @@ namespace Timer
 // Structure to hold scheduled callback information
 struct ScheduledTimer
 {
-    uint64_t                      trigger_time_ticks;  // Absolute time when callback should be triggered
+    Cpu::PerformanceTime          trigger_time_ticks;  // Absolute time when callback should be triggered
     std::atomic<Scheduler::Spark> Spark;  // Function to call
 
     explicit operator bool() const { return Spark.load(std::memory_order_relaxed).Func != nullptr; }
@@ -33,7 +33,7 @@ void HandleArmVirtualTimerInterrupt();
 uint32_t FindNextScheduledTimerTriggerTime()
 {
     uint32_t next_timer = INVALID_HANDLE;
-    uint64_t earliest_time = UINT64_MAX;
+    auto earliest_time = Cpu::GetMaximumFuturePerformanceTime();
     
     for (uint32_t i = 0; i < MAX_SCHEDULED_TIMERS; ++i)
     {
@@ -64,7 +64,7 @@ void SetupTimerForNext()
 
         auto& timer = scheduled_timers[next_time];
 
-        uint64_t current_time = Cpu::GetPerformanceCounter();
+        auto current_time = Cpu::GetPerformanceCounter();
 
         // Calculate how many ticks until the next timer should fire
         int64_t ticks_until_fire = static_cast<int64_t>(timer.trigger_time_ticks - current_time);
@@ -95,23 +95,14 @@ void SetupTimerForNext()
 }
 
 // Public API functions
-uint64_t GetCurrentTimeTicks()
-{
-    return Cpu::GetPerformanceCounter();
-}
 
-uint64_t MicrosecondsToTicks(uint64_t us)
+SparkHandle ScheduleSpark(Cpu::PerformanceTimeDiff delay_us, Scheduler::Spark const& spark)
 {
-    return us * Cpu::PerformanceFrequency / 1'000'000u;
-}
-
-SparkHandle ScheduleSpark(uint64_t delay_us, Scheduler::Spark const& spark)
-{
-    uint64_t trigger_time = GetCurrentTimeTicks() + MicrosecondsToTicks(delay_us);
+    auto trigger_time = GetCurrentTimeTicks() + delay_us;
     return ScheduleSparkAtTime(trigger_time, spark);
 }
 
-SparkHandle ScheduleSparkAtTime(uint64_t absolute_time_ticks, Scheduler::Spark const& spark)
+SparkHandle ScheduleSparkAtTime(Cpu::PerformanceTime absolute_time_ticks, Scheduler::Spark const& spark)
 {
     if (spark.Func == nullptr)
     {
@@ -220,7 +211,7 @@ constexpr uint32_t Timer_Reload    = 0xB418u;
 // Enhanced interrupt handler that supports both scheduled and periodic timers
 void HandleArmVirtualTimerInterrupt()
 {
-    uint64_t current_time = Cpu::GetPerformanceCounter();
+    auto current_time = Cpu::GetPerformanceCounter();
     
     // Check for scheduled timers that should fire
     for (size_t i = 0; i < MAX_SCHEDULED_TIMERS; ++i)

@@ -69,7 +69,7 @@ static void RefreshStateIfNeeded()
     }
 
     auto const time = Cpu::GetPerformanceCounter();
-    static uint64_t nextRefresh = 0;
+    static Cpu::PerformanceTime nextRefresh{0};
     if (time >= nextRefresh)
     {
         uint16_t const USB_HID_REPORT_TYPE_INPUT = 1;

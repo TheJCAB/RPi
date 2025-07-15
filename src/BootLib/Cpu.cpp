@@ -33,26 +33,20 @@ uint64_t GetPerformanceFrequency()
     return freq;
 }
 
-uint64_t GetPerformanceCounter()
+PerformanceTime GetPerformanceCounter()
 {
     uint64_t counter = 0;
     asm volatile ("mrs %0, cntvct_el0" : "=r"(counter));
-    return counter;
+    return static_cast<PerformanceTime>(counter);
 }
 
-void DelayInMicroseconds(uint64_t us)
+void DelayUntilPerformanceTime(PerformanceTime time)
 {
-    uint64_t start = GetPerformanceCounter();
-    uint64_t end = start + (us * GetPerformanceFrequency() / 1'000'000u);
-    while (GetPerformanceCounter() < end) {
+    while (GetPerformanceCounter() < time)
+    {
         //asm volatile ("wfe"); // This is bad unless we know there will be some event.
         asm volatile ("yield");
     }
-}
-
-void DelayInMilliseconds(uint64_t ms)
-{
-    return DelayInMicroseconds(ms * 1000);
 }
 
 }

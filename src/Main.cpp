@@ -354,9 +354,10 @@ void Core0(void* dtb)
 
     Scheduler::DelayInMilliseconds(1'000); // Wait for 1 second
 
-    //asm volatile ("svc #0");
+    // A naked syscall.
     asm volatile ("svc #1");
 
+    // Cooperative context switching via syscall...
     auto& mainThread = Scheduler::GetCurrentThreadInfo();
     auto& newThread = Scheduler::CreateThread([](uintptr_t mainThread){
         Uart::Puts("Core 0 New Thread running\n");
@@ -364,8 +365,6 @@ void Core0(void* dtb)
         Uart::Puts("Core 0 New Thread finished\n");
     }, reinterpret_cast<uintptr_t>(&mainThread));
     Syscall::YieldToThread(newThread);
-
-    Cpu::Panic("Did you get it?\n");
 
     Mailbox::Send(0, 0x80); // UART 1 and USB enabled?
 

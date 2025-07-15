@@ -604,8 +604,8 @@ DWCRESULT PowerOffUsb(void) {
  --------------------------------------------------------------------------*/
 DWCRESULT HCDReset(void) {
 
-    uint64_t ticks100ms = Cpu::GetPerformanceTicksForUs(100'000);
-    uint64_t original_tick = Cpu::GetPerformanceCounter();
+    auto ticks100ms = Cpu::GetPerformanceTicksForUs(100'000);
+    auto original_tick = Cpu::GetPerformanceCounter();
     do {
         if (Cpu::GetPerformanceCounter() - original_tick > ticks100ms) {
             return DWCRESULT::ErrorTimeout;
@@ -635,8 +635,8 @@ DWCRESULT HCDTransmitFifoFlush(CoreFifoFlush fifo) {
     DWC_CORE->RESET = [=](auto& r){ r.TransmitFifoFlushNumber = fifo; };
     DWC_CORE->RESET = [](auto& r){ r.TransmitFifoFlush = true; };
 
-    uint64_t ticks100ms = Cpu::GetPerformanceTicksForUs(100'000);
-    uint64_t original_tick = Cpu::GetPerformanceCounter();
+    auto ticks100ms = Cpu::GetPerformanceTicksForUs(100'000);
+    auto original_tick = Cpu::GetPerformanceCounter();
     do {
         if (Cpu::GetPerformanceCounter() - original_tick > ticks100ms) {
             return DWCRESULT::ErrorTimeout;
@@ -654,8 +654,8 @@ DWCRESULT HCDReceiveFifoFlush(void) {
 
     DWC_CORE->RESET = [](auto& r){ r.ReceiveFifoFlush = true; };
 
-    uint64_t ticks100ms = Cpu::GetPerformanceTicksForUs(100'000);
-    uint64_t original_tick = Cpu::GetPerformanceCounter();
+    auto ticks100ms = Cpu::GetPerformanceTicksForUs(100'000);
+    auto original_tick = Cpu::GetPerformanceCounter();
     do {
         if (Cpu::GetPerformanceCounter() - original_tick > ticks100ms) {
             return DWCRESULT::ErrorTimeout;

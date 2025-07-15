@@ -57,7 +57,7 @@ struct Report {
     int16_t axis4;
 };
 
-static uint64_t RefreshState()
+static Cpu::PerformanceTimeDiff RefreshState()
 {
     uint16_t const USB_HID_REPORT_TYPE_INPUT = 1;
     Report report;
@@ -92,12 +92,12 @@ static uint64_t RefreshState()
         AxisStates[static_cast<size_t>(Axis::LeftX)]  = static_cast<int16_t>(static_cast<int8_t>(report.x - 128) * 256);
         AxisStates[static_cast<size_t>(Axis::LeftY)]  = static_cast<int16_t>(static_cast<int8_t>(report.y - 128) * 256);
 
-        return 10'000u; // Refresh every 10 ms
+        return Cpu::GetPerformanceTicksForMs(20u); // Refresh every 20 ms
     }
     else
     {
         printf("HID Gamepad Read Error: %d\n", status);
-        return 1'000u; // Try again in 1ms
+        return Cpu::GetPerformanceTicksForMs(1u); // Try again in 1ms
     }
 }
 
@@ -145,18 +145,20 @@ typedef struct __attribute__((packed)) {
     uint8_t data[63];          // Vendor-defined output
 } HIDReport_0x01_t;
 
-static uint64_t RefreshState()
+static Cpu::PerformanceTimeDiff RefreshState()
 {
     uint16_t const USB_HID_REPORT_TYPE_INPUT = 1;
     Report report;
+    auto time = Cpu::GetPerformanceCounter();
     auto const status = HIDReadInterruptReport(firstGamepad, 0, reinterpret_cast<std::byte*>(&report), sizeof(report), nullptr);
+    //printf("Gamepad time: %lld us\n", GetUsForPerformanceTicks(Cpu::GetPerformanceCounter() - time));
     //auto const status = HIDReadReport(firstKbd, 0, USB_HID_REPORT_TYPE_INPUT << 8 | 1, &buf[0], 8);
     if (status == RESULT::Ok)
     {
         if (report.report_id != 0x30)
         {
             printf("HID Gamepad unknown report ID: %02X\n", report.report_id);
-            return 1'000u; // Try again in 1ms
+            return Cpu::GetPerformanceTicksForMs(1u); // Try again in 1ms
         }
         //printf("HID Gamepad Buttons: %08b %08b %08b Axes: %6d %6d %6d %6d Vendor: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n",
         //    report.buttons, report.buttons2, report.buttons3, report.leftX - 0x7F0, report.leftY - 0x80, report.rightX - 0x7F0, report.rightY - 0x80,
@@ -191,12 +193,12 @@ static uint64_t RefreshState()
         AxisStates[static_cast<size_t>(Axis::RightX)] = static_cast<int16_t>(static_cast<int16_t>(report.rightX - 0x7F0) * 16);
         AxisStates[static_cast<size_t>(Axis::RightY)] = static_cast<int16_t>(static_cast<int8_t >(report.rightY - 128) * 256);
 
-        return 20'000u; // Refresh every 20 ms
+        return Cpu::GetPerformanceTicksForMs(20u); // Refresh every 20 ms
     }
     else
     {
         //printf("HID Gamepad Read Error: %d\n", status);
-        return 1'000u; // Try again in 1ms
+        return Cpu::GetPerformanceTicksForMs(1u); // Try again in 1ms
     }
 }
 
@@ -279,17 +281,17 @@ static void RefreshStateIfNeeded()
     }
 
     auto const time = Cpu::GetPerformanceCounter();
-    static uint64_t nextRefresh = 0;
+    static Cpu::PerformanceTime nextRefresh{0};
     if (time >= nextRefresh)
     {
         switch (firstGamepadType)
         {
-            case Device::NintendoSwitchPro: nextRefresh = time + NintendoSwitchPro::RefreshState(); break;
-            case Device::DragonRise       : nextRefresh = time + DragonRise       ::RefreshState(); break;
+            case Device::NintendoSwitchPro: { auto nextRefreshDelay = NintendoSwitchPro::RefreshState(); nextRefresh = Cpu::GetPerformanceCounter() + nextRefreshDelay; break; }
+            case Device::DragonRise       : { auto nextRefreshDelay = DragonRise       ::RefreshState(); nextRefresh = Cpu::GetPerformanceCounter() + nextRefreshDelay; break; }
             default:
                 printf("Gamepad: Unknown device type %d\n", static_cast<int>(firstGamepadType));
-                nextRefresh = 0xFFFF'FFFF'FFFF'FFFF; // Don't try again
-                break;
+                nextRefresh = Cpu::PerformanceTime{0xFFFF'FFFF'FFFF'FFFF}; // Don't try again
+                return;
         }
     }
 }

@@ -5,33 +5,48 @@
 
 #include <string_view>
 #include <array>
+#include <concepts>
 
 namespace BootLib::Cpu
 {
 
 bool IsRpi4();
 
-uint64_t GetPerformanceFrequency();
+enum class PerformanceTime     : uint64_t {};
+enum class PerformanceTimeDiff : int64_t  {};
 
-uint64_t GetPerformanceCounter();
+constexpr PerformanceTime operator+ (PerformanceTime a, std::integral auto b) { return static_cast<PerformanceTime>(static_cast<uint64_t>(a) + static_cast<uint64_t>(b)); }
+constexpr PerformanceTime operator- (PerformanceTime a, std::integral auto b) { return static_cast<PerformanceTime>(static_cast<uint64_t>(a) - static_cast<uint64_t>(b)); }
 
-inline uint64_t GetPerformanceTicksForUs(uint64_t us)
-{
-    return (us * GetPerformanceFrequency() / 1'000'000u);
-}
+constexpr PerformanceTime operator+ (PerformanceTime a, PerformanceTimeDiff b) { return static_cast<PerformanceTime>(static_cast<uint64_t>(a) + static_cast<uint64_t>(b)); }
+constexpr PerformanceTime operator- (PerformanceTime a, PerformanceTimeDiff b) { return static_cast<PerformanceTime>(static_cast<uint64_t>(a) - static_cast<uint64_t>(b)); }
 
-inline uint64_t GetPerformanceTicksForMs(uint64_t ms)
-{
-    return (ms * GetPerformanceFrequency() / 1'000u);
-}
+constexpr PerformanceTime& operator+=(PerformanceTime& a, std::integral auto b) { return a = a + b; }
+constexpr PerformanceTime& operator-=(PerformanceTime& a, std::integral auto b) { return a = a - b; }
 
-inline int64_t GetPerformanceDifference(uint64_t a, uint64_t b)
-{
-    return static_cast<int64_t>(a - b);
-}
+constexpr PerformanceTime& operator+=(PerformanceTime& a, PerformanceTimeDiff b) { return a = a + b; }
+constexpr PerformanceTime& operator-=(PerformanceTime& a, PerformanceTimeDiff b) { return a = a - b; }
 
-void DelayInMicroseconds(uint64_t us);
-void DelayInMilliseconds(uint64_t ms);
+constexpr PerformanceTimeDiff operator-  (PerformanceTime a, PerformanceTime b) { return static_cast<PerformanceTimeDiff>(static_cast<int64_t>(a) - static_cast<int64_t>(b)); }
+constexpr auto                operator<=>(PerformanceTime a, PerformanceTime b) { return static_cast<int64_t>(a - b) <=> int64_t{0}; }
+
+uint64_t        GetPerformanceFrequency();
+PerformanceTime GetPerformanceCounter  ();
+void            DelayUntilPerformanceTime (PerformanceTime);
+
+inline PerformanceTime GetMaximumFuturePerformanceTime() { return Cpu::GetPerformanceCounter() + INT64_MAX; }
+
+inline PerformanceTimeDiff GetPerformanceTicksForUs(std::unsigned_integral auto us) { return static_cast<PerformanceTimeDiff>(us * GetPerformanceFrequency() / 1'000'000u); }
+inline PerformanceTimeDiff GetPerformanceTicksForMs(std::unsigned_integral auto ms) { return static_cast<PerformanceTimeDiff>(ms * GetPerformanceFrequency() /     1'000u); }
+
+inline PerformanceTimeDiff GetPerformanceTicksForUs(std::signed_integral auto us) { return static_cast<PerformanceTimeDiff>(us * static_cast<int64_t>(GetPerformanceFrequency()) / 1'000'000); }
+inline PerformanceTimeDiff GetPerformanceTicksForMs(std::signed_integral auto ms) { return static_cast<PerformanceTimeDiff>(ms * static_cast<int64_t>(GetPerformanceFrequency()) /     1'000); }
+
+inline int64_t GetUsForPerformanceTicks(PerformanceTimeDiff timeDiff) { return static_cast<int64_t>(timeDiff) * 1'000'000 / static_cast<int64_t>(GetPerformanceFrequency()); }
+inline int64_t GetMsForPerformanceTicks(PerformanceTimeDiff timeDiff) { return static_cast<int64_t>(timeDiff) *     1'000 / static_cast<int64_t>(GetPerformanceFrequency()); }
+
+inline void DelayInMicroseconds(uint64_t us) { DelayUntilPerformanceTime(GetPerformanceCounter() + GetPerformanceTicksForUs(us)); }
+inline void DelayInMilliseconds(uint64_t ms) { DelayUntilPerformanceTime(GetPerformanceCounter() + GetPerformanceTicksForMs(ms)); }
 
 inline void Yield() { asm volatile("yield"); }
 

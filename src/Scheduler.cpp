@@ -119,7 +119,7 @@ void DelayInMilliseconds(uint32_t ms)
     }
 
     auto const targetTime = Cpu::GetPerformanceCounter() + Cpu::GetPerformanceTicksForMs(ms);
-    while (Cpu::GetPerformanceDifference(Cpu::GetPerformanceCounter(), targetTime) < 0)
+    while (Cpu::GetPerformanceCounter() < targetTime)
     {
         ScheduleOneSpark(); // Allow other sparks to run while waiting
         // Busy-wait until the specified time has passed

@@ -261,8 +261,8 @@ DWCRESULT HCDCheckErrorAndAction(ChannelInterrupts interrupts, bool packetSplit,
  --------------------------------------------------------------------------*/
 ChannelInterrupts HCDChannel::WaitOnTransmissionResult(uint32_t timeout)
 {
-    uint64_t ticksTimeout = Cpu::GetPerformanceTicksForUs(timeout);
-    uint64_t original_tick = Cpu::GetPerformanceCounter();
+    auto ticksTimeout = Cpu::GetPerformanceTicksForUs(timeout);
+    auto original_tick = Cpu::GetPerformanceCounter();
     for (;;) {
         Cpu::DelayInMicroseconds(100);
         ChannelInterrupts tempInt = registers.Interrupt;

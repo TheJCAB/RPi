@@ -101,7 +101,9 @@ enum Direction
 };
 Direction direction = None;
 
-uint64_t nextSimulationTime = 0;
+auto const DesiredFrameTime = Cpu::GetPerformanceTicksForUs(33'333);
+
+Cpu::PerformanceTime nextSimulationTime{0};
 
 void SpawnFruit()
 {
@@ -123,7 +125,7 @@ void ResetSnake()
 
     SpawnFruit();
 
-    nextSimulationTime = 0;
+    nextSimulationTime = Cpu::GetPerformanceCounter();
 }
 
 void FlashScreen(Color565 color)
@@ -144,6 +146,7 @@ void Snake()
 
     for (;;)
     {
+        auto time0 = Cpu::GetPerformanceCounter();
         if (Keyboard::IsKeyPressed('d') || Gamepad::IsButtonPressed(Gamepad::Button::AnyRight))
         {
             direction = Right;
@@ -161,7 +164,7 @@ void Snake()
             direction = Up;
         }
 
-        uint64_t time = Cpu::GetPerformanceCounter();
+        auto time = Cpu::GetPerformanceCounter();
         if (time >= nextSimulationTime)
         {
             nextSimulationTime = time + Cpu::PerformanceFrequency / 10;
@@ -223,6 +226,8 @@ void Snake()
             }
         }
 
+        auto time1 = Cpu::GetPerformanceCounter();
+
         WriteRectangle(0                          , 0                            , Width    , cellHeight, Red);
         WriteRectangle(0                          , (gridHeight - 1) * cellHeight, Width    , Height - (gridHeight - 1) * cellHeight, Red);
         WriteRectangle(0                          , 0                            , cellWidth, Height    , Red);
@@ -238,8 +243,30 @@ void Snake()
         }
         WriteRectangle(head.x * cellWidth, head.y * cellHeight, cellWidth, cellHeight, Green);
 
+        auto const flipTime = Cpu::GetPerformanceCounter();
         Framebuffer::Flip();
-        Cpu::DelayInMicroseconds(33'333);
+        static Cpu::PerformanceTime lastFlipTime{0};
+        auto const frameTime = flipTime - lastFlipTime;
+        lastFlipTime = flipTime;
+        auto const elapsed = Cpu::GetPerformanceCounter() - flipTime;
+        auto const elapsed0 = time - time0;
+        auto const elapsed1 = time1 - time;
+        auto const elapsed2 = flipTime - time1;
+        printf("Flip time: %5lld us ", Cpu::GetUsForPerformanceTicks(elapsed));
+        printf("Frame time: %5lld us ", Cpu::GetUsForPerformanceTicks(frameTime));
+        printf("Elapsed: input %5lld us, simulation %5lld us, draw %5lld us\n", Cpu::GetUsForPerformanceTicks(elapsed0),
+               Cpu::GetUsForPerformanceTicks(elapsed1), Cpu::GetUsForPerformanceTicks(elapsed2));
+
+        {
+            static Cpu::PerformanceTime delayFrame{0};
+            delayFrame += DesiredFrameTime;
+            auto currentTime = Cpu::GetPerformanceCounter();
+            if (delayFrame < currentTime)
+            {
+                delayFrame = currentTime + DesiredFrameTime;
+            }
+            Cpu::DelayUntilPerformanceTime(delayFrame);
+        }
     }
 }
 

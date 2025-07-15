@@ -12,19 +12,19 @@ using SparkHandle = uint32_t;
 constexpr SparkHandle INVALID_HANDLE = UINT32_MAX;
 
 // Schedule a callback to be called after a specific delay in microseconds
-SparkHandle ScheduleSpark(uint64_t delay_us, Scheduler::Spark const&);
+SparkHandle ScheduleSpark(Cpu::PerformanceTimeDiff delay_us, Scheduler::Spark const&);
 
 // Schedule a callback to be called at a specific absolute time (in performance counter ticks)
-SparkHandle ScheduleSparkAtTime(uint64_t absolute_time_ticks, Scheduler::Spark const&);
+SparkHandle ScheduleSparkAtTime(Cpu::PerformanceTime absolute_time_ticks, Scheduler::Spark const&);
 
 // Cancel a scheduled callback
 bool CancelSpark(SparkHandle);
 
 // Get current time in performance counter ticks
-uint64_t GetCurrentTimeTicks();
+inline Cpu::PerformanceTime GetCurrentTimeTicks() { return Cpu::GetPerformanceCounter(); }
 
 // Convert microseconds to performance counter ticks
-uint64_t MicrosecondsToTicks(uint64_t us);
+inline Cpu::PerformanceTimeDiff MicrosecondsToTicks(uint64_t us) { return Cpu::GetPerformanceTicksForUs(us); }
 
 }
 // namespace Timer
