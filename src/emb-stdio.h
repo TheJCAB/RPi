@@ -37,7 +37,7 @@ extern "C" {									// Put extern C directive wrapper around
 /*--------------------------------------------------------------------------}
 {	                CHARACTER OUTPUT HANDLER DEFINITION                     }
 {--------------------------------------------------------------------------*/
-typedef void (*CHAR_OUTPUT_HANDLER) (char Ch);
+typedef void (*CHAR_OUTPUT_HANDLER) (char Ch, uintptr_t context);
 
 /***************************************************************************}
 {                       PUBLIC C INTERFACE ROUTINES                         }

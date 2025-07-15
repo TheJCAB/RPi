@@ -1,4 +1,5 @@
 #include "Scheduler.h"
+#include "Containers.h"
 
 #include "Cpu.h"
 
@@ -11,27 +12,33 @@ constexpr size_t MaxCores = 4;
 
 struct PendingSpark
 {
-    SparkFunction& Func;
-    uintptr_t      Context;
-    TaskInfo*      Task;
+    Spark     Spark;
+    TaskInfo* Task;
 };
 
 struct CoreInfo
 {
     size_t CoreId;
 
-    std::deque<ThreadInfo*>  Threads;
-    std::deque<PendingSpark> PendingSparksQueue;
+    static constexpr uint32_t MaxThreads = 64;
+    static constexpr uint32_t MaxSparks  = 64;
+    Containers::CircularFifo<ThreadInfo*, MaxThreads> PendingThreadsFifo;
+    Containers::CircularFifo<PendingSpark, MaxSparks> PendingSparksFifo;
 };
 
 CoreInfo CoreSchedulingInfos[MaxCores];
 
-inline RunningSparkInfo* SwapRunningSparkInfo(RunningSparkInfo* newInfo)
+inline SparkInfo* SwapCurrentSparkInfo(SparkInfo* newInfo)
 {
-    RunningSparkInfo* oldInfo;
+    return std::exchange(GetCurrentThreadInfo().Spark, newInfo);
+}
+
+inline ThreadInfo& SwapCurrentThreadInfo(ThreadInfo* newInfo)
+{
+    ThreadInfo* oldInfo;
     asm volatile ("mov %0, x18" : "=r"(oldInfo));
     asm volatile ("mov x18, %0" :: "r"(newInfo));
-    return oldInfo;
+    return *oldInfo;
 }
 
 void Init()
@@ -42,41 +49,37 @@ void Init()
     auto const threadInfo = new ThreadInfo
     {
         .StackBuffer{ reinterpret_cast<std::byte*>(0x8'0000 - coreId * 0x1'0000), 0x1'0000 },
+        .Core   = &coreInfo,
     };
-    auto const sparkInfo = new RunningSparkInfo
-    {
-        .Core   = coreInfo,
-        .Thread = *threadInfo,
-    };
-    SwapRunningSparkInfo(sparkInfo);
+    SwapCurrentThreadInfo(threadInfo);
 }
 
-void AddSpark(SparkFunction* func, uintptr_t context)
+void AddSpark(Spark const& spark)
 {
     auto const coreId = Cpu::mpidr_el1->CoreId;
     auto& info = CoreSchedulingInfos[coreId];
-    info.PendingSparksQueue.push_back({ *func, context, nullptr });
+    info.PendingSparksFifo.Push({ spark, nullptr });
 }
 
-void ScheduleOneSpark()
+bool ScheduleOneSpark()
 {
-    auto& callingSparkInfo = GetCurrentRunningSparkInfo();
-    auto& coreInfo = callingSparkInfo.Core;
-    if (coreInfo.PendingSparksQueue.empty())
+    auto& threadInfo = GetCurrentThreadInfo();
+    auto const coreInfo = threadInfo.Core;
+    if (coreInfo->PendingSparksFifo.IsEmpty())
     {
-        return; // No sparks to schedule
+        return false; // No sparks to schedule
     }
-    auto const pendingSpark = coreInfo.PendingSparksQueue.front();
-    coreInfo.PendingSparksQueue.pop_front();
-    RunningSparkInfo oneSparkInfo
+    auto const pendingSpark = coreInfo->PendingSparksFifo.Pop();
+    auto const oldTask = std::exchange(threadInfo.Task, pendingSpark.Task);
+    SparkInfo sparkInfo
     {
-        .Core   = coreInfo,
-        .Thread = callingSparkInfo.Thread,
-        .Task   = pendingSpark.Task,
     };
-    SwapRunningSparkInfo(&oneSparkInfo);
-    pendingSpark.Func(pendingSpark.Context);
-    SwapRunningSparkInfo(&callingSparkInfo);
+    auto const oldSparkInfo = std::exchange(threadInfo.Spark, &sparkInfo);
+    pendingSpark.Spark.Func(pendingSpark.Spark.Context);
+    threadInfo.Spark = oldSparkInfo;
+    threadInfo.Task  = oldTask;
+
+    return true;
 }
 
 [[noreturn]] void Schedule(CoreInfo& info)
@@ -84,13 +87,28 @@ void ScheduleOneSpark()
     while (true) {}
 }
 
-[[noreturn]] void SetSparkContinuation(SparkFunction* func, uintptr_t context)
+[[noreturn]] void SetSparkContinuation(Spark const& spark)
 {
-    auto const coreId = Cpu::mpidr_el1->CoreId;
-    auto& info = CoreSchedulingInfos[coreId];
-    info.PendingSparksQueue.push_back(PendingSpark{ *func, context, GetCurrentRunningSparkInfo().Task });
+    auto& threadInfo = GetCurrentThreadInfo();
+    auto const coreInfo = threadInfo.Core;
+    coreInfo->PendingSparksFifo.Push({ spark, threadInfo.Task });
 
-    Schedule(info);
+    Schedule(*coreInfo);
+}
+
+void Yield()
+{
+    while (ScheduleOneSpark())
+    {
+        // Keep scheduling sparks until there are no more pending sparks
+    }
+    auto& threadInfo = GetCurrentThreadInfo();
+    auto const coreInfo = threadInfo.Core;
+    if (coreInfo->PendingThreadsFifo.IsEmpty())
+    {
+        // No threads to schedule, just yield
+        return;
+    }
 }
 
 void DelayInMilliseconds(uint32_t ms)
@@ -108,5 +126,41 @@ void DelayInMilliseconds(uint32_t ms)
     }
 }
 
+ThreadInfo& CreateThread(ThreadFunction* func, uintptr_t context)
+{
+    uint32_t const stackSize = 0x1'0000u; // Allocate 64 KiB stack aligned to 16 bytes
+    auto     const stackLow  = new(std::align_val_t{ 16 }) std::byte[0x1'0000];
+
+    auto const info = new ThreadInfo
+    {
+        .Context
+        {
+            .Sp    = reinterpret_cast<uintptr_t>(stackLow + stackSize),
+            .Pc    = reinterpret_cast<uintptr_t>(func),
+            .Spsr{ .SP = 1, .EL = 1, .D = 1 },
+        },
+        .StackBuffer{ stackLow, stackSize },
+        .Core   = GetCurrentThreadInfo().Core,
+        .Spark  = nullptr,
+        .Task   = nullptr,
+    };
+    info->Context.X[0] = context; // Set the first argument in X0
+    info->Context.X[18] = reinterpret_cast<uintptr_t>(info); // Set the thread info pointer in X18
+
+    auto const coreInfo = info->Core;
+    {
+        Cpu::WithInterruptsDisabled cs{};
+        coreInfo->PendingThreadsFifo.Push(info);
+    }
+
+    return *info;
+}
+
 }
 // namespace Scheduler
+
+static_assert(offsetof(ThreadContext, X   ) == ThreadContext_X   );
+static_assert(offsetof(ThreadContext, Sp  ) == ThreadContext_Sp  );
+static_assert(offsetof(ThreadContext, Pc  ) == ThreadContext_Pc  );
+static_assert(offsetof(ThreadContext, Spsr) == ThreadContext_Spsr);
+static_assert(offsetof(ThreadContext, V   ) == ThreadContext_V   );

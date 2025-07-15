@@ -262,7 +262,7 @@ void DisableCoreVirtualTimerInterrupt()
     };
 }
 
-extern "C" void InterruptDispatcher()
+extern "C" void* InterruptDispatcher()
 {
     auto const coreId = Cpu::mpidr_el1->CoreId;
     auto& registers = RefCoreInterruptRegisters(coreId);
@@ -278,7 +278,7 @@ extern "C" void InterruptDispatcher()
     // If not core 0, return
     if (coreId > 0)
     {
-        return;
+        return nullptr;
     }
 
     // Check for basic IRQs
@@ -320,6 +320,8 @@ extern "C" void InterruptDispatcher()
             // Handle IRQ2
         }
     }
+
+    return nullptr;
 }
 
 /*

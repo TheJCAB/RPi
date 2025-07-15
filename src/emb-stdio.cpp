@@ -27,7 +27,7 @@
 
 #include <stdio.h>
 
-CHAR_OUTPUT_HANDLER Console_WriteChar = Uart::Putc;
+CHAR_OUTPUT_HANDLER Console_WriteChar = [](char Ch, uintptr_t) { Uart::Putc(Ch); };
 
 /* Number of bits in an 'unsigned long'.  */
 #define LONG_BITS (8 * sizeof(unsigned long))
@@ -110,7 +110,7 @@ enum integer_size {
  * @return
  *      number of characters written on success, or @c EOF on failure
  */
-int _doprnt(const char *fmt, va_list ap, int (*putc_func) (int, void*), void* putc_arg)
+int _doprnt(const char *fmt, va_list ap, int (*putc_func) (int, void*, uintptr_t), void* putc_arg, uintptr_t context)
 {
     int chars_written = 0;      /* Number of characters written so far  */
 
@@ -491,7 +491,7 @@ int _doprnt(const char *fmt, va_list ap, int (*putc_func) (int, void*), void* pu
 			/* If we have a prefix string output it  */
 			for (int i = 0; i < prefix_len; i++)
 			{
-				if ((*putc_func) (prefix[i], putc_arg) == EOF)
+				if ((*putc_func) (prefix[i], putc_arg, context) == EOF)
 				{
 					return EOF;
 				}
@@ -504,7 +504,7 @@ int _doprnt(const char *fmt, va_list ap, int (*putc_func) (int, void*), void* pu
             {
                 for (i = 0; i < len_padding; i++)
                 {
-                    if ((*putc_func) (pad_char, putc_arg) == EOF)
+                    if ((*putc_func) (pad_char, putc_arg, context) == EOF)
                     {
                         return EOF;
                     }
@@ -515,7 +515,7 @@ int _doprnt(const char *fmt, va_list ap, int (*putc_func) (int, void*), void* pu
             /* Output sign if needed.  */
             if (sign != '\0')
             {
-                if ((*putc_func) (sign, putc_arg) == EOF)
+                if ((*putc_func) (sign, putc_arg, context) == EOF)
                 {
                     return EOF;
                 }
@@ -526,7 +526,7 @@ int _doprnt(const char *fmt, va_list ap, int (*putc_func) (int, void*), void* pu
              * integer conversions.  */
             for (i = 0; i < num_zeroes; i++)
             {
-                if ((*putc_func) ('0', putc_arg) == EOF)
+                if ((*putc_func) ('0', putc_arg, context) == EOF)
                 {
                     return EOF;
                 }
@@ -536,7 +536,7 @@ int _doprnt(const char *fmt, va_list ap, int (*putc_func) (int, void*), void* pu
             /* Output any needed characters from str.  */
             for (i = 0; i < len_str; i++)
             {
-                if ((*putc_func) (str[i], putc_arg) == EOF)
+                if ((*putc_func) (str[i], putc_arg, context) == EOF)
                 {
                     return EOF;
                 }
@@ -548,7 +548,7 @@ int _doprnt(const char *fmt, va_list ap, int (*putc_func) (int, void*), void* pu
             {
                 for (i = 0; i < len_padding; i++)
                 {
-                    if ((*putc_func) (pad_char, putc_arg) == EOF)
+                    if ((*putc_func) (pad_char, putc_arg, context) == EOF)
                     {
                         return EOF;
                     }
@@ -560,7 +560,7 @@ int _doprnt(const char *fmt, va_list ap, int (*putc_func) (int, void*), void* pu
         {
 literal:
             /* Literal character.  */
-            if ((*putc_func) (*fmt, putc_arg) == EOF)
+            if ((*putc_func) (*fmt, putc_arg, context) == EOF)
             {
                 return EOF;
             }
@@ -668,21 +668,24 @@ static void ulong_to_string(unsigned long long num, char *str,
 /*
 * Routine called by _doprnt() to output each character.
 */
- static int prn_to_buf (int c, void* buf)
+static int prn_to_buf (int c, void* buf, uintptr_t buf_end)
 {
 	char **sptr = (char **)buf;
 	char *s = *sptr;
 
-	*s++ = c;
-	*sptr = s;
+    if (s < (char *)buf_end)
+    {
+        *s++ = c;
+        *sptr = s;
+    }
 	return (int)c;
 }
 
 
-static int prn_to_func(int c, void* prn_func)
+static int prn_to_func(int c, void* prn_func, uintptr_t context)
 {
 	CHAR_OUTPUT_HANDLER handler = reinterpret_cast<CHAR_OUTPUT_HANDLER>(prn_func);
-	handler(c);
+	handler(c, context);
 	return (int)c;
 }
 
@@ -731,22 +734,17 @@ CHAR_OUTPUT_HANDLER Init_EmbStdio (CHAR_OUTPUT_HANDLER handler)
 int printf (const char *fmt, ...)
 {
     va_list args;													// Argument list
-	int count;														// Number of characters printed
 	va_start(args, fmt);											// Create argument list
-	count = _doprnt(fmt, args, prn_to_func, reinterpret_cast<void*>(Console_WriteChar));
+	int count = _doprnt(fmt, args, prn_to_func, (void*)Console_WriteChar, 0);
 	va_end(args);													// Done with argument list
 	return count;													// Return number of characters printed
 }
 
-//int printf (const char *fmt, ...)
-//{
-//    va_list args;													// Argument list
-//	int count;														// Number of characters printed
-//	va_start(args, fmt);											// Create argument list
-//	count = _doprnt(fmt, args, prn_to_func, reinterpret_cast<void*>(Console_WriteChar));
-//	va_end(args);													// Done with argument list
-//	return count;													// Return number of characters printed
-//}
+int vprintf (const char* fmt, va_list args)
+{
+    return _doprnt(fmt, args, prn_to_func, (void*)Console_WriteChar, 0);
+}
+
 
 /*-[ sprintf ]--------------------------------------------------------------}
 . Writes the C string formatted by fmt to the given buffer, replacing any
@@ -764,21 +762,56 @@ int printf (const char *fmt, ...)
 .--------------------------------------------------------------------------*/
 int sprintf (char* buf, const char* fmt, ...)
 {
-	va_list ap;
-	char *s;
-
-	s = buf;
-	va_start(ap, fmt);
-	_doprnt(fmt, ap, prn_to_buf, (void*)&s);
-	va_end(ap);
+    char *s = buf;
+	va_list args;
+	va_start(args, fmt);
+	_doprnt(fmt, args, prn_to_buf, (void*)&s, UINTPTR_MAX);
+	va_end(args);
 	*s = '\0';
 
 	return s - buf;
 }
 
+int vsprintf (char* buf, const char* fmt, va_list args)
+{
+    char *s = buf;
+    _doprnt(fmt, args, prn_to_buf, (void*)&s, UINTPTR_MAX);
+    *s = '\0';
+    return s - buf;
+}
+
+int snprintf (char *buf, size_t bufSize, const char *fmt, ...)
+{
+    if (bufSize == 0)
+    {
+        return 0; // No space to write anything
+    }
+    
+    char *s = buf;
+    va_list args;
+    va_start(args, fmt);
+    _doprnt(fmt, args, prn_to_buf, (void*)&s, (uintptr_t)buf + bufSize - 1);
+    va_end(args);
+    *s = '\0'; // Null-terminate the string
+    return s - buf; // Return number of characters written, excluding null terminator
+}
+
+int vsnprintf (char* buf, size_t bufSize, const char* fmt, va_list args)
+{
+    if (bufSize == 0)
+    {
+        return 0; // No space to write anything
+    }
+
+    char *s = buf;
+    _doprnt(fmt, args, prn_to_buf, (void*)&s, (uintptr_t)buf + bufSize - 1);
+    *s = '\0'; // Null-terminate the string
+    return s - buf; // Return number of characters written, excluding null terminator
+}
+
 int putchar(int c)
 {
-    Console_WriteChar(c);
+    Console_WriteChar(c, 0);
     return c;
 }
 
@@ -791,11 +824,11 @@ int puts(const char* str)
 
     while (*str != '\0')
     {
-        Console_WriteChar(*str);
+        Console_WriteChar(*str, 0);
         str++;
     }
 
-    Console_WriteChar('\n');
+    Console_WriteChar('\n', 0);
 
     return 0; // Success
 }

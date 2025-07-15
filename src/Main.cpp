@@ -17,10 +17,13 @@
 #include "Processor.h"
 #include "Mmu.h"
 #include "Scheduler.h"
+#include "Syscall.h"
 #include "Timer.h"
 #include "Run.h"
 #include "UsbDevices.h"
 #include "PCIe.h"
+
+#include "TimerExample.h"
 
 #include "emb-stdio.h"
 
@@ -98,6 +101,20 @@ void Core2()
 
     asm volatile ("dmb ish"); // Release barrier
     asm volatile ("sev");
+
+    Scheduler::Init();
+
+    TimerExample::DemonstrateScheduledTimers();
+
+    for (size_t i = 0; i < 100; ++i)
+    {
+        {
+            Uart::LockedStream stream;
+            stream.PutDec(i*100u);
+            stream.Puts("% ms\n");
+        }
+        Cpu::DelayInMilliseconds(100); // Wait for 1/10 second
+    }
 
     while (true)
     {
@@ -257,7 +274,9 @@ void Core0(void* dtb)
     asm volatile ("dmb ish;sev");
     while (!Core2Ready) asm volatile ("wfe;dmb ish;sev" ::: "memory");
     Uart::Puts("Core 2 is going\n");
-    
+
+    Cpu::DelayInMilliseconds(1'000); // Wait for 1 second
+
     ((void* volatile*)(0xD8 + GpuMemBase))[3] = (void*)_start;
     asm volatile ("dmb ish;sev");
     while (!Core3Ready) asm volatile ("wfe;dmb ish;sev" ::: "memory");
@@ -330,10 +349,23 @@ void Core0(void* dtb)
 
     Scheduler::Init();
 
-    Scheduler::AddSpark([](uintptr_t){ Uart::Puts("Core 0 Spark running\n"); }, 0);
+    Scheduler::AddSpark({ [](uintptr_t){ Uart::Puts("Core 0 Spark running\n"); }, 0 });
     Uart::Puts("Core 0 Spark is scheduled\n");
 
     Scheduler::DelayInMilliseconds(1'000); // Wait for 1 second
+
+    //asm volatile ("svc #0");
+    asm volatile ("svc #1");
+
+    auto& mainThread = Scheduler::GetCurrentThreadInfo();
+    auto& newThread = Scheduler::CreateThread([](uintptr_t mainThread){
+        Uart::Puts("Core 0 New Thread running\n");
+        Syscall::YieldToThread(*reinterpret_cast<Scheduler::ThreadInfo*>(mainThread));
+        Uart::Puts("Core 0 New Thread finished\n");
+    }, reinterpret_cast<uintptr_t>(&mainThread));
+    Syscall::YieldToThread(newThread);
+
+    Cpu::Panic("Did you get it?\n");
 
     Mailbox::Send(0, 0x80); // UART 1 and USB enabled?
 
@@ -402,9 +434,6 @@ void Core0(void* dtb)
     }
     else
     {
-        Timer::SetPeriodicVirtualTimerInterrupt(1000); // Set a periodic interrupt every second
-        //Cpu::DelayInMicroseconds(3'000'000);
-
         UsbInitialize();
 
         Cpu::DelayInMicroseconds(1000'000);

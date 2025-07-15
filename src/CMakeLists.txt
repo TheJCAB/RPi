@@ -13,6 +13,8 @@ add_kernel_image(kernel8
 
     DeviceTree.cpp
 
+    Syscall.cpp
+
     Cpu.cpp             Cpu.h
     Gpio.cpp            Gpio.h
     Uart.cpp            Uart.h
@@ -24,6 +26,7 @@ add_kernel_image(kernel8
     Mmio.cpp            Mmio.h
     Mmu.cpp             Mmu.h
     Scheduler.cpp       Scheduler.h
+    TimerExample.cpp    TimerExample.h
     Timer.cpp           Timer.h
     UsbDevices.cpp      UsbDevices.h
     HidUsbDevices.cpp   HidUsbDevices.h

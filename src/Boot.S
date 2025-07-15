@@ -71,8 +71,16 @@ el2_to_el1_return:
 
     eret
 
-// Push the entire set of float/SIMD registers onto the stack.
-PreserveSimd:
+// Push the entire set of volatile registers onto the stack.
+PreserveVolatileRegisters:
+    stp     x0 , x1 , [sp, #-16]!
+    stp     x2 , x3 , [sp, #-16]!
+    stp     x4 , x5 , [sp, #-16]!
+    stp     x6 , x7 , [sp, #-16]!
+    stp     x8 , x9 , [sp, #-16]!
+    stp     x10, x11, [sp, #-16]!
+    stp     x12, x13, [sp, #-16]!
+    stp     x14, x15, [sp, #-16]!
     stp      q0,  q1, [sp, #-32]!
     stp      q2,  q3, [sp, #-32]!
     stp      q4,  q5, [sp, #-32]!
@@ -91,8 +99,8 @@ PreserveSimd:
     stp     q30, q31, [sp, #-32]!
     ret
 
-// Pop the entire set of float/SIMD registers onto the stack.
-RestoreSimd:
+// Pop the entire set of volatile registers onto the stack.
+RestoreVolatileRegisters:
     ldp     q30, q31, [sp], #32
     ldp     q28, q29, [sp], #32
     ldp     q26, q27, [sp], #32
@@ -109,6 +117,107 @@ RestoreSimd:
     ldp      q4,  q5, [sp], #32
     ldp      q2,  q3, [sp], #32
     ldp      q0,  q1, [sp], #32
+    // Skip x16-18 and LR, they are handled elsewhere
+    ldp     x14, x15, [sp], #16
+    ldp     x12, x13, [sp], #16
+    ldp     x10, x11, [sp], #16
+    ldp     x8 , x9 , [sp], #16
+    ldp     x6 , x7 , [sp], #16
+    ldp     x4 , x5 , [sp], #16
+    ldp     x2 , x3 , [sp], #16
+    ldp     x0 , x1 , [sp], #16
+    ret
+
+#include "ThreadContext.h"
+
+// Pop the entire set of volatile registers onto the stack.
+MoveAllRegistersToThreadContext:
+    stp      x0,  x1, [x18, #(ThreadContext_X          )]
+    stp      x2,  x3, [x18, #(ThreadContext_X +  1 * 16)]
+    stp      x4,  x5, [x18, #(ThreadContext_X +  2 * 16)]
+    stp      x6,  x7, [x18, #(ThreadContext_X +  3 * 16)]
+    stp      x8,  x9, [x18, #(ThreadContext_X +  4 * 16)]
+    stp     x10, x11, [x18, #(ThreadContext_X +  5 * 16)]
+    stp     x12, x13, [x18, #(ThreadContext_X +  6 * 16)]
+    stp     x14, x15, [x18, #(ThreadContext_X +  7 * 16)]
+    // x16-18 and x30 are saved elsewhere, to free up registers for a context switch
+    // x19 is just along for the ride. Consider moving x30 here, even if it looks ugly.
+    //stp     x16, x17, [x18, #(ThreadContext_X +  8 * 16)]
+    //stp     x18, x19, [x18, #(ThreadContext_X +  9 * 16)]
+    //str     x30,      [x18, #(ThreadContext_X + 15 * 16)]
+    stp     x20, x21, [x18, #(ThreadContext_X + 10 * 16)]
+    stp     x22, x23, [x18, #(ThreadContext_X + 11 * 16)]
+    stp     x24, x25, [x18, #(ThreadContext_X + 12 * 16)]
+    stp     x26, x27, [x18, #(ThreadContext_X + 13 * 16)]
+    stp     x28, x29, [x18, #(ThreadContext_X + 14 * 16)]
+    // We got sp in x17
+    str     x17,      [x18, #(ThreadContext_Sp)]
+    mrs      x0, ELR_EL1
+    str      x0,      [x18, #(ThreadContext_Pc)]
+    mrs      x0, SPSR_EL1
+    str      x0,      [x18, #(ThreadContext_Spsr)]
+    stp      q0,  q1, [x18, #(ThreadContext_V          )]
+    stp      q2,  q3, [x18, #(ThreadContext_V +  1 * 32)]
+    stp      q4,  q5, [x18, #(ThreadContext_V +  2 * 32)]
+    stp      q6,  q7, [x18, #(ThreadContext_V +  3 * 32)]
+    stp      q8,  q9, [x18, #(ThreadContext_V +  4 * 32)]
+    stp     q10, q11, [x18, #(ThreadContext_V +  5 * 32)]
+    stp     q12, q13, [x18, #(ThreadContext_V +  6 * 32)]
+    stp     q14, q15, [x18, #(ThreadContext_V +  7 * 32)]
+    stp     q16, q17, [x18, #(ThreadContext_V +  8 * 32)]
+    stp     q18, q19, [x18, #(ThreadContext_V +  9 * 32)]
+    stp     q20, q21, [x18, #(ThreadContext_V + 10 * 32)]
+    stp     q22, q23, [x18, #(ThreadContext_V + 11 * 32)]
+    stp     q24, q25, [x18, #(ThreadContext_V + 12 * 32)]
+    stp     q26, q27, [x18, #(ThreadContext_V + 13 * 32)]
+    stp     q28, q29, [x18, #(ThreadContext_V + 14 * 32)]
+    stp     q30, q31, [x18, #(ThreadContext_V + 15 * 32)]
+    ret
+
+// Pop the entire set of volatile registers onto the stack.
+GetAllRegistersFromThreadContext:
+    ldp     q30, q31, [x18, #(ThreadContext_V + 15 * 32)]
+    ldp     q28, q29, [x18, #(ThreadContext_V + 14 * 32)]
+    ldp     q26, q27, [x18, #(ThreadContext_V + 13 * 32)]
+    ldp     q24, q25, [x18, #(ThreadContext_V + 12 * 32)]
+    ldp     q22, q23, [x18, #(ThreadContext_V + 11 * 32)]
+    ldp     q20, q21, [x18, #(ThreadContext_V + 10 * 32)]
+    ldp     q18, q19, [x18, #(ThreadContext_V +  9 * 32)]
+    ldp     q16, q17, [x18, #(ThreadContext_V +  8 * 32)]
+    ldp     q14, q15, [x18, #(ThreadContext_V +  7 * 32)]
+    ldp     q12, q13, [x18, #(ThreadContext_V +  6 * 32)]
+    ldp     q10, q11, [x18, #(ThreadContext_V +  5 * 32)]
+    ldp      q8,  q9, [x18, #(ThreadContext_V +  4 * 32)]
+    ldp      q6,  q7, [x18, #(ThreadContext_V +  3 * 32)]
+    ldp      q4,  q5, [x18, #(ThreadContext_V +  2 * 32)]
+    ldp      q2,  q3, [x18, #(ThreadContext_V +  1 * 32)]
+    ldp      q0,  q1, [x18, #(ThreadContext_V          )]
+    ldr      x0,      [x18, #(ThreadContext_Spsr)]
+    msr      SPSR_EL1, x0
+    ldr      x0,      [x18, #(ThreadContext_Pc)]
+    msr      ELR_EL1, x0
+    // We put sp in x17
+    ldr     x17,      [x18, #(ThreadContext_Sp)]
+    mov     sp,  x17
+    ldp     x28, x29, [x18, #(ThreadContext_X + 14 * 16)]
+    ldp     x26, x27, [x18, #(ThreadContext_X + 13 * 16)]
+    ldp     x24, x25, [x18, #(ThreadContext_X + 12 * 16)]
+    ldp     x22, x23, [x18, #(ThreadContext_X + 11 * 16)]
+    ldp     x20, x21, [x18, #(ThreadContext_X + 10 * 16)]
+    // Note: assuming x18 remains unchanged.
+    // TODO: Do better without the assumption?
+    ldp     x18, x19, [x18, #(ThreadContext_X +  9 * 16)]
+    ldp     x16, x17, [x18, #(ThreadContext_X +  8 * 16)]
+    // x30 (LR) needs to be restored elsewhere, because we're using it here.
+    //ldr     x30,      [x18, #(ThreadContext_X + 15 * 16)]
+    ldp     x14, x15, [x18, #(ThreadContext_X +  7 * 16)]
+    ldp     x12, x13, [x18, #(ThreadContext_X +  6 * 16)]
+    ldp     x10, x11, [x18, #(ThreadContext_X +  5 * 16)]
+    ldp      x8,  x9, [x18, #(ThreadContext_X +  4 * 16)]
+    ldp      x6,  x7, [x18, #(ThreadContext_X +  3 * 16)]
+    ldp      x4,  x5, [x18, #(ThreadContext_X +  2 * 16)]
+    ldp      x2,  x3, [x18, #(ThreadContext_X +  1 * 16)]
+    ldp      x0,  x1, [x18, #(ThreadContext_X          )]
     ret
 
     // Exception vectors must be properly aligned to 2048 bytes.
@@ -152,41 +261,47 @@ SPEL0ErrorExceptionVector:
     // synchronous
     .align  7
 SynchronousExceptionVector:
-    mov x1, sp
-    and x0, x1, #0xF
-    sub sp, x1, x0
-    mov     x0, #0x10
-    bl       MainExceptionHandler
+// Align the stack?
+//    mov x1, sp
+//    and x0, x1, #0xF
+//    sub sp, x1, x0
+
+    // 32 instructions max!
+    // Preserve these first. They'll become available to use.
+    stp     x16, x17, [sp, #-16]!
+    stp     x18, x30, [sp, #-16]!
+    bl      PreserveVolatileRegisters
+    mrs     x9, ESR_EL1
+    lsr     x10, x9, #26
+    and     x10, x10, #0x3F
+    cmp     x10, #0x15
+    b.ne    1f
+    bl      SyscallDispatcher
+    b       2f
+1:  mov     x0, #0x10
+    bl      MainExceptionHandler
+2:  mov     x16, x0
+    bl      RestoreVolatileRegisters
+    cbnz    x16, CompleteContextSwitch
+    ldp     x18, x30, [sp], #16
+    ldp     x16, x17, [sp], #16
     eret
 
     // IRQ
     .align  7
 IrqExceptionVector:
     // 32 instructions max!
-    stp     x0 , x1 , [sp, #-16]!
-    stp     x2 , x3 , [sp, #-16]!
-    stp     x4 , x5 , [sp, #-16]!
-    stp     x6 , x7 , [sp, #-16]!
-    stp     x8 , x9 , [sp, #-16]!
-    stp     x10, x11, [sp, #-16]!
-    stp     x12, x13, [sp, #-16]!
-    stp     x14, x15, [sp, #-16]!
+    // Preserve these first. They'll become available to use.
     stp     x16, x17, [sp, #-16]!
     stp     x18, x30, [sp, #-16]!
-    bl PreserveSimd
+    bl      PreserveVolatileRegisters
     mov     x0, #0x11
     bl      InterruptDispatcher
-    bl RestoreSimd
+    mov     x16, x0
+    bl      RestoreVolatileRegisters
+    cbnz    x16, CompleteContextSwitch
     ldp     x18, x30, [sp], #16
     ldp     x16, x17, [sp], #16
-    ldp     x14, x15, [sp], #16
-    ldp     x12, x13, [sp], #16
-    ldp     x10, x11, [sp], #16
-    ldp     x8 , x9 , [sp], #16
-    ldp     x6 , x7 , [sp], #16
-    ldp     x4 , x5 , [sp], #16
-    ldp     x2 , x3 , [sp], #16
-    ldp     x0 , x1 , [sp], #16
     eret
 
     // FIQ
@@ -259,3 +374,19 @@ G3ErrorExceptionVector:
     bl       MainExceptionHandler
     eret
 
+CompleteContextSwitch:
+    // We'll switch the context. x16 has the new ThreadInfo.
+    // We need to put the actual SP in X17.
+    // We haven't popped x16-18 or x30(lr) yet, so we skip over them.
+    add     x17, sp, #32
+    ldp     x18, x30, [sp], #16
+    stp     x18, x19, [x18, #(ThreadContext_X +  9 * 16)]
+    str     x30,      [x18, #(ThreadContext_X + 15 * 16)]
+    bl      MoveAllRegistersToThreadContext
+    // Add x16 and x17 now.
+    ldp      x0,  x1, [sp], #16
+    stp      x0,  x1, [x18, #(ThreadContext_X +  8 * 16)]
+    mov     x18, x16
+    bl      GetAllRegistersFromThreadContext
+    ldr     x30,      [x18, #(ThreadContext_X + 15 * 16)]
+    eret

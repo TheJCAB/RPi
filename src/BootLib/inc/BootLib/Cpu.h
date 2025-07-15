@@ -129,6 +129,8 @@ struct ImmediateSystemRegisterProxy
 };
 
 #define DEFINE_SYSREG_PROXY(name, type) \
+    static_assert(std::is_standard_layout_v<type>, "System register type must be standard layout"); \
+    static_assert(sizeof(type) == 8, "System register type must be 64 bits"); \
     namespace SysRegName { extern "C" inline constexpr char name[] = #name; } \
     inline constexpr SystemRegisterProxy<type, SysRegName::name> name
 
@@ -181,6 +183,47 @@ struct cntv_ctl_el0
     uint64_t Reserved0 : 61; // The rest is unused.
 };
 
+struct spsr_el1
+{
+    uint64_t SP        :  1; // When EL1... 0: SP_EL0, 1: SP_EL1
+    uint64_t Zero      :  1;
+    uint64_t EL        :  2; // Mode (0b00 = EL0, 0b01 = EL1, 0x10 = EL1 with NV)
+    uint64_t A32       :  1; // 0: AArch64, 1: AArch32 (Note: the rest of bits below are AArch64 specific)
+    uint64_t Reserved0 :  1;
+    uint64_t F         :  1; // FIQ Enable
+    uint64_t I         :  1; // IRQ Enable
+    uint64_t A         :  1; // Asynchronous Abort Enable
+    uint64_t D         :  1; // Debug Enable
+    uint64_t BType     :  2;
+    uint64_t SSBS      :  1;
+    uint64_t AllInt    :  1;
+    uint64_t Reserved1 :  6;
+    uint64_t IL        :  1;
+    uint64_t SS        :  1;
+    uint64_t PAN       :  1;
+    uint64_t UAO       :  1;
+    uint64_t DIT       :  1;
+    uint64_t TCO       :  1;
+    uint64_t Reserved2 :  2;
+    uint64_t V         :  1;
+    uint64_t C         :  1;
+    uint64_t Z         :  1;
+    uint64_t N         :  1;
+    uint64_t PM        :  1;
+    uint64_t PPEnd     :  1;
+    uint64_t ExLock    :  1;
+    uint64_t PacM      :  1;
+    uint64_t Reserved3 : 28; // The rest is unused.
+};
+
+struct esr_el1
+{
+    uint64_t ISS      : 25; // Instruction Specific Syndrome
+    uint64_t IL       :  1;
+    uint64_t EC       :  6; // Exception Class
+    uint64_t Reserved : 32; // The rest is unused.
+};
+
 }
 // namespace SysRegData
 
@@ -190,6 +233,8 @@ DEFINE_SYSREG_PROXY(daif            , uint64_t);
 DEFINE_SYSREG_PROXY(cpacr_el1       , SysRegData::cpacr);
 DEFINE_SYSREG_PROXY(cptr_el2        , SysRegData::cpacr);
 DEFINE_SYSREG_PROXY(mpidr_el1       , SysRegData::mpidr_el1);
+DEFINE_SYSREG_PROXY(spsr_el1        , SysRegData::spsr_el1);
+DEFINE_SYSREG_PROXY(esr_el1         , SysRegData::esr_el1);
 
 // Virtual timer.
 DEFINE_SYSREG_PROXY(cntv_tval_el0   , uint64_t);
