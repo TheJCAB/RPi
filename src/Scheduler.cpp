@@ -130,22 +130,32 @@ ThreadInfo& CreateThread(ThreadFunction* func, uintptr_t context)
 {
     uint32_t const stackSize = 0x1'0000u; // Allocate 64 KiB stack aligned to 16 bytes
     auto     const stackLow  = new(std::align_val_t{ 16 }) std::byte[0x1'0000];
+    auto     const stackHigh = stackLow + stackSize;
+
+    auto const threadContext = reinterpret_cast<ThreadContext*>(stackHigh) - 1;
+
+    Uart::Puts("Creating thread with stack at ");
+    Uart::PutHex(reinterpret_cast<uintptr_t>(stackLow));
+    Uart::Puts(" and context at ");
+    Uart::PutHex(reinterpret_cast<uintptr_t>(threadContext));
+    Uart::Puts(" core at: ");
+    Uart::PutHex(reinterpret_cast<uintptr_t>(GetCurrentThreadInfo().Core));
+    Uart::Puts("\n");
 
     auto const info = new ThreadInfo
     {
-        .Context
-        {
-            .Sp    = reinterpret_cast<uintptr_t>(stackLow + stackSize),
-            .Pc    = reinterpret_cast<uintptr_t>(func),
-            .Spsr{ .SP = 1, .EL = 1, .D = 1 },
-        },
+        .Context = threadContext,
         .StackBuffer{ stackLow, stackSize },
         .Core   = GetCurrentThreadInfo().Core,
         .Spark  = nullptr,
         .Task   = nullptr,
     };
-    info->Context.X[0] = context; // Set the first argument in X0
-    info->Context.X[18] = reinterpret_cast<uintptr_t>(info); // Set the thread info pointer in X18
+
+    threadContext->X[ 0] = context; // Set the first argument in X0
+    threadContext->X[18] = reinterpret_cast<uintptr_t>(info); // Set the thread info pointer in X18
+    threadContext->Sp    = reinterpret_cast<uintptr_t>(stackHigh);
+    threadContext->Pc    = reinterpret_cast<uintptr_t>(func);
+    threadContext->Spsr = { .SP = 1, .EL = 1, .D = 1 };
 
     auto const coreInfo = info->Core;
     {
@@ -164,3 +174,5 @@ static_assert(offsetof(ThreadContext, Sp  ) == ThreadContext_Sp  );
 static_assert(offsetof(ThreadContext, Pc  ) == ThreadContext_Pc  );
 static_assert(offsetof(ThreadContext, Spsr) == ThreadContext_Spsr);
 static_assert(offsetof(ThreadContext, V   ) == ThreadContext_V   );
+static_assert(sizeof(ThreadContext::V) == ThreadContext_VSize);
+static_assert(sizeof(ThreadContext   ) == ThreadContext_Size);

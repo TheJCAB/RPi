@@ -4,6 +4,7 @@
 #include "Cpu.h"
 #include "Uart.h"
 #include "Processor.h"
+#include "ThreadContext.h"
 
 namespace Exception
 {
@@ -100,7 +101,7 @@ void PutRawSynchronousExceptionInfo(Uart::LockedStream& stream, uint32_t code, u
     stream.Puts("\n");
 }
 
-extern "C" void MainExceptionHandler(uint32_t code)
+extern "C" [[noreturn]] ThreadContext* MainExceptionHandler(ThreadContext* context, uint32_t code)
 {
     Uart::LockedStream stream(true);
 
@@ -153,9 +154,9 @@ extern "C" void MainExceptionHandler(uint32_t code)
             {
                 case 0b00'0000: stream.Puts("Unknown exception class\n"); break;
                 case 0b00'0111: stream.Puts("FP/SIMD disabled exception class\n"); break;
-                case 0b01'0101: return SvcException(stream, (uint16_t)iss, elr);
+                case 0b01'0101: SvcException(stream, (uint16_t)iss, elr); break;
                 case 0b10'0100: [[fallthrough]];
-                case 0b10'0101: return DataAbortException(stream, ec, iss, iss2, far);
+                case 0b10'0101: DataAbortException(stream, ec, iss, iss2, far); break;
                 default: stream.Puts("Other synchronous exception class\n"); break;
             }
             PutRawSynchronousExceptionInfo(stream, code, ec, iss, iss2, elr, spsr, far); 
@@ -166,7 +167,7 @@ extern "C" void MainExceptionHandler(uint32_t code)
             stream.Puts("IRQ exception\n");
             PutRawExceptionInfo(stream, code, esr, elr, spsr, far);
             stream.Puts("\n");
-            return;
+            break;
         case 2: // FIQ
             stream.Puts("FIQ exception\n");
             PutRawExceptionInfo(stream, code, esr, elr, spsr, far);

@@ -25,11 +25,11 @@ struct TaskInfo
 
 struct ThreadInfo
 {
-    ThreadContext Context;
+    ThreadContext*       Context;
     std::span<std::byte> StackBuffer;
-    CoreInfo*   Core;
-    SparkInfo*  Spark;
-    TaskInfo*   Task;
+    CoreInfo*            Core;
+    SparkInfo*           Spark;
+    TaskInfo*            Task;
 };
 
 using SparkFunction = void(uintptr_t context);

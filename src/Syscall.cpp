@@ -5,7 +5,7 @@
 #include <stddef.h>
 
 extern "C"
-Scheduler::ThreadInfo* SyscallDispatcher(uintptr_t arg0, uintptr_t arg1, uintptr_t arg2, uintptr_t arg3)
+Scheduler::ThreadInfo* SyscallDispatcher(ThreadContext* threadContext, uint32_t code)
 {
     auto threadInfo = &Scheduler::GetCurrentThreadInfo();
 
@@ -18,7 +18,7 @@ Scheduler::ThreadInfo* SyscallDispatcher(uintptr_t arg0, uintptr_t arg1, uintptr
     {
     case 0:
         Uart::Puts("YieldToThread\n");
-        return reinterpret_cast<Scheduler::ThreadInfo*>(arg0);
+        return reinterpret_cast<Scheduler::ThreadInfo*>(threadContext->X[0]);
     case 1:
         Uart::Puts("Hello from ISS 1\n");
         break;

@@ -14,6 +14,7 @@ add_library(KernelRuntime INTERFACE)
 
 target_compile_options(KernelRuntime INTERFACE
     -ffreestanding
+    -ffixed-x18
     -Wno-builtin-macro-redefined
     -O3
     -frtti

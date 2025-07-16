@@ -359,12 +359,18 @@ void Core0(void* dtb)
 
     // Cooperative context switching via syscall...
     auto& mainThread = Scheduler::GetCurrentThreadInfo();
+
     auto& newThread = Scheduler::CreateThread([](uintptr_t mainThread){
         Uart::Puts("Core 0 New Thread running\n");
         Syscall::YieldToThread(*reinterpret_cast<Scheduler::ThreadInfo*>(mainThread));
         Uart::Puts("Core 0 New Thread finished\n");
+        Syscall::YieldToThread(*reinterpret_cast<Scheduler::ThreadInfo*>(mainThread));
     }, reinterpret_cast<uintptr_t>(&mainThread));
+
     Syscall::YieldToThread(newThread);
+    Uart::Puts("Core 0 Back to Main Thread\n");
+    Syscall::YieldToThread(newThread);
+    Uart::Puts("Core 0 Back to Main Thread again\n");
 
     Mailbox::Send(0, 0x80); // UART 1 and USB enabled?
 

@@ -1,6 +1,7 @@
 // The interrupt controller routes IRQs or FIQs to core 0
 
 #include "Interrupts.h"
+#include "Scheduler.h"
 
 #include "Cpu.h"
 #include "Mmio.h"
@@ -262,7 +263,7 @@ void DisableCoreVirtualTimerInterrupt()
     };
 }
 
-extern "C" void* InterruptDispatcher()
+extern "C" Scheduler::ThreadInfo* InterruptDispatcher(ThreadContext* context, uint32_t code)
 {
     auto const coreId = Cpu::mpidr_el1->CoreId;
     auto& registers = RefCoreInterruptRegisters(coreId);

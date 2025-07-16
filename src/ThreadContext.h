@@ -5,6 +5,8 @@
 #define ThreadContext_Pc    (32 * 8)
 #define ThreadContext_Spsr  (33 * 8)
 #define ThreadContext_V     (34 * 8)
+#define ThreadContext_VSize (32 * 16)
+#define ThreadContext_Size  (ThreadContext_V + ThreadContext_VSize)
 
 #ifdef __cplusplus
 

@@ -1,3 +1,5 @@
+#include "ThreadContext.h"
+
 .section .text
 
 // Each core gets its function. This simplifies things a bit.
@@ -71,155 +73,6 @@ el2_to_el1_return:
 
     eret
 
-// Push the entire set of volatile registers onto the stack.
-PreserveVolatileRegisters:
-    stp     x0 , x1 , [sp, #-16]!
-    stp     x2 , x3 , [sp, #-16]!
-    stp     x4 , x5 , [sp, #-16]!
-    stp     x6 , x7 , [sp, #-16]!
-    stp     x8 , x9 , [sp, #-16]!
-    stp     x10, x11, [sp, #-16]!
-    stp     x12, x13, [sp, #-16]!
-    stp     x14, x15, [sp, #-16]!
-    stp      q0,  q1, [sp, #-32]!
-    stp      q2,  q3, [sp, #-32]!
-    stp      q4,  q5, [sp, #-32]!
-    stp      q6,  q7, [sp, #-32]!
-    stp      q8,  q9, [sp, #-32]!
-    stp     q10, q11, [sp, #-32]!
-    stp     q12, q13, [sp, #-32]!
-    stp     q14, q15, [sp, #-32]!
-    stp     q16, q17, [sp, #-32]!
-    stp     q18, q19, [sp, #-32]!
-    stp     q20, q21, [sp, #-32]!
-    stp     q22, q23, [sp, #-32]!
-    stp     q24, q25, [sp, #-32]!
-    stp     q26, q27, [sp, #-32]!
-    stp     q28, q29, [sp, #-32]!
-    stp     q30, q31, [sp, #-32]!
-    ret
-
-// Pop the entire set of volatile registers onto the stack.
-RestoreVolatileRegisters:
-    ldp     q30, q31, [sp], #32
-    ldp     q28, q29, [sp], #32
-    ldp     q26, q27, [sp], #32
-    ldp     q24, q25, [sp], #32
-    ldp     q22, q23, [sp], #32
-    ldp     q20, q21, [sp], #32
-    ldp     q18, q19, [sp], #32
-    ldp     q16, q17, [sp], #32
-    ldp     q14, q15, [sp], #32
-    ldp     q12, q13, [sp], #32
-    ldp     q10, q11, [sp], #32
-    ldp      q8,  q9, [sp], #32
-    ldp      q6,  q7, [sp], #32
-    ldp      q4,  q5, [sp], #32
-    ldp      q2,  q3, [sp], #32
-    ldp      q0,  q1, [sp], #32
-    // Skip x16-18 and LR, they are handled elsewhere
-    ldp     x14, x15, [sp], #16
-    ldp     x12, x13, [sp], #16
-    ldp     x10, x11, [sp], #16
-    ldp     x8 , x9 , [sp], #16
-    ldp     x6 , x7 , [sp], #16
-    ldp     x4 , x5 , [sp], #16
-    ldp     x2 , x3 , [sp], #16
-    ldp     x0 , x1 , [sp], #16
-    ret
-
-#include "ThreadContext.h"
-
-// Pop the entire set of volatile registers onto the stack.
-MoveAllRegistersToThreadContext:
-    stp      x0,  x1, [x18, #(ThreadContext_X          )]
-    stp      x2,  x3, [x18, #(ThreadContext_X +  1 * 16)]
-    stp      x4,  x5, [x18, #(ThreadContext_X +  2 * 16)]
-    stp      x6,  x7, [x18, #(ThreadContext_X +  3 * 16)]
-    stp      x8,  x9, [x18, #(ThreadContext_X +  4 * 16)]
-    stp     x10, x11, [x18, #(ThreadContext_X +  5 * 16)]
-    stp     x12, x13, [x18, #(ThreadContext_X +  6 * 16)]
-    stp     x14, x15, [x18, #(ThreadContext_X +  7 * 16)]
-    // x16-18 and x30 are saved elsewhere, to free up registers for a context switch
-    // x19 is just along for the ride. Consider moving x30 here, even if it looks ugly.
-    //stp     x16, x17, [x18, #(ThreadContext_X +  8 * 16)]
-    //stp     x18, x19, [x18, #(ThreadContext_X +  9 * 16)]
-    //str     x30,      [x18, #(ThreadContext_X + 15 * 16)]
-    stp     x20, x21, [x18, #(ThreadContext_X + 10 * 16)]
-    stp     x22, x23, [x18, #(ThreadContext_X + 11 * 16)]
-    stp     x24, x25, [x18, #(ThreadContext_X + 12 * 16)]
-    stp     x26, x27, [x18, #(ThreadContext_X + 13 * 16)]
-    stp     x28, x29, [x18, #(ThreadContext_X + 14 * 16)]
-    // We got sp in x17
-    str     x17,      [x18, #(ThreadContext_Sp)]
-    mrs      x0, ELR_EL1
-    str      x0,      [x18, #(ThreadContext_Pc)]
-    mrs      x0, SPSR_EL1
-    str      x0,      [x18, #(ThreadContext_Spsr)]
-    stp      q0,  q1, [x18, #(ThreadContext_V          )]
-    stp      q2,  q3, [x18, #(ThreadContext_V +  1 * 32)]
-    stp      q4,  q5, [x18, #(ThreadContext_V +  2 * 32)]
-    stp      q6,  q7, [x18, #(ThreadContext_V +  3 * 32)]
-    stp      q8,  q9, [x18, #(ThreadContext_V +  4 * 32)]
-    stp     q10, q11, [x18, #(ThreadContext_V +  5 * 32)]
-    stp     q12, q13, [x18, #(ThreadContext_V +  6 * 32)]
-    stp     q14, q15, [x18, #(ThreadContext_V +  7 * 32)]
-    stp     q16, q17, [x18, #(ThreadContext_V +  8 * 32)]
-    stp     q18, q19, [x18, #(ThreadContext_V +  9 * 32)]
-    stp     q20, q21, [x18, #(ThreadContext_V + 10 * 32)]
-    stp     q22, q23, [x18, #(ThreadContext_V + 11 * 32)]
-    stp     q24, q25, [x18, #(ThreadContext_V + 12 * 32)]
-    stp     q26, q27, [x18, #(ThreadContext_V + 13 * 32)]
-    stp     q28, q29, [x18, #(ThreadContext_V + 14 * 32)]
-    stp     q30, q31, [x18, #(ThreadContext_V + 15 * 32)]
-    ret
-
-// Pop the entire set of volatile registers onto the stack.
-GetAllRegistersFromThreadContext:
-    ldp     q30, q31, [x18, #(ThreadContext_V + 15 * 32)]
-    ldp     q28, q29, [x18, #(ThreadContext_V + 14 * 32)]
-    ldp     q26, q27, [x18, #(ThreadContext_V + 13 * 32)]
-    ldp     q24, q25, [x18, #(ThreadContext_V + 12 * 32)]
-    ldp     q22, q23, [x18, #(ThreadContext_V + 11 * 32)]
-    ldp     q20, q21, [x18, #(ThreadContext_V + 10 * 32)]
-    ldp     q18, q19, [x18, #(ThreadContext_V +  9 * 32)]
-    ldp     q16, q17, [x18, #(ThreadContext_V +  8 * 32)]
-    ldp     q14, q15, [x18, #(ThreadContext_V +  7 * 32)]
-    ldp     q12, q13, [x18, #(ThreadContext_V +  6 * 32)]
-    ldp     q10, q11, [x18, #(ThreadContext_V +  5 * 32)]
-    ldp      q8,  q9, [x18, #(ThreadContext_V +  4 * 32)]
-    ldp      q6,  q7, [x18, #(ThreadContext_V +  3 * 32)]
-    ldp      q4,  q5, [x18, #(ThreadContext_V +  2 * 32)]
-    ldp      q2,  q3, [x18, #(ThreadContext_V +  1 * 32)]
-    ldp      q0,  q1, [x18, #(ThreadContext_V          )]
-    ldr      x0,      [x18, #(ThreadContext_Spsr)]
-    msr      SPSR_EL1, x0
-    ldr      x0,      [x18, #(ThreadContext_Pc)]
-    msr      ELR_EL1, x0
-    // We put sp in x17
-    ldr     x17,      [x18, #(ThreadContext_Sp)]
-    mov     sp,  x17
-    ldp     x28, x29, [x18, #(ThreadContext_X + 14 * 16)]
-    ldp     x26, x27, [x18, #(ThreadContext_X + 13 * 16)]
-    ldp     x24, x25, [x18, #(ThreadContext_X + 12 * 16)]
-    ldp     x22, x23, [x18, #(ThreadContext_X + 11 * 16)]
-    ldp     x20, x21, [x18, #(ThreadContext_X + 10 * 16)]
-    // Note: assuming x18 remains unchanged.
-    // TODO: Do better without the assumption?
-    ldp     x18, x19, [x18, #(ThreadContext_X +  9 * 16)]
-    ldp     x16, x17, [x18, #(ThreadContext_X +  8 * 16)]
-    // x30 (LR) needs to be restored elsewhere, because we're using it here.
-    //ldr     x30,      [x18, #(ThreadContext_X + 15 * 16)]
-    ldp     x14, x15, [x18, #(ThreadContext_X +  7 * 16)]
-    ldp     x12, x13, [x18, #(ThreadContext_X +  6 * 16)]
-    ldp     x10, x11, [x18, #(ThreadContext_X +  5 * 16)]
-    ldp      x8,  x9, [x18, #(ThreadContext_X +  4 * 16)]
-    ldp      x6,  x7, [x18, #(ThreadContext_X +  3 * 16)]
-    ldp      x4,  x5, [x18, #(ThreadContext_X +  2 * 16)]
-    ldp      x2,  x3, [x18, #(ThreadContext_X +  1 * 16)]
-    ldp      x0,  x1, [x18, #(ThreadContext_X          )]
-    ret
-
     // Exception vectors must be properly aligned to 2048 bytes.
     // Each vector must be aligned to 128 bytes, leaving room for up to 32 instructions per vector.
     // Vectors are organized of four groups of four vectors each for a total of 16.
@@ -233,29 +86,29 @@ SPEL0SynchronousExceptionVector:
     mov x1, sp
     and x0, x1, #0xF
     sub sp, x1, x0
-    mov     x0, #0
-    bl       MainExceptionHandler
+    mov     x1, #0
+    bl      MainExceptionHandler
     eret
 
     // IRQ
     .align  7
 SPEL0IrqExceptionVector:
-    mov     x0, #1
-    bl       MainExceptionHandler
+    mov     x1, #1
+    bl      MainExceptionHandler
     eret
 
     // FIQ
     .align  7
 SPEL0FiqExceptionVector:
-    mov     x0, #2
-    bl       MainExceptionHandler
+    mov     x1, #2
+    bl      MainExceptionHandler
     eret
 
     // SError
     .align  7
 SPEL0ErrorExceptionVector:
-    mov     x0, #3
-    bl       MainExceptionHandler
+    mov     x1, #3
+    bl      MainExceptionHandler
     eret
 
     // synchronous
@@ -267,126 +120,268 @@ SynchronousExceptionVector:
 //    sub sp, x1, x0
 
     // 32 instructions max!
-    // Preserve these first. They'll become available to use.
-    stp     x16, x17, [sp, #-16]!
-    stp     x18, x30, [sp, #-16]!
+    // Preserve the parameter registers first.
+    stp      q0,  q1, [sp, #-ThreadContext_VSize]!
+    stp      q2,  q3, [sp, #( 2 * 16)]
+    stp      q4,  q5, [sp, #( 4 * 16)]
+    stp      q6,  q7, [sp, #( 6 * 16)]
+    stp      x0,  x1, [sp, #-ThreadContext_V]!
+    stp      x2,  x3, [sp, #( 2 *  8)]
+    stp      x4,  x5, [sp, #( 4 *  8)]
+    stp      x6,  x7, [sp, #( 6 *  8)]
+    // And LR which we're about to use.
+    str     x30,      [sp, #(30 *  8)]
+
+    // Now figure out what sort of exception this is.
+    mrs     x0, ESR_EL1
+    lsr     x1, x0, #26
+    and     x1, x1, #0x3F
+
+    // If it's a syscall, it's special in that it was done on purpose.
+    // The rest of volatile registers can be trashed, we don't need to preserve them.
+    cmp     x1, #0x15
+    b.eq    DispatchToSyscall
+
+    // Otherwise this is like an interrupt, we'll need to preserve all the volatiles.
+    mov     x1, #0x10
     bl      PreserveVolatileRegisters
-    mrs     x9, ESR_EL1
-    lsr     x10, x9, #26
-    and     x10, x10, #0x3F
-    cmp     x10, #0x15
-    b.ne    1f
-    bl      SyscallDispatcher
-    b       2f
-1:  mov     x0, #0x10
+    mov     x0, sp
     bl      MainExceptionHandler
-2:  mov     x16, x0
-    bl      RestoreVolatileRegisters
-    cbnz    x16, CompleteContextSwitch
-    ldp     x18, x30, [sp], #16
-    ldp     x16, x17, [sp], #16
-    eret
+    cbnz    x0, CompleteContextSwitch
+    b       RestoreVolatilesAndERet
 
     // IRQ
     .align  7
 IrqExceptionVector:
     // 32 instructions max!
-    // Preserve these first. They'll become available to use.
-    stp     x16, x17, [sp, #-16]!
-    stp     x18, x30, [sp, #-16]!
+    // Preserve the parameter registers first.
+    stp      q0,  q1, [sp, #-ThreadContext_VSize]!
+    stp      q2,  q3, [sp, #( 2 * 16)]
+    stp      q4,  q5, [sp, #( 4 * 16)]
+    stp      q6,  q7, [sp, #( 6 * 16)]
+    stp      x0,  x1, [sp, #-ThreadContext_V]!
+    stp      x2,  x3, [sp, #( 2 *  8)]
+    stp      x4,  x5, [sp, #( 4 *  8)]
+    stp      x6,  x7, [sp, #( 6 *  8)]
+    // And LR which we're about to use.
+    str     x30,      [sp, #(30 *  8)]
+    mov     x1, #0x11
     bl      PreserveVolatileRegisters
-    mov     x0, #0x11
+    mov     x0, sp
     bl      InterruptDispatcher
-    mov     x16, x0
+    cbnz    x0, CompleteContextSwitch
+
+RestoreVolatilesAndERet:
     bl      RestoreVolatileRegisters
-    cbnz    x16, CompleteContextSwitch
-    ldp     x18, x30, [sp], #16
-    ldp     x16, x17, [sp], #16
+
+RestoreParametersAndERet:
+    ldr     x30,      [sp, #(30 *  8)]
+    ldp      x6,  x7, [sp, #( 6 *  8)]
+    ldp      x4,  x5, [sp, #( 4 *  8)]
+    ldp      x2,  x3, [sp, #( 2 *  8)]
+    ldp      x0,  x1, [sp], #ThreadContext_V
+    ldp      q6,  q7, [sp, #( 6 * 16)]
+    ldp      q4,  q5, [sp, #( 4 * 16)]
+    ldp      q2,  q3, [sp, #( 2 * 16)]
+    ldp      q0,  q1, [sp], #ThreadContext_VSize
     eret
 
     // FIQ
     .align  7
 FiqExceptionVector:
-    mov     x0, #0x12
-    bl       MainExceptionHandler
+    mov     x1, #0x12
+    bl      MainExceptionHandler
     eret
 
     // SError
     .align  7
 ErrorExceptionVector:
-    mov     x0, #0x13
-    bl       MainExceptionHandler
+    mov     x1, #0x13
+    bl      MainExceptionHandler
     eret
 
     // synchronous
     .align  7
 G2SynchronousExceptionVector:
-    mov     x0, #0x20
-    bl       MainExceptionHandler
+    mov     x1, #0x20
+    bl      MainExceptionHandler
     eret
 
     // IRQ
     .align  7
 G2IrqExceptionVector:
-    mov     x0, #0x21
-    bl       MainExceptionHandler
+    mov     x1, #0x21
+    bl      MainExceptionHandler
     eret
 
     // FIQ
     .align  7
 G2FiqExceptionVector:
-    mov     x0, #0x22
-    bl       MainExceptionHandler
+    mov     x1, #0x22
+    bl      MainExceptionHandler
     eret
 
     // SError
     .align  7
 G2ErrorExceptionVector:
-    mov     x0, #0x23
-    bl       MainExceptionHandler
+    mov     x1, #0x23
+    bl      MainExceptionHandler
     eret
 
     // synchronous
     .align  7
 G3SynchronousExceptionVector:
-    mov     x0, #0x30
-    bl       MainExceptionHandler
+    mov     x1, #0x30
+    bl      MainExceptionHandler
     eret
 
     // IRQ
     .align  7
 G3IrqExceptionVector:
-    mov     x0, #0x31
-    bl       MainExceptionHandler
+    mov     x1, #0x31
+    bl      MainExceptionHandler
     eret
 
     // FIQ
     .align  7
 G3FiqExceptionVector:
-    mov     x0, #0x32
-    bl       MainExceptionHandler
+    mov     x1, #0x32
+    bl      MainExceptionHandler
     eret
 
     // SError
     .align  7
 G3ErrorExceptionVector:
-    mov     x0, #0x33
-    bl       MainExceptionHandler
+    mov     x1, #0x33
+    bl      MainExceptionHandler
     eret
 
+// TODO: Consider using the aarch64_vector_pcs calling convention everywhere,
+// which would require saving less registers here.
+// https://clang.llvm.org/docs/AttributeReference.html#id430
+// https://github.com/ARM-software/abi-aa/blob/main/vfabia64/vfabia64.rst#definitions
+
+// Zero out the entire set of volatile registers on the stack, in ThreadContext layout.
+// Except the arguments x0-7 and q0-7 which were preserved with proper values
+// and may have been updated with result values.
+ZeroVolatileRegisters:
+    mov      x9, #0
+    stp      x9,  x9, [sp, #( 8 * 8)]
+    stp      x9,  x9, [sp, #(10 * 8)]
+    stp      x9,  x9, [sp, #(12 * 8)]
+    stp      x9,  x9, [sp, #(14 * 8)]
+    stp      x9,  x9, [sp, #(16 * 8)]
+    add      x8,  sp, #ThreadContext_V // Can't reach far enough using SP.
+    dup      v8.2D, x9
+    stp      q8,  q8, [x8, #( 8 * 16)]
+    stp      q8,  q8, [x8, #(10 * 16)]
+    stp      q8,  q8, [x8, #(12 * 16)]
+    stp      q8,  q8, [x8, #(14 * 16)]
+    stp      q8,  q8, [x8, #(16 * 16)]
+    stp      q8,  q8, [x8, #(18 * 16)]
+    stp      q8,  q8, [x8, #(20 * 16)]
+    stp      q8,  q8, [x8, #(22 * 16)]
+    stp      q8,  q8, [x8, #(24 * 16)]
+    stp      q8,  q8, [x8, #(26 * 16)]
+    stp      q8,  q8, [x8, #(28 * 16)]
+    stp      q8,  q8, [x8, #(30 * 16)]
+    ret
+
+// Write the entire set of volatile registers onto the stack, in ThreadContext layout.
+// Except the arguments x0-7 and q0-7 which have already been done.
+PreserveVolatileRegisters:
+    stp     x8 , x9 , [sp, #( 8 * 8)]
+    stp     x10, x11, [sp, #(10 * 8)]
+    stp     x12, x13, [sp, #(12 * 8)]
+    stp     x14, x15, [sp, #(14 * 8)]
+    stp     x16, x17, [sp, #(16 * 8)]
+    add      x8, sp, #ThreadContext_V // Can't reach far enough using SP.
+    stp      q8,  q9, [x8, #( 8 * 16)]
+    stp     q10, q11, [x8, #(10 * 16)]
+    stp     q12, q13, [x8, #(12 * 16)]
+    stp     q14, q15, [x8, #(14 * 16)]
+    stp     q16, q17, [x8, #(16 * 16)]
+    stp     q18, q19, [x8, #(18 * 16)]
+    stp     q20, q21, [x8, #(20 * 16)]
+    stp     q22, q23, [x8, #(22 * 16)]
+    stp     q24, q25, [x8, #(24 * 16)]
+    stp     q26, q27, [x8, #(26 * 16)]
+    stp     q28, q29, [x8, #(28 * 16)]
+    stp     q30, q31, [x8, #(30 * 16)]
+    ret
+
+// Read the entire set of volatile registers from the stack, in ThreadContext layout.
+// Except the arguments x0-7 and q0-7 which have already been done.
+RestoreVolatileRegisters:
+    add      x8, sp, #ThreadContext_V // Can't reach far enough using SP.
+    ldp     q30, q31, [x8, #(30 * 16)]
+    ldp     q28, q29, [x8, #(28 * 16)]
+    ldp     q26, q27, [x8, #(26 * 16)]
+    ldp     q24, q25, [x8, #(24 * 16)]
+    ldp     q22, q23, [x8, #(22 * 16)]
+    ldp     q20, q21, [x8, #(20 * 16)]
+    ldp     q18, q19, [x8, #(18 * 16)]
+    ldp     q16, q17, [x8, #(16 * 16)]
+    ldp     q14, q15, [x8, #(14 * 16)]
+    ldp     q12, q13, [x8, #(12 * 16)]
+    ldp     q10, q11, [x8, #(10 * 16)]
+    ldp      q8,  q9, [x8, #( 8 * 16)]
+    ldp     x16, x17, [sp, #(16 * 8)]
+    ldp     x14, x15, [sp, #(14 * 8)]
+    ldp     x12, x13, [sp, #(12 * 8)]
+    ldp     x10, x11, [sp, #(10 * 8)]
+    ldp     x8 , x9 , [sp, #( 8 * 8)]
+    ret
+
+// Write the entire set of nonvolatile registers onto the stack (context).
+PreserveNonvolatileRegisters:
+    stp     x18, x19, [sp, #(18 * 8)]
+    stp     x20, x21, [sp, #(20 * 8)]
+    stp     x22, x23, [sp, #(22 * 8)]
+    stp     x24, x25, [sp, #(24 * 8)]
+    stp     x26, x27, [sp, #(26 * 8)]
+    stp     x28, x29, [sp, #(28 * 8)]
+    // Note: we preserve the original SP (after popping the context).
+    add      x8, sp, #ThreadContext_Size
+    str      x8,      [sp, #(ThreadContext_Sp)]
+    mrs      x8, ELR_EL1
+    str      x8,      [sp, #(ThreadContext_Pc)]
+    mrs      x8, SPSR_EL1
+    str      x8,      [sp, #(ThreadContext_Spsr)]
+    ret
+
+// Read the entire set of volatile registers from the stack (context).
+RestoreNonvolatileRegisters:
+    ldr      x0,      [sp, #(ThreadContext_Spsr)]
+    msr      SPSR_EL1, x0
+    ldr      x0,      [sp, #(ThreadContext_Pc)]
+    msr      ELR_EL1, x0
+    ldp     x28, x29, [sp, #(28 * 8)]
+    ldp     x26, x27, [sp, #(26 * 8)]
+    ldp     x24, x25, [sp, #(24 * 8)]
+    ldp     x22, x23, [sp, #(22 * 8)]
+    ldp     x20, x21, [sp, #(20 * 8)]
+    ldp     x18, x19, [sp, #(18 * 8)]
+    ret
+
+DispatchToSyscall:
+    mov     x0, sp // ThreadContext as a parameter.
+    bl      SyscallDispatcher
+    cbnz    x0, 1f
+    b       RestoreParametersAndERet
+1:  bl      ZeroVolatileRegisters
+    // fallthrough...
+
 CompleteContextSwitch:
-    // We'll switch the context. x16 has the new ThreadInfo.
+    // We'll switch the context. x0 has the new ThreadInfo.
     // We need to put the actual SP in X17.
     // We haven't popped x16-18 or x30(lr) yet, so we skip over them.
-    add     x17, sp, #32
-    ldp     x18, x30, [sp], #16
-    stp     x18, x19, [x18, #(ThreadContext_X +  9 * 16)]
-    str     x30,      [x18, #(ThreadContext_X + 15 * 16)]
-    bl      MoveAllRegistersToThreadContext
-    // Add x16 and x17 now.
-    ldp      x0,  x1, [sp], #16
-    stp      x0,  x1, [x18, #(ThreadContext_X +  8 * 16)]
-    mov     x18, x16
-    bl      GetAllRegistersFromThreadContext
-    ldr     x30,      [x18, #(ThreadContext_X + 15 * 16)]
-    eret
+    bl      PreserveNonvolatileRegisters
+    // And put the stack pointer (pointing to the context) in the ThreadInfo
+    mov     x8, sp
+    str     x8, [x18]
+
+    ldr     x8, [x0]
+    mov     sp, x8
+    bl      RestoreNonvolatileRegisters
+    b       RestoreVolatilesAndERet
