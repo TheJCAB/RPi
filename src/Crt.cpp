@@ -10,6 +10,7 @@
 
 #include <new>
 #include <memory>
+#include <atomic>
 
 
 extern "C"
@@ -161,104 +162,92 @@ int __cxa_atexit(void (*func)(void*), void* arg, void* dso_handle)
 }
 // extern "C"
 
-
 uintptr_t HeapStartAddress = 0x1000'0000u;
 uintptr_t HeapSizeInBytes  = 0x1000'0000u;
 
-static uintptr_t currentHeapPos = 0;
+constexpr std::align_val_t MinHeapAlign{ 16 };
 
-void* operator new(size_t size, std::align_val_t align)
+static std::atomic<uintptr_t> CurrentHeapPos = 0;
+
+void *HeapAlloc(size_t size, std::align_val_t alignVal)
 {
-    auto const pos = (currentHeapPos + static_cast<size_t>(align) - 1) & ~(static_cast<size_t>(align) - 1);
-    if (pos + size > HeapSizeInBytes)
-    {
-        Cpu::Panic("Out of memory in operator new");
-    }
-    void* result = reinterpret_cast<void*>(HeapStartAddress + pos);
-    currentHeapPos = pos + size;
-    return result;
-}
-
-void* operator new[](size_t size, std::align_val_t align) { return operator new(size, align); }
-
-void* operator new(size_t size) { return operator new(size, std::align_val_t{ 16 }); }
-void* operator new[](size_t size) { return operator new(size, std::align_val_t{ 16 }); }
-
-void operator delete(void* ptr, size_t size, std::align_val_t) noexcept
-{
-    if (ptr == nullptr)
-    {
-        return; // No action for null pointer
-    }
-    if (reinterpret_cast<uintptr_t>(ptr) == HeapStartAddress + currentHeapPos - size)
-    {
-        currentHeapPos -= size; // Deallocate only if it matches the last allocation
-    }
-
-    // Simple heap implementation - no actual deallocation unless it's from the top.
-}
-
-void operator delete[](void* ptr, size_t size, std::align_val_t align) noexcept { return operator delete(ptr, size, align); }
-
-void operator delete(void* ptr, size_t size) noexcept { return operator delete(ptr, size, std::align_val_t{ 16 }); }
-void operator delete[](void* ptr, size_t size) noexcept { return operator delete(ptr, size, std::align_val_t{ 16 }); }
-
-void operator delete(void* ptr, std::align_val_t) noexcept
-{
-    if (ptr == nullptr)
-    {
-        // No action for null pointer
-        return;
-    }
-
-    // Simple heap implementation - no actual deallocation
-}
-
-void operator delete[](void* ptr, std::align_val_t align) noexcept { return operator delete(ptr, align); }
-
-void operator delete(void* ptr) noexcept { return operator delete(ptr, std::align_val_t{ 16 }); }
-void operator delete[](void* ptr) noexcept { return operator delete(ptr, std::align_val_t{ 16 }); }
-
-extern "C" void *aligned_alloc(size_t alignment, size_t size)
-{
+    auto const alignment = static_cast<size_t>(alignVal);
     if (alignment == 0 || (alignment & (alignment - 1)) != 0)
     {
         return nullptr; // Invalid alignment
     }
 
-    auto const pos = (currentHeapPos + static_cast<size_t>(alignment) - 1) & ~(static_cast<size_t>(alignment) - 1);
-    if (pos + size > HeapSizeInBytes)
-    {
-        return nullptr; // Out of memory
-    }
+    auto currentHeapPos = CurrentHeapPos.load(std::memory_order_relaxed);
 
-    void* result = reinterpret_cast<void*>(HeapStartAddress + pos);
-    currentHeapPos = pos + size;
-    return result;
+    for (;;)
+    {
+        auto const pos = (currentHeapPos + static_cast<size_t>(alignment) - 1) & ~(static_cast<size_t>(alignment) - 1);
+        if (pos + size > HeapSizeInBytes)
+        {
+            return nullptr; // Out of memory
+        }
+
+        void* result = reinterpret_cast<void*>(HeapStartAddress + pos);
+        if (CurrentHeapPos.compare_exchange_strong(currentHeapPos, pos + size, std::memory_order_acquire))
+        {
+            return result;
+        }
+    }
 }
 
-extern "C" void* malloc(size_t size)
-{
-    size = (size + 15) & ~size_t{ 15 }; // Align to 16 bytes
-    if (currentHeapPos + size > HeapSizeInBytes)
-    {
-        Cpu::Panic("Out of memory in malloc");
-    }
-    void* result = reinterpret_cast<void*>(HeapStartAddress + currentHeapPos);
-    currentHeapPos += size;
-    return result;
-}
-
-extern "C" void free(void* ptr) noexcept
+void HeapFree(void* ptr, size_t size) noexcept
 {
     if (ptr == nullptr)
     {
-        // No action for null pointer
+        return; // No action for null pointer
+    }
+
+    if (size == 0)
+    {
+        // Without size information there's no way to know how much to try to deallocate.
         return;
     }
 
-    // Simple heap implementation - no actual deallocation
+    // Simple heap implementation - no actual deallocation unless it's from the top.
+
+    auto currentHeapPos = CurrentHeapPos.load(std::memory_order_relaxed);
+
+    while (reinterpret_cast<uintptr_t>(ptr) == HeapStartAddress + currentHeapPos - size)
+    {
+        // Deallocate only if it matches the last allocation.
+        // Note that we're only deallocating the aligned portion.
+        // Any alignment padding we incurred during allocation is lost.
+        if (CurrentHeapPos.compare_exchange_strong(currentHeapPos, currentHeapPos - size, std::memory_order_release))
+        {
+            // Successfully deallocated
+            return;
+        }
+    }
 }
+
+extern "C" void *aligned_alloc(size_t alignment, size_t size) { return HeapAlloc(size, std::align_val_t{ alignment }); }
+
+extern "C" void* malloc(size_t size) { return HeapAlloc(size, MinHeapAlign); }
+
+extern "C" void free(void* ptr) noexcept { HeapFree(ptr, 0); }
+
+void* operator new  (size_t size, std::align_val_t align) { return HeapAlloc(size, align); }
+void* operator new[](size_t size, std::align_val_t align) { return HeapAlloc(size, align); }
+
+void* operator new  (size_t size) { return HeapAlloc(size, MinHeapAlign); }
+void* operator new[](size_t size) { return HeapAlloc(size, MinHeapAlign); }
+
+void operator delete  (void* ptr, size_t size, std::align_val_t) noexcept { HeapFree(ptr, size); }
+void operator delete[](void* ptr, size_t size, std::align_val_t) noexcept { HeapFree(ptr, size); }
+
+void operator delete  (void* ptr, size_t size) noexcept { HeapFree(ptr, size); }
+void operator delete[](void* ptr, size_t size) noexcept { HeapFree(ptr, size); }
+
+void operator delete  (void* ptr, std::align_val_t) noexcept { HeapFree(ptr, 0); }
+void operator delete[](void* ptr, std::align_val_t) noexcept { HeapFree(ptr, 0); }
+
+void operator delete  (void* ptr) noexcept { HeapFree(ptr, 0); }
+void operator delete[](void* ptr) noexcept { HeapFree(ptr, 0); }
 
 extern "C" void abort()
 {

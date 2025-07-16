@@ -24,6 +24,8 @@ A lot of OS. GPL3, but I'm only looking for insight: https://github.com/rsta2/us
 
 CC0 code for RPi 4: https://github.com/babbleberry/rpi4-osdev
 
+MIT, looks like, but unclear. It's the barest bare metal and includes V3D: https://github.com/kumaashi/RaspberryPI
+
 
 ## Interesting stuff
 

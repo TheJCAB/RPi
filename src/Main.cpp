@@ -104,18 +104,6 @@ void Core2()
 
     Scheduler::Init();
 
-    TimerExample::DemonstrateScheduledTimers();
-
-    for (size_t i = 0; i < 100; ++i)
-    {
-        {
-            Uart::LockedStream stream;
-            stream.PutDec(i*100u);
-            stream.Puts("% ms\n");
-        }
-        Cpu::DelayInMilliseconds(100); // Wait for 1/10 second
-    }
-
     while (true)
     {
         //{
@@ -252,15 +240,12 @@ void Core0(void* dtb)
     Uart::PutDec(Cpu::PerformanceFrequency);
     Uart::Puts("\n");
 
+    Uart::Puts("\n\n\n");
+
     Exception::Init();
 
     parse_dtb(dtb);
-
-    Uart::Puts("Waiting...\n");
-    Cpu::DelayInMicroseconds(1000'000);
     
-    //asm volatile ("svc #42"); // Trigger a software interrupt to test exception handling
-
     Uart::useMutex = true;
 
     Uart::Puts("Spinning up the cores...\n");
@@ -275,12 +260,12 @@ void Core0(void* dtb)
     while (!Core2Ready) asm volatile ("wfe;dmb ish;sev" ::: "memory");
     Uart::Puts("Core 2 is going\n");
 
-    Cpu::DelayInMilliseconds(1'000); // Wait for 1 second
-
     ((void* volatile*)(0xD8 + GpuMemBase))[3] = (void*)_start;
     asm volatile ("dmb ish;sev");
     while (!Core3Ready) asm volatile ("wfe;dmb ish;sev" ::: "memory");
     Uart::Puts("Core 3 is going\n");
+
+    Uart::Puts("\n\n\n");
 
     Mailbox::TagMessage<Mailbox::Tag::GET_BOARD_MAC_ADDRESS, 2> macAddressTag{{ 0, 0 }};
     Mailbox::TagMessage<Mailbox::Tag::GET_VC_MEMORY, 2> armMemoryTag{{ 0, 0 }};
@@ -307,6 +292,8 @@ void Core0(void* dtb)
     {
         Uart::Puts("Failed to get VC Memory info.\n");
     }
+
+    Uart::Puts("\n\n\n");
 
     Mailbox::TagMessage<Mailbox::Tag::GET_CLOCK_RATE, 2> clockRateTag{{ 0, 0 }};
     Mailbox::TagMessage<Mailbox::Tag::GET_MEASURED_CLOCK_RATE, 2> measuredClockRateTag{{ 0, 0 }};
@@ -335,6 +322,8 @@ void Core0(void* dtb)
         }
     }
 
+    Uart::Puts("\n\n\n");
+
     // Get various power states
     uint32_t powerIds[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}; // Common power domain IDs
     for (uint32_t powerId : powerIds)
@@ -346,6 +335,8 @@ void Core0(void* dtb)
             printf("Power domain %2u state: %u\n", powerId, powerStateTag.args[1]);
         }
     }
+
+    Uart::Puts("\n\n\n");
 
     Scheduler::Init();
 
@@ -372,6 +363,8 @@ void Core0(void* dtb)
     Syscall::YieldToThread(newThread);
     Uart::Puts("Core 0 Back to Main Thread again\n");
 
+    Uart::Puts("\n\n\n");
+
     Mailbox::Send(0, 0x80); // UART 1 and USB enabled?
 
     SdCard sdCard{ Mmio::Base + SdCard::RegistersOffset };
@@ -390,7 +383,7 @@ void Core0(void* dtb)
                 {
                     Uart::PutHex(buffer[i * 16 + j]);
                     Uart::Putc(' ');
-                    if (j == 8)
+                    if (j == 7)
                     {
                         Uart::Puts("- ");
                     }
@@ -413,7 +406,7 @@ void Core0(void* dtb)
                 {
                     Uart::PutHex(buffer[i * 16 + j]);
                     Uart::Putc(' ');
-                    if (j == 8)
+                    if (j == 7)
                     {
                         Uart::Puts("- ");
                     }
@@ -433,6 +426,8 @@ void Core0(void* dtb)
         Cpu::Halt();
     }
 
+    Uart::Puts("\n\n\n");
+
     if (Cpu::IsRpi4())
     {
         PCIe::examples::demonstrate_enumeration();
@@ -440,8 +435,6 @@ void Core0(void* dtb)
     else
     {
         UsbInitialize();
-
-        Cpu::DelayInMicroseconds(1000'000);
 
         UsbCheckForChange();
 

@@ -1336,7 +1336,7 @@ RESULT EnumerateHub (struct UsbDevice *device) {
                 device->Pipe0.Number, i + 1);						// Log error
     }
     Cpu::DelayInMicroseconds(data->Descriptor.PowerGoodDelay * 2000);				// Every hub has a different power stability delay
-    Cpu::DelayInMicroseconds(1'000'000);									// Wait 1 second to allow power to stabilize
+    Cpu::DelayInMicroseconds(1'000);									// Wait 1 millisecond to allow power to stabilize
 
     for (int port = 0; port < data->MaxChildren; port++) {			// Now check for new device to enumerate on each port
         HubCheckConnection(device, port);							// Run connection check on each port
@@ -1615,7 +1615,7 @@ RESULT UsbAttachRootHub(void) {
     DeviceTable[0].Pipe0.MaxPacketSizeInBytes = 64;					// Set our fake hub to 64 byte packets .. as it's fake we need to do it manually
     DeviceTable[0].Config.Status = USB_STATUS_POWERED;				// Set our fake hub status to configured .. as it's fake we need to do manually
     RootHubDeviceNumber = 0;										// Roothub number is zero
-    Cpu::DelayInMicroseconds(1'000'000);								// Wait 1 second to allow the USB bus to stabilize
+    Cpu::DelayInMicroseconds(1'000);								// Wait 1 millisecond to allow the USB bus to stabilize
     return EnumerateDevice(&DeviceTable[0], NULL, 0);				// Ok start enumerating the USB bus as roothub port 1 is the physical bus
 }
 
