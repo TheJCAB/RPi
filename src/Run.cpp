@@ -245,17 +245,17 @@ void Snake()
 
         auto const flipTime = Cpu::GetPerformanceCounter();
         Framebuffer::Flip();
-        static Cpu::PerformanceTime lastFlipTime{0};
-        auto const frameTime = flipTime - lastFlipTime;
-        lastFlipTime = flipTime;
-        auto const elapsed = Cpu::GetPerformanceCounter() - flipTime;
-        auto const elapsed0 = time - time0;
-        auto const elapsed1 = time1 - time;
-        auto const elapsed2 = flipTime - time1;
-        printf("Flip time: %5lld us ", Cpu::GetUsForPerformanceTicks(elapsed));
-        printf("Frame time: %5lld us ", Cpu::GetUsForPerformanceTicks(frameTime));
-        printf("Elapsed: input %5lld us, simulation %5lld us, draw %5lld us\n", Cpu::GetUsForPerformanceTicks(elapsed0),
-               Cpu::GetUsForPerformanceTicks(elapsed1), Cpu::GetUsForPerformanceTicks(elapsed2));
+//        static Cpu::PerformanceTime lastFlipTime{0};
+//        auto const frameTime = flipTime - lastFlipTime;
+//        lastFlipTime = flipTime;
+//        auto const elapsed = Cpu::GetPerformanceCounter() - flipTime;
+//        auto const elapsed0 = time - time0;
+//        auto const elapsed1 = time1 - time;
+//        auto const elapsed2 = flipTime - time1;
+//        printf("Flip time: %5lld us ", Cpu::GetUsForPerformanceTicks(elapsed));
+//        printf("Frame time: %5lld us ", Cpu::GetUsForPerformanceTicks(frameTime));
+//        printf("Elapsed: input %5lld us, simulation %5lld us, draw %5lld us\n", Cpu::GetUsForPerformanceTicks(elapsed0),
+//               Cpu::GetUsForPerformanceTicks(elapsed1), Cpu::GetUsForPerformanceTicks(elapsed2));
 
         {
             static Cpu::PerformanceTime delayFrame{0};

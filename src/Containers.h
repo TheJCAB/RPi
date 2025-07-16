@@ -19,7 +19,7 @@ struct CircularFifo
     {
         Data[Head] = item;
         Head = (Head + 1) % capacity;
-        if (Head == Tail) // Overwrite the oldest item
+        if (Head == Tail)
         {
             Cpu::Panic("%s overflow", name);
         }

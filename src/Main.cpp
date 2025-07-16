@@ -55,6 +55,7 @@ void InitCore()
     el2_to_el1_return();
     Mmu::Init();
     Exception::Init();
+    Scheduler::Init();
 }
 
 volatile bool Core1Ready = false;
@@ -101,8 +102,6 @@ void Core2()
 
     asm volatile ("dmb ish"); // Release barrier
     asm volatile ("sev");
-
-    Scheduler::Init();
 
     while (true)
     {
@@ -342,8 +341,6 @@ void Core0(void* dtb)
 
     Scheduler::AddSpark({ [](uintptr_t){ Uart::Puts("Core 0 Spark running\n"); }, 0 });
     Uart::Puts("Core 0 Spark is scheduled\n");
-
-    Scheduler::DelayInMilliseconds(1'000); // Wait for 1 second
 
     // A naked syscall.
     asm volatile ("svc #1");

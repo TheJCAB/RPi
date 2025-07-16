@@ -35,6 +35,7 @@ PerformanceTime GetPerformanceCounter  ();
 void            DelayUntilPerformanceTime (PerformanceTime);
 
 inline PerformanceTime GetMaximumFuturePerformanceTime() { return Cpu::GetPerformanceCounter() + INT64_MAX; }
+inline PerformanceTime GetFarFuturePerformanceTime    () { return Cpu::GetPerformanceCounter() + INT64_MAX/2; }
 
 inline PerformanceTimeDiff GetPerformanceTicksForUs(std::unsigned_integral auto us) { return static_cast<PerformanceTimeDiff>(us * GetPerformanceFrequency() / 1'000'000u); }
 inline PerformanceTimeDiff GetPerformanceTicksForMs(std::unsigned_integral auto ms) { return static_cast<PerformanceTimeDiff>(ms * GetPerformanceFrequency() /     1'000u); }

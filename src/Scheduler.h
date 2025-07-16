@@ -62,7 +62,7 @@ inline TaskInfo* GetCurrentTaskInfo()
     return GetCurrentThreadInfo().Task;
 }
 
-void Yield();
+void YieldToSparks();
 
 void DelayInMilliseconds(uint32_t ms);
 

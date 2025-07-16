@@ -1,5 +1,6 @@
 #include "Scheduler.h"
 #include "Containers.h"
+#include "Timer.h"
 
 #include "Cpu.h"
 
@@ -41,6 +42,14 @@ inline ThreadInfo& SwapCurrentThreadInfo(ThreadInfo* newInfo)
     return *oldInfo;
 }
 
+void TimerSpark(uintptr_t)
+{
+    Timer::ScheduleSpark(
+        Cpu::GetPerformanceTicksForMs(50),
+        { TimerSpark, 0 }
+    );
+}
+
 void Init()
 {
     auto const coreId = Cpu::mpidr_el1->CoreId;
@@ -52,6 +61,11 @@ void Init()
         .Core   = &coreInfo,
     };
     SwapCurrentThreadInfo(threadInfo);
+
+    Timer::ScheduleSpark(
+        Cpu::GetPerformanceTicksForMs(50),
+        { TimerSpark, 0 }
+    );
 }
 
 void AddSpark(Spark const& spark)
@@ -96,7 +110,7 @@ bool ScheduleOneSpark()
     Schedule(*coreInfo);
 }
 
-void Yield()
+void YieldToSparks()
 {
     while (ScheduleOneSpark())
     {
