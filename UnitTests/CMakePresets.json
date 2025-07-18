@@ -1,0 +1,25 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "clang",
+      "displayName": "Clang with Ninja",
+      "generator": "Ninja",
+      "description": "Use MSVC's clang toolchain with Ninja generator",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "toolset": { "value": "host=x64", "strategy": "external" },
+      "architecture": { "value": "x64"  , "strategy": "external" },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "ReleaseWithDebInfo",
+        "CMAKE_ASM_COMPILER": "clang-cl.exe",
+        "CMAKE_CXX_COMPILER": "clang-cl.exe",
+        "CMAKE_C_COMPILER": "clang-cl.exe"
+      }
+    }
+  ]
+}

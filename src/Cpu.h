@@ -2,8 +2,6 @@
 
 #include <BootLib/Cpu.h>
 
-#include "Uart.h"
-
 namespace Cpu
 {
 

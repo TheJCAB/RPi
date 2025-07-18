@@ -1,6 +1,8 @@
 
 ## Documentation
 
+The Pi 1-3 SoC peripherals: https://datasheets.raspberrypi.com/bcm2835/bcm2835-peripherals.pdf
+
 The Pi 3B SoC: https://www.raspberrypi.com/documentation/computers/processors.html#bcm2837
 - Quad-A7 (in-ARM) peripherals in the SoC: https://datasheets.raspberrypi.com/bcm2836/bcm2836-peripherals.pdf
 - Cortex A53 processor overview (not everything included in the SoC, especially the GiC): https://developer.arm.com/documentation/ddi0500/latest/
