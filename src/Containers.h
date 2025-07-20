@@ -82,6 +82,55 @@ inline uint32_t FindConsecutiveZeros(uint64_t data, uint32_t N)
     }
 }
 
+// Returns the lowest bit position that starts a sequence of N consecutive zeros.
+// The position must be aligned to `alignment` (i.e., position % alignment == 0).
+// `data` is considered infinitely zero-extended, so finding some position <= 64 is guaranteed.
+// If N is zero, 0 is returned.
+// If alignment is zero, this behaves the same as FindConsecutiveZeros.
+// If alignment is >= 64 and the consecutive zeros are not found right at the beginning, 64 is returned.
+inline uint32_t FindConsecutiveZerosAligned(uint64_t data, uint32_t N, uint32_t alignment)
+{
+    if (N == 0) return 0;
+    if (alignment <= 1) return FindConsecutiveZeros(data, N);
+
+    if (alignment & (alignment - 1))
+    {
+        Cpu::Panic("Alignment must be a power of two");
+    }
+
+    // We can't work with N > 64. And we don't care because once we find 64,
+    // we've found any greater number by way of the infinite zero extension.
+    if (N > 64) N = 64;
+
+    auto const highestPos = 64 - N;
+
+    // Create mask for N consecutive bits
+    uint64_t const mask = UINT64_MAX >> highestPos;
+
+    uint32_t pos = 0;
+    // Search in the data
+    for (;;)
+    {
+        pos += std::countr_one(data >> pos);
+        pos = (pos + alignment - 1) & ~(alignment - 1); // Align to the next alignment boundary
+        if (pos >= 64)
+        {
+            // If we reached the end of the data, we can stop.
+            return 64;
+        }
+
+        auto const datamask = data >> pos;
+        if ((datamask & mask) == 0)
+        {
+            return pos;
+        }
+
+        // Not enough zeros, so skip however many zeros may be then skip the ones after.
+        // One of these is guaranteed to 
+        pos += std::countr_zero(data >> pos);
+    }
+}
+
 constexpr inline char PoolAllocatorName[] = "PoolAllocator";
 
 template < uint32_t PoolSize, char const* name = PoolAllocatorName >
@@ -144,7 +193,7 @@ public:
             // Find as many completely free words as we need.
             while (countRemaining >= 64)
             {
-                if (nextWordIndex < WordCount)
+                if (nextWordIndex >= WordCount)
                 {
                     // No words left to check, so we can't allocate.
                     // Even if we retried now, we wouldn't be able to fit it.
@@ -176,6 +225,12 @@ public:
                     Bitmap[wordIndex] = UINT64_MAX;
                 }
                 return result;
+            }
+
+            if (nextWordIndex >= WordCount)
+            {
+                // No words left to check, so we can't allocate.
+                return UINT32_MAX;
             }
 
             // We have a remainder of zeros to find at the end of this next word.
@@ -213,7 +268,7 @@ public:
         if (isSingleWord)
         {
             // Clear the allocated bits in the bitmap
-            uint32_t mask = ~((UINT64_MAX >> (64 - count)) << bitIndex);
+            uint64_t mask = ~((UINT64_MAX >> (64 - count)) << bitIndex);
             Bitmap[wordIndex] &= mask;
             Starts[wordIndex] &= mask;
             return;
@@ -221,20 +276,21 @@ public:
 
         // Clear the allocated bits in the bitmap
         {
-            uint32_t mask = ~(UINT64_MAX << bitIndex);
+            uint64_t mask = ~(UINT64_MAX << bitIndex);
             Bitmap[wordIndex] &= mask;
             Starts[wordIndex] &= mask;
         }
 
         count -= 64 - bitIndex;
-        while (count >= 64 && ++wordIndex < WordCount)
+        ++wordIndex;
+        while (count >= 64 && wordIndex < WordCount)
         {
             // Clear the next word as well
             Bitmap[wordIndex] = 0;
             Starts[wordIndex] = 0;
             count -= 64;
+            ++wordIndex;
         }
-
         if (count == 0)
         {
             // We cleared the entire word, so we can stop here.
@@ -249,7 +305,7 @@ public:
 
         // Clear the remaining bits in the next word
         {
-            uint64_t mask = UINT64_MAX >> (64 - count);
+            uint64_t mask = ~(UINT64_MAX >> (64 - count));
             Bitmap[wordIndex] &= mask;
             Starts[wordIndex] &= mask;
         }
@@ -267,7 +323,8 @@ public:
 
         if (!(Starts[wordIndex] & (1ull << bitIndex)))
         {
-            Cpu::Panic("%s trying to get size of a block that is not allocated", name);
+            printf("wordIndex: %u, bitIndex: %u, Starts[wordIndex]: 0x%016llx\n", wordIndex, bitIndex, Starts[wordIndex]);
+            Cpu::Panic("%s trying to get size of a block 0x%X that is not allocated", name, blockStart);
         }
 
         uint32_t count = 1;
