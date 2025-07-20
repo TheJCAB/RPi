@@ -155,21 +155,30 @@ public:
         }
     }
 
-    uint32_t Allocate(uint32_t count)
+    uint32_t Allocate(uint32_t count, uint32_t alignment = 1)
     {
         if (count == 0)
         {
             Cpu::Panic("%s invalid allocation size", name);
         }
 
-        for (uint32_t wordIndex = 0; wordIndex < WordCount; ++wordIndex)
+        if (alignment > 1 && (alignment & (alignment - 1)) != 0)
+        {
+            Cpu::Panic("%s alignment must be a power of two", name);
+        }
+
+        uint32_t const wordAlignment = alignment == 0 ? 1 : (alignment + 63) / 64;
+        uint32_t const wordAlignmentMask = UINT32_MAX * wordAlignment;
+
+        for (uint32_t wordIndex = 0; wordIndex < WordCount; wordIndex = (wordIndex + wordAlignment) & wordAlignmentMask)
         {
             auto const word = Bitmap[wordIndex];
             if (word == UINT64_MAX)
             {
                 continue;
             }
-            auto bitIndex = FindConsecutiveZeros(word, count);
+            
+            auto bitIndex = FindConsecutiveZerosAligned(word, count, alignment);
             auto const result = bitIndex + wordIndex * 64;
             if (bitIndex + count <= 64)
             {

@@ -666,6 +666,7 @@ try
         struct Allocation {
             uint32_t start;
             uint32_t count;
+            uint32_t alignment;
             bool active;
         };
         
@@ -676,6 +677,8 @@ try
         
         std::uniform_int_distribution<int> coinFlip(0, 1);
         std::uniform_int_distribution<uint32_t> smallCount(1, 8);
+        std::uniform_int_distribution<int> alignmentChoice(0, 4);
+        uint32_t alignmentValues[] = {1, 2, 4, 8, 16};
         
         for (int i = 0; i < iterations; ++i) {
             if (coinFlip(gen) == 0 && !allocations.empty()) {
@@ -701,18 +704,24 @@ try
                     successfulDeallocations++;
                 }
             } else {
-                // Try to allocate a random number of slots (1-8)
+                // Try to allocate a random number of slots (1-8) with random alignment
                 uint32_t count = smallCount(gen);
-                uint32_t start = pool.Allocate(count);
+                uint32_t alignment = alignmentValues[alignmentChoice(gen)];
+                uint32_t start = pool.Allocate(count, alignment);
                 
                 if (start != UINT32_MAX) {
+                    // Verify alignment
+                    if (start % alignment != 0) {
+                        throw std::runtime_error("Allocation not properly aligned in stress test");
+                    }
+                    
                     auto const returnedCount = pool.GetBlockSize(start);
                     if (returnedCount != count)
                     {
                         std::cout << "Allocation " << allocations.size() << " is " << count << " slots at " << start << " but got " << returnedCount << std::endl;
                         throw std::runtime_error("Allocated block size does not match requested size");
                     }
-                    allocations.push_back({start, count, true});
+                    allocations.push_back({start, count, alignment, true});
                     successfulAllocations++;
                 }
             }
@@ -749,6 +758,7 @@ try
         struct Allocation {
             uint32_t start;
             uint32_t count;
+            uint32_t alignment;
             bool active;
         };
         
@@ -757,12 +767,15 @@ try
         int successfulAllocations = 0;
         int successfulDeallocations = 0;
         int largeAllocations = 0; // Track allocations > 64
+        int alignedAllocations = 0; // Track allocations with alignment > 1
         
         std::uniform_int_distribution<int> coinFlip(0, 1);
         std::uniform_int_distribution<int> sizeCategory(0, 99);
         std::uniform_int_distribution<uint32_t> smallSize(1, 8);      // Small allocations (1-8)
         std::uniform_int_distribution<uint32_t> mediumSize(10, 49);   // Medium allocations (10-49)
         std::uniform_int_distribution<uint32_t> largeSize(100, 294);  // Large allocations (100-294)
+        std::uniform_int_distribution<int> alignmentChoice(0, 6);
+        uint32_t alignmentValues[] = {1, 2, 4, 8, 16, 32, 64};
         
         for (int i = 0; i < iterations; ++i) {
             if (coinFlip(gen) == 0 && !allocations.empty()) {
@@ -789,7 +802,7 @@ try
                     successfulDeallocations++;
                 }
             } else {
-                // Try to allocate a random number of slots with bias toward larger
+                // Try to allocate a random number of slots with bias toward larger and random alignment
                 uint32_t count;
                 int categoryRoll = sizeCategory(gen);
                 if (categoryRoll < 50) {
@@ -800,17 +813,27 @@ try
                     count = largeSize(gen);        // Large allocations (100-294)
                     largeAllocations++;
                 }
+
+                uint32_t alignment = alignmentValues[alignmentChoice(gen)];
+                if (alignment > 1) {
+                    alignedAllocations++;
+                }
                 
-                uint32_t start = largePool.Allocate(count);
+                uint32_t start = largePool.Allocate(count, alignment);
 
                 if (start != UINT32_MAX) {
+                    // Verify alignment
+                    if (start % alignment != 0) {
+                        throw std::runtime_error("Allocation not properly aligned in enhanced stress test");
+                    }
+                    
                     auto const returnedCount = largePool.GetBlockSize(start);
                     if (returnedCount != count)
                     {
                         std::cout << "Allocation " << allocations.size() << " is " << count << " slots at " << start << " but got " << returnedCount << std::endl;
                         throw std::runtime_error("Allocated block size does not match requested size");
                     }
-                    allocations.push_back({start, count, true});
+                    allocations.push_back({start, count, alignment, true});
                     successfulAllocations++;
                 }
             }
@@ -819,7 +842,8 @@ try
             if (i % 200 == 0) {
                 std::cout << "Enhanced stress test iteration " << i << "/1000, allocations: " 
                          << successfulAllocations << ", deallocations: " << successfulDeallocations 
-                         << ", large allocations: " << largeAllocations << std::endl;
+                         << ", large allocations: " << largeAllocations 
+                         << ", aligned allocations: " << alignedAllocations << std::endl;
             }
         }
         
@@ -834,7 +858,8 @@ try
         
         std::cout << "Enhanced stress test completed - Total allocations: " << successfulAllocations 
                  << ", Total deallocations: " << successfulDeallocations 
-                 << ", Large allocations (>64): " << largeAllocations << std::endl;
+                 << ", Large allocations (>64): " << largeAllocations 
+                 << ", Aligned allocations (>1): " << alignedAllocations << std::endl;
         
         auto const fullAllocation = largePool.Allocate(PoolSize);
         if (fullAllocation == 0) {
@@ -850,6 +875,10 @@ try
         
         if (largeAllocations < 10) {
             throw std::runtime_error("Enhanced stress test didn't perform enough large allocations");
+        }
+        
+        if (alignedAllocations < 50) {
+            throw std::runtime_error("Enhanced stress test didn't perform enough aligned allocations");
         }
     }
 
@@ -1198,6 +1227,165 @@ catch(const std::exception& e)
     return false;
 }
 
+bool Test_Containers_PoolAllocator_Alignment()
+try
+{
+    using namespace Containers;
+
+    std::cout << "Starting PoolAllocator alignment tests..." << std::endl;
+
+    // Test basic alignment
+    {
+        PoolAllocator<64> pool;
+        
+        // Test alignment = 1 (default behavior)
+        uint32_t alloc1 = pool.Allocate(4, 1);
+        if (alloc1 == UINT32_MAX) {
+            throw std::runtime_error("Failed to allocate with alignment 1");
+        }
+        std::cout << "Allocated 4 slots with alignment 1 at position " << alloc1 << std::endl;
+        
+        // Test alignment = 4
+        uint32_t alloc4 = pool.Allocate(8, 4);
+        if (alloc4 == UINT32_MAX) {
+            throw std::runtime_error("Failed to allocate with alignment 4");
+        }
+        if (alloc4 % 4 != 0) {
+            throw std::runtime_error("Allocation not properly aligned to 4");
+        }
+        std::cout << "Allocated 8 slots with alignment 4 at position " << alloc4 << std::endl;
+        
+        // Test alignment = 8
+        uint32_t alloc8 = pool.Allocate(4, 8);
+        if (alloc8 == UINT32_MAX) {
+            throw std::runtime_error("Failed to allocate with alignment 8");
+        }
+        if (alloc8 % 8 != 0) {
+            throw std::runtime_error("Allocation not properly aligned to 8");
+        }
+        std::cout << "Allocated 4 slots with alignment 8 at position " << alloc8 << std::endl;
+        
+        pool.Deallocate(alloc1);
+        pool.Deallocate(alloc4);
+        pool.Deallocate(alloc8);
+        
+        std::cout << "Basic alignment tests passed" << std::endl;
+    }
+
+    // Test alignment with larger values
+    {
+        PoolAllocator<128> pool;
+        
+        // Test alignment = 16
+        uint32_t alloc16 = pool.Allocate(16, 16);
+        if (alloc16 == UINT32_MAX) {
+            throw std::runtime_error("Failed to allocate with alignment 16");
+        }
+        if (alloc16 % 16 != 0) {
+            throw std::runtime_error("Allocation not properly aligned to 16");
+        }
+        std::cout << "Allocated 16 slots with alignment 16 at position " << alloc16 << std::endl;
+        
+        // Test alignment = 32
+        uint32_t alloc32 = pool.Allocate(32, 32);
+        if (alloc32 == UINT32_MAX) {
+            throw std::runtime_error("Failed to allocate with alignment 32");
+        }
+        if (alloc32 % 32 != 0) {
+            throw std::runtime_error("Allocation not properly aligned to 32");
+        }
+        std::cout << "Allocated 32 slots with alignment 32 at position " << alloc32 << std::endl;
+        
+        // Test alignment = 64
+        uint32_t alloc64 = pool.Allocate(64, 64);
+        if (alloc64 == UINT32_MAX) {
+            throw std::runtime_error("Failed to allocate with alignment 64");
+        }
+        if (alloc64 % 64 != 0) {
+            throw std::runtime_error("Allocation not properly aligned to 64");
+        }
+        std::cout << "Allocated 64 slots with alignment 64 at position " << alloc64 << std::endl;
+        
+        pool.Deallocate(alloc16);
+        pool.Deallocate(alloc32);
+        pool.Deallocate(alloc64);
+        
+        std::cout << "Large alignment tests passed" << std::endl;
+    }
+
+    // Test alignment with fragmentation
+    {
+        PoolAllocator<64> pool;
+        
+        // Create some fragmentation
+        uint32_t alloc1 = pool.Allocate(1);  // At position 0
+        uint32_t alloc2 = pool.Allocate(1);  // At position 1
+        uint32_t alloc3 = pool.Allocate(1);  // At position 2
+        uint32_t alloc4 = pool.Allocate(1);  // At position 3
+        
+        // Deallocate to create gaps
+        pool.Deallocate(alloc2);  // Gap at position 1
+        pool.Deallocate(alloc4);  // Gap at position 3
+        
+        // Try to allocate with alignment 4 - should skip the gaps at 1 and 3
+        uint32_t aligned4 = pool.Allocate(2, 4);
+        if (aligned4 == UINT32_MAX) {
+            throw std::runtime_error("Failed to allocate with alignment 4 in fragmented pool");
+        }
+        if (aligned4 % 4 != 0) {
+            throw std::runtime_error("Allocation not properly aligned to 4 in fragmented pool");
+        }
+        if (aligned4 != 4) {  // Should find position 4 as the first 4-aligned position with 2 free slots
+            std::cout << "Found aligned allocation at position " << aligned4 << " instead of expected 4" << std::endl;
+        }
+        
+        pool.Deallocate(alloc1);
+        pool.Deallocate(alloc3);
+        pool.Deallocate(aligned4);
+        
+        std::cout << "Fragmentation alignment tests passed" << std::endl;
+    }
+
+    // Test error conditions
+    {
+        PoolAllocator<32> pool;
+        
+        // Test non-power-of-2 alignment (should panic)
+        bool alignmentPanic = false;
+        try {
+            pool.Allocate(4, 3);  // 3 is not a power of 2
+        } catch (panic const& p) {
+            alignmentPanic = true;
+            std::cout << "Correctly panicked on non-power-of-2 alignment: " << p.what() << std::endl;
+        }
+        if (!alignmentPanic) {
+            throw std::runtime_error("Should have panicked on non-power-of-2 alignment");
+        }
+        
+        // Test another non-power-of-2
+        alignmentPanic = false;
+        try {
+            pool.Allocate(2, 6);  // 6 is not a power of 2
+        } catch (panic const& p) {
+            alignmentPanic = true;
+            std::cout << "Correctly panicked on alignment 6: " << p.what() << std::endl;
+        }
+        if (!alignmentPanic) {
+            throw std::runtime_error("Should have panicked on alignment 6");
+        }
+        
+        std::cout << "Alignment error condition tests passed" << std::endl;
+    }
+
+    std::cout << "PoolAllocator alignment tests passed!" << std::endl;
+    return true;
+}
+catch(const std::exception& e)
+{
+    std::cerr << "Containers::PoolAllocator alignment test failed: " << e.what() << '\n';
+    return false;
+}
+
 
 int main()
 {
@@ -1215,6 +1403,7 @@ int main()
     results.push_back({"FindConsecutiveZeros"       , Test_Containers_FindConsecutiveZeros       ()});
     results.push_back({"FindConsecutiveZerosAligned", Test_Containers_FindConsecutiveZerosAligned()});
     results.push_back({"PoolAllocator"              , Test_Containers_PoolAllocator              ()});
+    results.push_back({"PoolAllocator Alignment"    , Test_Containers_PoolAllocator_Alignment    ()});
     results.push_back({"PoolAllocator Stress"       , Test_Containers_PoolAllocator_StressTest   ()});
 
     // Count passed and failed tests
