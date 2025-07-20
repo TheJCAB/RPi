@@ -1,5 +1,7 @@
 #include "Cpu.h"
 
+#include "Uart.h"
+
 #include <stdarg.h>
 #include "emb-stdio.h"
 

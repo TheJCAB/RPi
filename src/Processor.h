@@ -12,8 +12,8 @@ inline void FlushDataCache(void const volatile* buffer, size_t size)
 
     // Advance the pointer by cache line size and flush each line
     constexpr size_t CacheLineSize = 64;
-    uintptr_t ptr = reinterpret_cast<uintptr_t>(buffer);
-    uintptr_t end = ptr + size + CacheLineSize - 1;
+    uintptr_t ptr =  reinterpret_cast<uintptr_t>(buffer)                             & ~(CacheLineSize - 1);
+    uintptr_t end = (reinterpret_cast<uintptr_t>(buffer) + size + CacheLineSize - 1) & ~(CacheLineSize - 1);
     for (; ptr < end; ptr += CacheLineSize)
     {
         asm volatile ("dc civac, %0\n" :: "r"(ptr) : "memory");
@@ -32,8 +32,8 @@ inline void InvalidateDataCache(void const volatile* buffer, size_t size)
 
     // Advance the pointer by cache line size and flush each line
     constexpr size_t CacheLineSize = 64;
-    uintptr_t ptr = reinterpret_cast<uintptr_t>(buffer);
-    uintptr_t end = ptr + size + CacheLineSize - 1;
+    uintptr_t ptr =  reinterpret_cast<uintptr_t>(buffer)                             & ~(CacheLineSize - 1);
+    uintptr_t end = (reinterpret_cast<uintptr_t>(buffer) + size + CacheLineSize - 1) & ~(CacheLineSize - 1);
     for (; ptr < end; ptr += CacheLineSize)
     {
         asm volatile ("dc ivac, %0\n" :: "r"(ptr) : "memory");

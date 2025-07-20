@@ -3,6 +3,7 @@
 #include "Timer.h"
 
 #include "Cpu.h"
+#include "Uart.h"
 
 #include <deque>
 

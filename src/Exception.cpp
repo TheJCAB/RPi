@@ -39,15 +39,19 @@ void DataAbortException(Uart::LockedStream& stream, uint8_t ec, uint32_t iss, ui
             stream.Puts("Translation fault, level ");
             stream.PutDec((uint8_t)(dfsc & 3));
             stream.Puts(".\n");
-            Processor::Halt();
+            //Processor::Halt();
+            break;
+
         case 0b10'0001:
             stream.Puts("Alignment fault.\n");
-            Processor::Halt();
+            //Processor::Halt();
+            break;
+
         default:
             stream.Puts("Unknown data fault status code: ");
             stream.PutBin(dfsc);
             stream.Puts("\n");
-            Processor::Halt();
+            //Processor::Halt();
     }
 }
 

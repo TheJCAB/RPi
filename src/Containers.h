@@ -44,12 +44,16 @@ struct CircularFifo
     }
 };
 
-// Returns the lowest bit position that starts a sequence of N consecutive zeros for 0 < N <= 64.
-// `data` is considered infinitely zero-extended, so finding some position is guaranteed.
+// Returns the lowest bit position that starts a sequence of N consecutive zeros.
+// `data` is considered infinitely zero-extended, so finding some position <= 64is guaranteed.
+// If N is zero, 0 is returned.
 inline uint32_t FindConsecutiveZeros(uint64_t data, uint32_t N)
 {
     if (N == 0) return 0;
-    if (N > 64) return 64;
+
+    // We can't work with N > 64. And we don't care because once we find 64,
+    // we've found any greater number by way of the infinite zero extension.
+    if (N > 64) N = 64;
 
     auto const highestPos = 64 - N;
 
@@ -78,49 +82,33 @@ inline uint32_t FindConsecutiveZeros(uint64_t data, uint32_t N)
     }
 }
 
-// Returns the lowest bit position in data0 that starts a sequence of N consecutive zeros for 0 < N <= 64.
-// `data0` is considered extended with `data1`.
-// If no such position is found, 64 is returned.
-inline uint32_t FindConsecutiveZeros(uint64_t data0, uint64_t data1, uint32_t N)
-{
-    if (N == 0) return 0;
-    if (N > 64) return 64;
-
-    auto pos = FindConsecutiveZeros(data0, N);
-    if (pos + N <= 64)
-    {
-        // Found in the first word
-        return pos;
-    }
-
-    if (pos < 64)
-    {
-        // We found some zeros in the first word, but not enough.
-        // Check if the next word has enough zeros.
-        if ((data1 << (128 - (pos + N))) == 0)
-        {
-            return pos;
-        }
-    }
-
-    return 64;
-}
-
 constexpr inline char PoolAllocatorName[] = "PoolAllocator";
 
 template < uint32_t PoolSize, char const* name = PoolAllocatorName >
-struct PoolAllocator
+    requires (PoolSize > 0)
+class PoolAllocator
 {
-    static_assert(PoolSize <= 64, "Pool size too small for current implementation");
+    static_assert(PoolSize > 0, "Pool size too small for current implementation");
 
     static constexpr uint32_t WordCount = (PoolSize + 63) / 64;
 
     uint64_t Bitmap[WordCount]{};
     uint64_t Starts[WordCount]{};
 
+public:
+    // If we have a partial word at the end, we need to "allocate" it to simplify the allocation logic.
+    PoolAllocator()
+    {
+        if constexpr (PoolSize % 64 != 0)
+        {
+            Bitmap[PoolSize / 64] = UINT64_MAX << (PoolSize % 64);
+            Starts[PoolSize / 64] =       1ull << (PoolSize % 64);
+        }
+    }
+
     uint32_t Allocate(uint32_t count)
     {
-        if (count == 0 || count > 64)
+        if (count == 0)
         {
             Cpu::Panic("%s invalid allocation size", name);
         }
@@ -133,54 +121,82 @@ struct PoolAllocator
                 continue;
             }
             auto bitIndex = FindConsecutiveZeros(word, count);
+            auto const result = bitIndex + wordIndex * 64;
             if (bitIndex + count <= 64)
             {
-                // Found.
-                auto const result = bitIndex + wordIndex * 64;
-                if (result + count > PoolSize)
-                {
-                    // Not enough space in the pool.
-                    return UINT32_MAX;
-                }
+                // Found entirely within one word.
                 Bitmap[wordIndex] |= (UINT64_MAX >> (64 - count)) << bitIndex;
                 Starts[wordIndex] |= (1ull << bitIndex);
                 return result;
             }
 
-            if (bitIndex >= 64)
+            if (bitIndex == 64)
             {
                 // Can't start in this word, so continue to the next word.
                 continue;
             }
 
-            if (wordIndex + 1 >= WordCount)
-            {
-                // No next word to check, so we can't allocate.
-                return UINT32_MAX;
-            }
+            // We found some zeros at the end of the word, but not enough.
+            // This is promising, but we need to keep looking.
+            uint32_t countRemaining = count - (64 - bitIndex);
+            uint32_t nextWordIndex = wordIndex + 1;
 
-            // We found some zeros in the word, but not enough.
-            // Check if the next word has enough zeros.
-            auto const nextWord = Bitmap[wordIndex + 1];
-            if ((nextWord << (128 - (bitIndex + count))) == 0)
+            // Find as many completely free words as we need.
+            while (countRemaining >= 64)
             {
-                // Found.
-                auto const result = bitIndex + wordIndex * 64;
-                if (result + count > PoolSize)
+                if (nextWordIndex < WordCount)
                 {
-                    // Not enough space in the pool.
+                    // No words left to check, so we can't allocate.
+                    // Even if we retried now, we wouldn't be able to fit it.
                     return UINT32_MAX;
                 }
+                if (Bitmap[nextWordIndex] != 0)
+                {
+                    // Found a non-zero word, so we can't allocate here after all.
+                    break;
+                }
+                countRemaining -= 64;
+                ++nextWordIndex;
+            }
+            if (countRemaining >= 64)
+            {
+                // Didn't reach the end of the allocation, so we failed.
+                // Note: We keep any skipped words, as we couldn't possibly allocate anywhere in there.
+                // nextWordIndex is the word that we couldn't skip, so we want to use it in the next iteration.
+                wordIndex = nextWordIndex - 1;
+                continue;
+            }
+            if (countRemaining == 0)
+            {
+                // Found it!
+                Bitmap[wordIndex] |= INT64_MAX << bitIndex;
+                Starts[wordIndex] |= (1ull << bitIndex);
+                for (wordIndex += 1; wordIndex < nextWordIndex; ++wordIndex)
+                {
+                    Bitmap[wordIndex] = UINT64_MAX;
+                }
+                return result;
+            }
+
+            // We have a remainder of zeros to find at the end of this next word.
+            auto const nextWord = Bitmap[nextWordIndex];
+            if ((nextWord << (64 - countRemaining)) == 0)
+            {
+                // Found.
                 Bitmap[wordIndex] |= UINT64_MAX << bitIndex;
                 Starts[wordIndex] |= (1ull << bitIndex);
-                Bitmap[wordIndex + 1] |= UINT64_MAX >> (128 - (bitIndex + count));
+                for (wordIndex += 1; wordIndex < nextWordIndex; ++wordIndex)
+                {
+                    Bitmap[wordIndex] = UINT64_MAX;
+                }
+                Bitmap[wordIndex] |= UINT64_MAX >> (64 - countRemaining);
                 return result;
             }
         }
         // Nothing found, so we can't allocate.
         return UINT32_MAX;
     }
-    
+
     void Deallocate(uint32_t start)
     {
         if (start >= PoolSize)
@@ -188,12 +204,70 @@ struct PoolAllocator
             Cpu::Panic("%s invalid deallocation start", name);
         }
 
+        uint32_t count = GetBlockSize(start);
+
         uint32_t wordIndex = start / 64;
         uint32_t bitIndex = start % 64;
 
+        bool const isSingleWord = bitIndex + count <= 64;
+        if (isSingleWord)
+        {
+            // Clear the allocated bits in the bitmap
+            uint32_t mask = ~((UINT64_MAX >> (64 - count)) << bitIndex);
+            Bitmap[wordIndex] &= mask;
+            Starts[wordIndex] &= mask;
+            return;
+        }
+
+        // Clear the allocated bits in the bitmap
+        {
+            uint32_t mask = ~(UINT64_MAX << bitIndex);
+            Bitmap[wordIndex] &= mask;
+            Starts[wordIndex] &= mask;
+        }
+
+        count -= 64 - bitIndex;
+        while (count >= 64 && ++wordIndex < WordCount)
+        {
+            // Clear the next word as well
+            Bitmap[wordIndex] = 0;
+            Starts[wordIndex] = 0;
+            count -= 64;
+        }
+
+        if (count == 0)
+        {
+            // We cleared the entire word, so we can stop here.
+            return;
+        }
+
+        // We have a remainder of zeros to clear at the beginning of this next word.
+        if (wordIndex >= WordCount)
+        {
+            Cpu::Panic("%s some math is wrong, we're trying to deallocate beyond the end of the pool", name);
+        }
+
+        // Clear the remaining bits in the next word
+        {
+            uint64_t mask = UINT64_MAX >> (64 - count);
+            Bitmap[wordIndex] &= mask;
+            Starts[wordIndex] &= mask;
+        }
+    }
+
+    uint32_t GetBlockSize(uint32_t blockStart) const
+    {
+        if (blockStart >= PoolSize)
+        {
+            Cpu::Panic("%s invalid block start", name);
+        }
+
+        uint32_t wordIndex = blockStart / 64;
+        uint32_t bitIndex = blockStart % 64;
+
         if (!(Starts[wordIndex] & (1ull << bitIndex)))
         {
-            Cpu::Panic("%s trying to deallocate a block that is not allocated", name);
+            Cpu::Panic("%s trying to get size of a block that is not allocated", name);
         }
 
         uint32_t count = 1;
@@ -201,34 +275,14 @@ struct PoolAllocator
         {
             count += std::countr_one((Bitmap[wordIndex] ^ Starts[wordIndex]) >> (bitIndex + 1));
         }
-
-        // Clear the allocated bits in the bitmap
-        Bitmap[wordIndex] &= ~((UINT64_MAX >> (64 - count)) << bitIndex);
-        Starts[wordIndex] &= ~(1ull << bitIndex);
-
-        if (bitIndex + count == 64 && wordIndex + 1 < WordCount)
+        auto position = bitIndex + count;
+        while (position == 64 && ++wordIndex < WordCount)
         {
-            // The block may span multiple words, so we need to count the next word as well.
-            auto const countHi = std::countr_one(Bitmap[wordIndex + 1] ^ Starts[wordIndex + 1]);
-            if (countHi > 0)
-            {
-                // Clear the next word as well
-                Bitmap[wordIndex + 1] &= ~(UINT64_MAX >> (64 - countHi));
-                Starts[wordIndex + 1] &= ~(1ull << 0); // Clear the first bit of the next word
-                count += countHi;
-            }
+            position = std::countr_one(Bitmap[wordIndex] ^ Starts[wordIndex]);
+            count += position;
         }
-        if (count > 64)
-        {
-            Cpu::Panic("%s found an apparent block that is bigger than the maximum allowed size", name);
-        }
+        return count;
     }
-    
-//    uint32_t GetFreeCount() const
-//    {
-//    }
-
-private:
 };
 
 }

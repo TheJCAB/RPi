@@ -75,10 +75,62 @@ void Core1()
     BootLib::PL011Uart uart{ Mmio::Base + BootLib::PL011Uart::Uart0RegistersOffset };
     uart.Puts("Core 1 says hello\n");
 
-    Core1Ready = true; // Signal that core 1 is ready
+    uint8_t* buffer = Mmu::AllocatePages<uint8_t>(2);
+    uart.Puts("Buffer is ");
+    uart.PutHex(reinterpret_cast<uintptr_t>(buffer));
+    uart.Puts("\n");
 
-    asm volatile ("dmb ish"); // Release barrier
-    asm volatile ("sev");
+    uart.Puts("Core 1: Writing to Buffer[0]\n");
+    buffer[0] = 0x42; // Write something to the buffer
+    uart.Puts("Core 1: Writing to Buffer[4095]\n");
+    buffer[4095] = 0x56; // Write something to the buffer
+    uart.Puts("Core 1: Writing to Buffer[8191]\n");
+    buffer[8191] = 0xBA; // Write something to the buffer
+
+    Processor::InvalidateDataCache(buffer, 8192); // Invalidate the data cache for the buffer
+
+    if (buffer[0] != 0x42)
+    {
+        uart.Puts("Core 1: Buffer[0] is not 0x42\n");
+    }
+    else
+    {
+        uart.Puts("Core 1: Buffer[0] is 0x42\n");
+    }
+
+    if (buffer[4095] != 0x56)
+    {
+        uart.Puts("Core 1: Buffer[4095] is not 0x56\n");
+    }
+    else
+    {
+        uart.Puts("Core 1: Buffer[4095] is 0x56\n");
+    }
+
+    if (buffer[8191] != 0xBA)
+    {
+        uart.Puts("Core 1: Buffer[8191] is not 0xBA\n");
+    }
+    else
+    {
+        uart.Puts("Core 1: Buffer[8191] is 0xBA\n");
+    }
+
+    uart.Puts("Core 1: PhysBuffer[0] = ");
+    uart.PutHex(reinterpret_cast<uint8_t*>(0x7'2000'0000)[0]);
+    uart.Puts("\n");
+    uart.Puts("Core 1: PhysBuffer[4095] = ");
+    uart.PutHex(reinterpret_cast<uint8_t*>(0x7'2000'0000)[4095]);
+    uart.Puts("\n");
+    uart.Puts("Core 1: PhysBuffer[8191] = ");
+    uart.PutHex(reinterpret_cast<uint8_t*>(0x7'2000'0000)[0x3FFF]);
+    uart.Puts("\n");
+
+//    Core1Ready = true; // Signal that core 1 is ready
+//
+//    asm volatile ("dmb ish"); // Release barrier
+//    asm volatile ("sev");
+
 
     while (true)
     {

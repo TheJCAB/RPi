@@ -1,6 +1,8 @@
 
 #include "Scheduler.h"
 
+#include "Uart.h"
+
 #include <stdint.h>
 #include <stddef.h>
 

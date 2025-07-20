@@ -1,6 +1,8 @@
 #include "Mmu.h"
+#include "Cpu.h"
 #include "Mmio.h"
 #include "Uart.h"
+#include "Containers.h"
 
 #include "emb-stdio.h"
 
@@ -14,16 +16,17 @@ namespace Mmu
 
 struct alignas(8) InvalidDescriptor
 {
-    uint64_t type      :  2; // [1:0] 0b00 = table
-    uint64_t reserved0 : 62; // [63:2]
+    uint64_t valid     :  1; // [0] 0b0 = invalid
+    uint64_t reserved0 : 63; // [63:1]
 
     constexpr InvalidDescriptor()
-        : type(0), reserved0(0) {}
+        : valid(0), reserved0(0) {}
 };
 
 struct alignas(8) TableDescriptor
 {
-    uint64_t type        :  2; // [1:0] 0b11 = table
+    uint64_t valid       :  1; // [0] 0b1 = valid
+    uint64_t type        :  1; // [1] 0b1 = table
     uint64_t reserved0   : 10; // [11:2]
     uint64_t output_addr : 36; // [47:12] Output address
     uint64_t reserved1   :  3; // [50:48]
@@ -34,13 +37,14 @@ struct alignas(8) TableDescriptor
     uint64_t nst         :  1; // [63]
 
     constexpr TableDescriptor(uint64_t addr = 0)
-        : type(3), reserved0(0), output_addr(addr >> 30), reserved1(0),
+        : valid(1), type(1), reserved0(0), output_addr(addr >> 12), reserved1(0),
           ignored1(0), pxnt(0), xnt(0), apt(0), nst(0) {}
 };
 
 struct alignas(8) L1BlockDescriptor
 {
-    uint64_t type        :  2; // [1:0] 0b01 = block
+    uint64_t valid       :  1; // [0] 0b1 = valid
+    uint64_t type        :  1; // [1] 0b0 = block
     uint64_t attr_index  :  3; // [4:2] AttrIndx[2:0]
     uint64_t ns          :  1; // [5]   NS (non-secure)
     uint64_t ap          :  2; // [7:6] AP[1:0] (access permissions)
@@ -56,14 +60,15 @@ struct alignas(8) L1BlockDescriptor
     uint64_t reserved2   :  9; // [63:55] Reserved
 
     constexpr L1BlockDescriptor(uint64_t addr = 0)
-        : type(1), attr_index(0), ns(0), ap(0), sh(3), af(1), ng(0),
+        : valid(1), type(0), attr_index(0), ns(0), ap(0), sh(3), af(1), ng(0),
           reserved0(0), output_addr(addr >> 30), reserved1(0),
           contiguous(0), pxn(0), uxn(0), reserved2(0) {}
 };
 
 struct alignas(8) L2BlockDescriptor
 {
-    uint64_t type        :  2; // [1:0] 0b01 = block
+    uint64_t valid       :  1; // [0] 0b1 = valid
+    uint64_t type        :  1; // [1] 0b0 = block
     uint64_t attr_index  :  3; // [4:2] AttrIndx[2:0]
     uint64_t ns          :  1; // [5]   NS (non-secure)
     uint64_t ap          :  2; // [7:6] AP[1:0] (access permissions)
@@ -79,8 +84,31 @@ struct alignas(8) L2BlockDescriptor
     uint64_t reserved2   :  9; // [63:55] Reserved
 
     constexpr L2BlockDescriptor(uint64_t addr = 0)
-        : type(1), attr_index(0), ns(0), ap(0), sh(3), af(1), ng(0),
+        : valid(1), type(0), attr_index(0), ns(0), ap(0), sh(3), af(1), ng(0),
           reserved0(0), output_addr(addr >> 21), reserved1(0),
+          contiguous(0), pxn(0), uxn(0), reserved2(0) {}
+};
+
+struct alignas(8) L3PageDescriptor
+{
+    uint64_t valid       :  1; // [0] 0b1 = valid
+    uint64_t type        :  1; // [1] 0b1 = page
+    uint64_t attr_index  :  3; // [4:2] AttrIndx[2:0]
+    uint64_t ns          :  1; // [5]   NS (non-secure)
+    uint64_t ap          :  2; // [7:6] AP[1:0] (access permissions)
+    uint64_t sh          :  2; // [9:8] SH[1:0] (shareability)
+    uint64_t af          :  1; // [10]  AF (access flag)
+    uint64_t ng          :  1; // [11]  nG (not global)
+    uint64_t output_addr : 36; // [47:12] Output address (page base >> 12)
+    uint64_t reserved0   :  4; // [51:48] Reserved
+    uint64_t contiguous  :  1; // [52]   Contiguous
+    uint64_t pxn         :  1; // [53]   PXN
+    uint64_t uxn         :  1; // [54]   UXN
+    uint64_t reserved2   :  9; // [63:55] Reserved
+
+    constexpr L3PageDescriptor(uint64_t addr = 0)
+        : valid(1), type(1), attr_index(0), ns(0), ap(0), sh(3), af(1), ng(0),
+          output_addr(addr >> 12), reserved0(0),
           contiguous(0), pxn(0), uxn(0), reserved2(0) {}
 };
 
@@ -100,9 +128,9 @@ union L1Entry
     constexpr L1Entry(TableDescriptor   t) : table  (t) {}
     constexpr L1Entry(L1BlockDescriptor b) : block  (b) {}
 
-    constexpr bool IsValid() const { return invalid.type != 0; }
-    constexpr bool IsTable() const { return table.type == 3; }
-    constexpr bool IsBlock() const { return block.type == 1; }
+    constexpr bool IsValid() const { return invalid.valid != 0; }
+    constexpr bool IsTable() const { return table.valid != 0 && table.type == 1; }
+    constexpr bool IsBlock() const { return block.valid != 0 && block.type == 0; }
 };
 
 union L2Entry
@@ -116,9 +144,22 @@ union L2Entry
     constexpr L2Entry(TableDescriptor   t) : table  (t) {}
     constexpr L2Entry(L2BlockDescriptor b) : block  (b) {}
 
-    constexpr bool IsValid() const { return invalid.type != 0; }
-    constexpr bool IsTable() const { return table.type == 3; }
-    constexpr bool IsBlock() const { return block.type == 1; }
+    constexpr bool IsValid() const { return invalid.valid != 0; }
+    constexpr bool IsTable() const { return table.valid != 0 && table.type == 1; }
+    constexpr bool IsBlock() const { return block.valid != 0 && block.type == 0; }
+};
+
+union L3Entry
+{
+    InvalidDescriptor invalid;
+    L3PageDescriptor  page;
+
+    constexpr L3Entry()                    : invalid()  {}
+    constexpr L3Entry(InvalidDescriptor i) : invalid(i) {}
+    constexpr L3Entry(L3PageDescriptor  p) : page   (p) {}
+
+    constexpr bool IsValid() const { return invalid.valid != 0; }
+    constexpr bool IsPage () const { return page.valid != 0 && page.type == 1; }
 };
 
 // Normal memory (cacheable) for RAM
@@ -164,6 +205,12 @@ constexpr L2BlockDescriptor L2DeviceMem(uint64_t addr)
     desc.pxn = 1;        // Privileged execute-never
     desc.uxn = 1;        // Unprivileged execute-never
     return desc;
+}
+
+// Normal memory (cacheable) for RAM
+constexpr L3PageDescriptor L3NormalMem(uint64_t addr)
+{
+    return L3PageDescriptor(addr);
 }
 
 // MAIR: Attr0=0xFF (normal), Attr1=0x04 (device-nGnRE)
@@ -224,15 +271,24 @@ References:
 */
 
 // L1 page table: map RAM, video, and peripherals
+// Each entry maps 1G of virtual memory, for a total of 512G per table.
 struct alignas(0x1000) L1PageTable
 {
     L1Entry entries[512]; // 512 entries, each 8 bytes
 };
 
 // L2 page table: map RAM, video, and peripherals
+// Each entry maps 2M of virtual memory, for a total of 1G per table.
 struct alignas(0x1000) L2PageTable
 {
     L2Entry entries[512]; // 512 entries, each 8 bytes
+};
+
+// L3 page table: map RAM, video, and peripherals
+// Each entry maps 4K of virtual memory, for a total of 2M per table.
+struct alignas(0x1000) L3PageTable
+{
+    L3Entry entries[512]; // 512 entries, each 8 bytes
 };
 
 alignas(0x1000) static constinit L2PageTable l2_page_table = []() constexpr
@@ -253,6 +309,38 @@ alignas(0x1000) static constinit L1PageTable Rpi3_l1_page_table
     L1DeviceMem(0),             // 0x4000'0000 - 0x7FFF'FFFF: 1 GB RAM, including the MMIO (device)
     L1DeviceMem(0x4000'0000),   // 0x8000'0000 - 0xBFFF'FFFF: (unused)
     L1GpuMem(0),                // 0xC000'0000 - 0xFFFF'FFFF: 1 GB RAM (transient, WT memory for GPU (and devices) data)
+    {},                             // 0x1'0000'0000 - 0x1'3FFF'FFFF: (unused)
+    {},                             // 0x1'4000'0000 - 0x1'7FFF'FFFF: (unused)
+    {},                             // 0x1'8000'0000 - 0x1'BFFF'FFFF: (unused)
+    {},                             // 0x1'C000'0000 - 0x1'FFFF'FFFF: (unused)
+    {},                             // 0x2'0000'0000 - 0x2'3FFF'FFFF: (unused)
+    {},                             // 0x2'4000'0000 - 0x2'7FFF'FFFF: (unused)
+    {},                             // 0x2'8000'0000 - 0x2'BFFF'FFFF: (unused)
+    {},                             // 0x2'C000'0000 - 0x2'FFFF'FFFF: (unused)
+    {},                             // 0x3'0000'0000 - 0x3'3FFF'FFFF: (unused)
+    {},                             // 0x3'4000'0000 - 0x3'7FFF'FFFF: (unused)
+    {},                             // 0x3'8000'0000 - 0x3'BFFF'FFFF: (unused)
+    {},                             // 0x3'C000'0000 - 0x3'FFFF'FFFF: (unused)
+    {},                             // 0x4'0000'0000 - 0x4'3FFF'FFFF: (unused)
+    {},                             // 0x4'4000'0000 - 0x4'7FFF'FFFF: (unused)
+    {},                             // 0x4'8000'0000 - 0x4'BFFF'FFFF: (unused)
+    {},                             // 0x4'C000'0000 - 0x4'FFFF'FFFF: (unused)
+    {},                             // 0x5'0000'0000 - 0x5'3FFF'FFFF: (unused)
+    {},                             // 0x5'4000'0000 - 0x5'7FFF'FFFF: (unused)
+    {},                             // 0x5'8000'0000 - 0x5'BFFF'FFFF: (unused)
+    {},                             // 0x5'C000'0000 - 0x5'FFFF'FFFF: (unused)
+    {},                             // 0x6'0000'0000 - 0x6'3FFF'FFFF: (unused)
+    {},                             // 0x6'4000'0000 - 0x6'7FFF'FFFF: (unused)
+    {},                             // 0x6'8000'0000 - 0x6'BFFF'FFFF: (unused)
+    {},                             // 0x6'C000'0000 - 0x6'FFFF'FFFF: (unused)
+    L1GpuMem(0x0'0000'0000ull),     // 0x7'0000'0000 - 0x7'3FFF'FFFF: // Map all of physical RAM, up to 8 GB, as GPU memory (fast but aggressive on writes)
+    L1GpuMem(0x0'4000'0000ull),     // 0x7'4000'0000 - 0x7'7FFF'FFFF: 
+    L1GpuMem(0x0'8000'0000ull),     // 0x7'8000'0000 - 0x7'BFFF'FFFF: 
+    L1GpuMem(0x0'C000'0000ull),     // 0x7'C000'0000 - 0x7'FFFF'FFFF: 
+    L1GpuMem(0x1'0000'0000ull),     // 0x8'0000'0000 - 0x8'3FFF'FFFF: 
+    L1GpuMem(0x1'4000'0000ull),     // 0x8'4000'0000 - 0x8'7FFF'FFFF: 
+    L1GpuMem(0x1'8000'0000ull),     // 0x8'8000'0000 - 0x8'BFFF'FFFF: 
+    L1GpuMem(0x1'C000'0000ull),     // 0x8'C000'0000 - 0x8'FFFF'FFFF: 
     // Remaining entries are invalid
 }};
 
@@ -283,8 +371,123 @@ alignas(0x1000) static constinit L1PageTable Rpi4_l1_page_table
     {},                             // 0x5'8000'0000 - 0x5'BFFF'FFFF: (unused)
     {},                             // 0x5'C000'0000 - 0x5'FFFF'FFFF: (unused)
     L1DeviceMem(0x6'0000'0000ull),  // 0x6'0000'0000 - 0x6'3FFF'FFFF: PCIe
+    {},                             // 0x6'4000'0000 - 0x6'7FFF'FFFF: (unused)
+    {},                             // 0x6'8000'0000 - 0x6'BFFF'FFFF: (unused)
+    {},                             // 0x6'C000'0000 - 0x6'FFFF'FFFF: (unused)
+    L1GpuMem(0x0'0000'0000ull),     // 0x7'0000'0000 - 0x7'3FFF'FFFF: // Map all of physical RAM, up to 8 GB, as GPU memory (fast but aggressive on writes)
+    L1GpuMem(0x0'4000'0000ull),     // 0x7'4000'0000 - 0x7'7FFF'FFFF: 
+    L1GpuMem(0x0'8000'0000ull),     // 0x7'8000'0000 - 0x7'BFFF'FFFF: 
+    L1GpuMem(0x0'C000'0000ull),     // 0x7'C000'0000 - 0x7'FFFF'FFFF: 
+    L1GpuMem(0x1'0000'0000ull),     // 0x8'0000'0000 - 0x8'3FFF'FFFF: 
+    L1GpuMem(0x1'4000'0000ull),     // 0x8'4000'0000 - 0x8'7FFF'FFFF: 
+    L1GpuMem(0x1'8000'0000ull),     // 0x8'8000'0000 - 0x8'BFFF'FFFF: 
+    L1GpuMem(0x1'C000'0000ull),     // 0x8'C000'0000 - 0x8'FFFF'FFFF: 
     // Remaining entries are invalid
 }};
+
+constexpr uintptr_t PhysicalMemoryApertureBase = 0x7'0000'0000;
+
+L1PageTable* l1_page_table = reinterpret_cast<L1PageTable*>(reinterpret_cast<uintptr_t>(Cpu::IsRpi4() ? &Rpi4_l1_page_table : &Rpi3_l1_page_table) + PhysicalMemoryApertureBase);
+
+constexpr char PhysicalMemory[] = "Physical Memory";
+constexpr char VirtualMemory [] = "Virtual Memory";
+
+// Manages 256 MB of physical 4 KB memory pages.
+Containers::PoolAllocator<256 * 1024 / 4, PhysicalMemory> PhysicalMemoryAllocator;
+constexpr uintptr_t PhysicalMemoryAllocatorOffset = 0x2000'0000; // 256 MB of physical memory, starting at 0x200'0000
+constexpr uintptr_t PhysicalMemoryAllocatorPageOffset = PhysicalMemoryAllocatorOffset >> 12;
+
+// Manages 1 GB of virtual 4 KB memory pages.
+Containers::PoolAllocator<1024 * 1024 / 4, VirtualMemory> VirtualMemoryAllocator;
+constexpr uintptr_t VirtualMemoryAllocatorOffset = 0x1'0000'0000; // 1 GB of virtual memory, starting at 0x1'0000'0000
+constexpr uintptr_t VirtualMemoryAllocatorPageOffset = VirtualMemoryAllocatorOffset >> 12;
+
+void MapOnePage(L3PageTable& table, uintptr_t virtualPageIndex, L3Entry entry)
+{
+    printf("L3 table %zX entry index is %zX\n", &table, virtualPageIndex);
+    auto& tableEntry = table.entries[virtualPageIndex];
+    tableEntry = entry;
+    // Clean the cache line containing the modified page table entry
+    asm volatile ("dc civac, %0" : : "r"(&tableEntry) : "memory");
+    printf("L3 table entry at %zX: %llX\n", &tableEntry, reinterpret_cast<uint64_t&>(tableEntry));
+}
+
+void MapOnePage(L2PageTable& table, uintptr_t virtualPageIndex, L3Entry entry)
+{
+    printf("L2 table %zX entry index is %zX\n", &table, virtualPageIndex >> 9);
+    auto& tableEntry = table.entries[virtualPageIndex >> 9];
+    L3PageTable* nextTable = nullptr;
+    if (!tableEntry.IsValid())
+    {
+        auto const tablePhysicalAddress = (PhysicalMemoryAllocator.Allocate(1) + PhysicalMemoryAllocatorPageOffset) << 12;
+        printf("Allocated physical address for L3 page table at %zX\n", tablePhysicalAddress);
+        tableEntry = TableDescriptor(tablePhysicalAddress);
+        // Clean the cache line containing the modified page table entry
+        asm volatile ("dc civac, %0" : : "r"(&tableEntry) : "memory");
+        nextTable = reinterpret_cast<L3PageTable*>(PhysicalMemoryApertureBase + tablePhysicalAddress);
+        *nextTable = {};
+    }
+    else if (tableEntry.IsTable())
+    {
+        nextTable = reinterpret_cast<L3PageTable*>(PhysicalMemoryApertureBase + (tableEntry.table.output_addr << 12));
+    }
+    printf("L2 table entry at %zX: %llX\n", &tableEntry, reinterpret_cast<uint64_t&>(tableEntry));
+    MapOnePage(*nextTable, virtualPageIndex & ~(UINTPTR_MAX << 9), entry);
+}
+
+void MapOnePage(L1PageTable& table, uintptr_t virtualPageIndex, L3Entry entry)
+{
+    printf("L1 table %zX entry index is %zX\n", &table, virtualPageIndex >> 18);
+    auto& tableEntry = table.entries[virtualPageIndex >> 18];
+    L2PageTable* nextTable = nullptr;
+    if (!tableEntry.IsValid())
+    {
+        auto const tablePhysicalAddress = (PhysicalMemoryAllocator.Allocate(1) + PhysicalMemoryAllocatorPageOffset) << 12;
+        printf("Allocated physical address for L2 page table at %zX\n", tablePhysicalAddress);
+        tableEntry = TableDescriptor(tablePhysicalAddress);
+        // Clean the cache line containing the modified page table entry
+        asm volatile ("dc civac, %0" : : "r"(&tableEntry) : "memory");
+        nextTable = reinterpret_cast<L2PageTable*>(PhysicalMemoryApertureBase + tablePhysicalAddress);
+        *nextTable = {};
+    }
+    else if (tableEntry.IsTable())
+    {
+        nextTable = reinterpret_cast<L2PageTable*>(PhysicalMemoryApertureBase + (tableEntry.table.output_addr << 12));
+    }
+    printf("L1 table entry at %zX: %llX\n", &tableEntry, reinterpret_cast<uint64_t&>(tableEntry));
+    MapOnePage(*nextTable, virtualPageIndex & ~(UINTPTR_MAX << 18), entry);
+}
+
+void MapOnePage(uintptr_t virtualPageIndex, L3Entry entry)
+{
+    printf("Mapping virtual page %zX to physical page %zX\n", virtualPageIndex, entry.page.output_addr << 12);
+    MapOnePage(*l1_page_table, virtualPageIndex, entry);
+}
+
+void* AllocatePages(uint32_t num_pages)
+{
+    auto const basePage = VirtualMemoryAllocator.Allocate(num_pages) + VirtualMemoryAllocatorPageOffset;
+    for (uint32_t i = 0; i < num_pages; ++i)
+    {
+        // Get a physical page and map it to the virtual page
+        auto const physicalPageAddress = (PhysicalMemoryAllocator.Allocate(1) + PhysicalMemoryAllocatorPageOffset) << 12;
+        printf("Mapping virtual page %zX to physical page %zX\n", basePage + i, physicalPageAddress);
+
+        //printf("L1 table entry was %llX\n", reinterpret_cast<uint64_t&>(l1_page_table->entries[basePage >> 18]));
+        //l1_page_table->entries[basePage >> 18] = L1NormalMem(physicalPageAddress);
+        //printf("L1 table entry is %llX\n", reinterpret_cast<uint64_t&>(l1_page_table->entries[basePage >> 18]));
+
+        MapOnePage(basePage + i, L3NormalMem(physicalPageAddress));
+    }
+    // Flush the TLB for the newly mapped virtual pages
+    //for (uint32_t i = 0; i < num_pages; ++i)
+    //{
+    //    asm volatile ("tlbi vae1, %0" : : "r"((basePage + i) << 12) : "memory");
+    //}
+    Cpu::InstructionSynchronizationBarrier();
+    Cpu::InnerDataSynchronizationBarrier();
+    return reinterpret_cast<void*>(basePage * 0x1000); // Return the virtual address of the first page
+}
 
 //uint64_t GetMairEl1()
 //{
