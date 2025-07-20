@@ -5,6 +5,7 @@
 #include <iostream>
 #include <cstdlib>
 #include <vector>
+#include <random>
 
 #include "Containers.h"
 
@@ -37,7 +38,7 @@ namespace Cpu
 }
 }
 
-void Test_Containers_FindConsecutiveZerosAligned()
+bool Test_Containers_FindConsecutiveZerosAligned()
 try
 {
     using namespace Containers;
@@ -238,13 +239,15 @@ try
     }
 
     std::cout << "FindConsecutiveZerosAligned tests passed!" << std::endl;
+    return true;
 }
 catch (std::exception const& e)
 {
     std::cerr << "Containers::FindConsecutiveZerosAligned test failed: " << e.what() << std::endl;
+    return false;
 }
 
-void Test_Containers_CircularFifo()
+bool Test_Containers_CircularFifo()
 try
 {
     using namespace Containers;
@@ -385,13 +388,15 @@ try
     }
 
     std::cout << "CircularFifo tests passed!" << std::endl;
+    return true;
 }
 catch (std::exception const& e)
 {
     std::cerr << "Containers::CircularFifo test failed: " << e.what() << std::endl;
+    return false;
 }
 
-void Test_Containers_FindConsecutiveZeros()
+bool Test_Containers_FindConsecutiveZeros()
 try
 {
     using namespace Containers;
@@ -631,13 +636,233 @@ try
     }
 
     std::cout << "FindConsecutiveZeros tests passed!" << std::endl;
+    return true;
 }
 catch (std::exception const& e)
 {
     std::cerr << "Containers::FindConsecutiveZeros test failed: " << e.what() << std::endl;
+    return false;
 }
 
-void Test_Containers_PoolAllocator()
+bool Test_Containers_PoolAllocator_StressTest()
+try
+{
+    using namespace Containers;
+
+    std::cout << "Starting PoolAllocator stress tests..." << std::endl;
+    
+    // Generate and print random seed for reproducibility
+    std::random_device rd;
+    uint32_t seed = rd();
+    std::cout << "Random seed: " << seed << " (use this to reproduce the test)" << std::endl;
+    
+    std::mt19937 gen(seed);
+
+    // Stress test 1: Basic random allocation and deallocation
+    {
+        PoolAllocator<64> pool;
+        std::cout << "Starting basic stress test (random allocation/deallocation)..." << std::endl;
+        
+        struct Allocation {
+            uint32_t start;
+            uint32_t count;
+            bool active;
+        };
+        
+        std::vector<Allocation> allocations;
+        const int iterations = 1000;
+        int successfulAllocations = 0;
+        int successfulDeallocations = 0;
+        
+        std::uniform_int_distribution<int> coinFlip(0, 1);
+        std::uniform_int_distribution<uint32_t> smallCount(1, 8);
+        
+        for (int i = 0; i < iterations; ++i) {
+            if (coinFlip(gen) == 0 && !allocations.empty()) {
+                // Try to deallocate a random active allocation
+                std::vector<size_t> activeIndices;
+                for (size_t j = 0; j < allocations.size(); ++j) {
+                    if (allocations[j].active) {
+                        activeIndices.push_back(j);
+                    }
+                }
+                
+                if (!activeIndices.empty()) {
+                    std::uniform_int_distribution<size_t> indexDist(0, activeIndices.size() - 1);
+                    size_t idx = activeIndices[indexDist(gen)];
+                    auto const returnedCount = pool.GetBlockSize(allocations[idx].start);
+                    if (returnedCount != allocations[idx].count)
+                    {
+                        std::cout << "Allocation " << idx << " is " << allocations[idx].count << " slots at " << allocations[idx].start << " but got " << returnedCount << std::endl;
+                        throw std::runtime_error("Allocated block size does not match requested size");
+                    }
+                    pool.Deallocate(allocations[idx].start);
+                    allocations[idx].active = false;
+                    successfulDeallocations++;
+                }
+            } else {
+                // Try to allocate a random number of slots (1-8)
+                uint32_t count = smallCount(gen);
+                uint32_t start = pool.Allocate(count);
+                
+                if (start != UINT32_MAX) {
+                    auto const returnedCount = pool.GetBlockSize(start);
+                    if (returnedCount != count)
+                    {
+                        std::cout << "Allocation " << allocations.size() << " is " << count << " slots at " << start << " but got " << returnedCount << std::endl;
+                        throw std::runtime_error("Allocated block size does not match requested size");
+                    }
+                    allocations.push_back({start, count, true});
+                    successfulAllocations++;
+                }
+            }
+            
+            // Occasionally print progress
+            if (i % 200 == 0) {
+                std::cout << "Basic stress test iteration " << i << "/1000, allocations: " 
+                         << successfulAllocations << ", deallocations: " << successfulDeallocations << std::endl;
+            }
+        }
+        
+        // Clean up remaining allocations
+        for (const auto& alloc : allocations) {
+            if (alloc.active) {
+                pool.Deallocate(alloc.start);
+                successfulDeallocations++;
+            }
+        }
+        
+        std::cout << "Basic stress test completed - Total allocations: " << successfulAllocations 
+                 << ", Total deallocations: " << successfulDeallocations << std::endl;
+        
+        if (successfulAllocations < 100) {
+            throw std::runtime_error("Basic stress test didn't perform enough allocations");
+        }
+    }
+
+    // Stress test 2: Enhanced test with larger allocations
+    {
+        static constexpr uint32_t PoolSize = 2000;
+        PoolAllocator<PoolSize> largePool;
+        std::cout << "Starting enhanced stress test with larger allocations..." << std::endl;
+        
+        struct Allocation {
+            uint32_t start;
+            uint32_t count;
+            bool active;
+        };
+        
+        std::vector<Allocation> allocations;
+        const int iterations = 1000;
+        int successfulAllocations = 0;
+        int successfulDeallocations = 0;
+        int largeAllocations = 0; // Track allocations > 64
+        
+        std::uniform_int_distribution<int> coinFlip(0, 1);
+        std::uniform_int_distribution<int> sizeCategory(0, 99);
+        std::uniform_int_distribution<uint32_t> smallSize(1, 8);      // Small allocations (1-8)
+        std::uniform_int_distribution<uint32_t> mediumSize(10, 49);   // Medium allocations (10-49)
+        std::uniform_int_distribution<uint32_t> largeSize(100, 294);  // Large allocations (100-294)
+        
+        for (int i = 0; i < iterations; ++i) {
+            if (coinFlip(gen) == 0 && !allocations.empty()) {
+                // Try to deallocate a random active allocation
+                std::vector<size_t> activeIndices;
+                for (size_t j = 0; j < allocations.size(); ++j) {
+                    if (allocations[j].active) {
+                        activeIndices.push_back(j);
+                    }
+                }
+                
+                if (!activeIndices.empty()) {
+                    std::uniform_int_distribution<size_t> indexDist(0, activeIndices.size() - 1);
+                    size_t idx = activeIndices[indexDist(gen)];
+                    auto const returnedCount = largePool.GetBlockSize(allocations[idx].start);
+                    if (returnedCount != allocations[idx].count)
+                    {
+                        std::cout << "Allocation " << idx << " is " << allocations[idx].count << " slots at " << allocations[idx].start << " but got " << returnedCount << std::endl;
+                        throw std::runtime_error("Allocated block size does not match requested size");
+                    }
+
+                    largePool.Deallocate(allocations[idx].start);
+                    allocations[idx].active = false;
+                    successfulDeallocations++;
+                }
+            } else {
+                // Try to allocate a random number of slots with bias toward larger
+                uint32_t count;
+                int categoryRoll = sizeCategory(gen);
+                if (categoryRoll < 50) {
+                    count = smallSize(gen);        // Small allocations (1-8)
+                } else if (categoryRoll < 80) {
+                    count = mediumSize(gen);       // Medium allocations (10-49)
+                } else {
+                    count = largeSize(gen);        // Large allocations (100-294)
+                    largeAllocations++;
+                }
+                
+                uint32_t start = largePool.Allocate(count);
+
+                if (start != UINT32_MAX) {
+                    auto const returnedCount = largePool.GetBlockSize(start);
+                    if (returnedCount != count)
+                    {
+                        std::cout << "Allocation " << allocations.size() << " is " << count << " slots at " << start << " but got " << returnedCount << std::endl;
+                        throw std::runtime_error("Allocated block size does not match requested size");
+                    }
+                    allocations.push_back({start, count, true});
+                    successfulAllocations++;
+                }
+            }
+
+            // Occasionally print progress
+            if (i % 200 == 0) {
+                std::cout << "Enhanced stress test iteration " << i << "/1000, allocations: " 
+                         << successfulAllocations << ", deallocations: " << successfulDeallocations 
+                         << ", large allocations: " << largeAllocations << std::endl;
+            }
+        }
+        
+        // Clean up remaining allocations (only the safe ones)
+        for (const auto& alloc : allocations) {
+            if (alloc.active)
+            {
+                largePool.Deallocate(alloc.start);
+                successfulDeallocations++;
+            }
+        }
+        
+        std::cout << "Enhanced stress test completed - Total allocations: " << successfulAllocations 
+                 << ", Total deallocations: " << successfulDeallocations 
+                 << ", Large allocations (>64): " << largeAllocations << std::endl;
+        
+        auto const fullAllocation = largePool.Allocate(PoolSize);
+        if (fullAllocation == 0) {
+            std::cout << "Pool was appropriately empty after enhanced stress test" << std::endl;
+            largePool.Deallocate(fullAllocation);
+        } else {
+            throw std::runtime_error("Pool was not empty after enhanced stress test");
+        }
+
+        if (successfulAllocations < 100) {
+            throw std::runtime_error("Enhanced stress test didn't perform enough allocations");
+        }
+        
+        if (largeAllocations < 10) {
+            throw std::runtime_error("Enhanced stress test didn't perform enough large allocations");
+        }
+    }
+
+    std::cout << "PoolAllocator stress tests passed!" << std::endl;
+    return true;
+}
+catch(const std::exception& e)
+{
+    std::cerr << "Containers::PoolAllocator stress test failed: " << e.what() << '\n';
+    return false;
+}
+
+bool Test_Containers_PoolAllocator()
 try
 {
     using namespace Containers;
@@ -810,89 +1035,6 @@ try
         std::cout << "Error condition tests passed" << std::endl;
     }
 
-    // Stress test: Random allocation and deallocation
-    {
-        PoolAllocator<64> pool;
-        std::cout << "Starting stress test (random allocation/deallocation)..." << std::endl;
-        
-        struct Allocation {
-            uint32_t start;
-            uint32_t count;
-            bool active;
-        };
-        
-        std::vector<Allocation> allocations;
-        const int iterations = 1000;
-        int successfulAllocations = 0;
-        int successfulDeallocations = 0;
-        
-        // Seed for reproducible test
-        std::srand(42);
-        
-        for (int i = 0; i < iterations; ++i) {
-            if (std::rand() % 2 == 0 && !allocations.empty()) {
-                // Try to deallocate a random active allocation
-                std::vector<size_t> activeIndices;
-                for (size_t j = 0; j < allocations.size(); ++j) {
-                    if (allocations[j].active) {
-                        activeIndices.push_back(j);
-                    }
-                }
-                
-                if (!activeIndices.empty()) {
-                    size_t idx = activeIndices[std::rand() % activeIndices.size()];
-                    //std::cout << "Deallocating allocation " << idx << " " << allocations[idx].count << " slots at " << allocations[idx].start << std::endl;
-                    auto const returnedCount = pool.GetBlockSize(allocations[idx].start);
-                    if (returnedCount != allocations[idx].count)
-                    {
-                        std::cout << "Allocation " << idx << " is " << allocations[idx].count << " slots at " << allocations[idx].start << " but got " << returnedCount << std::endl;
-                        throw std::runtime_error("Allocated block size does not match requested size");
-                    }
-                    pool.Deallocate(allocations[idx].start);
-                    allocations[idx].active = false;
-                    successfulDeallocations++;
-                }
-            } else {
-                // Try to allocate a random number of slots (1-8)
-                uint32_t count = 1 + (std::rand() % 8);
-                uint32_t start = pool.Allocate(count);
-                
-                if (start != UINT32_MAX) {
-                    //std::cout << "Allocated allocation " << allocations.size() << " is " << count << " slots at " << start << std::endl;
-                    auto const returnedCount = pool.GetBlockSize(start);
-                    if (returnedCount != count)
-                    {
-                        std::cout << "Allocation " << allocations.size() << " is " << count << " slots at " << start << " but got " << returnedCount << std::endl;
-                        throw std::runtime_error("Allocated block size does not match requested size");
-                    }
-                    allocations.push_back({start, count, true});
-                    successfulAllocations++;
-                }
-            }
-            
-            // Occasionally print progress
-            if (i % 200 == 0) {
-                std::cout << "Stress test iteration " << i << "/1000, allocations: " 
-                         << successfulAllocations << ", deallocations: " << successfulDeallocations << std::endl;
-            }
-        }
-        
-        // Clean up remaining allocations
-        for (const auto& alloc : allocations) {
-            if (alloc.active) {
-                pool.Deallocate(alloc.start);
-                successfulDeallocations++;
-            }
-        }
-        
-        std::cout << "Stress test completed - Total allocations: " << successfulAllocations 
-                 << ", Total deallocations: " << successfulDeallocations << std::endl;
-        
-        if (successfulAllocations < 100) {
-            throw std::runtime_error("Stress test didn't perform enough allocations");
-        }
-    }
-
     // Test cross-word allocation (for pools > 64)
     {
         PoolAllocator<128> largePool;
@@ -1046,128 +1188,14 @@ try
         
         std::cout << "Cross-word fragmentation tests passed" << std::endl;
     }
-    
-    // Enhanced stress test with larger allocations
-    {
-        static constexpr uint32_t PoolSize = 2000;
-        PoolAllocator<PoolSize> largePool;
-        std::cout << "Starting enhanced stress test with larger allocations..." << std::endl;
-        
-        struct Allocation {
-            uint32_t start;
-            uint32_t count;
-            bool active;
-        };
-        
-        std::vector<Allocation> allocations;
-        const int iterations = 1000;
-        int successfulAllocations = 0;
-        int successfulDeallocations = 0;
-        int largeAllocations = 0; // Track allocations > 64
-        
-        // Seed for reproducible test
-        std::srand(123); // Different seed for variety
-        
-        for (int i = 0; i < iterations; ++i) {
-            if (std::rand() % 2 == 0 && !allocations.empty()) {
-                // Try to deallocate a random active allocation
-                std::vector<size_t> activeIndices;
-                for (size_t j = 0; j < allocations.size(); ++j) {
-                    if (allocations[j].active) {
-                        activeIndices.push_back(j);
-                    }
-                }
-                
-                if (!activeIndices.empty()) {
-                    size_t idx = activeIndices[std::rand() % activeIndices.size()];
-                    //std::cout << "Deallocating allocation " << idx << " " << allocations[idx].count << " slots at " << allocations[idx].start << std::endl;
-                    auto const returnedCount = largePool.GetBlockSize(allocations[idx].start);
-                    if (returnedCount != allocations[idx].count)
-                    {
-                        std::cout << "Allocation " << idx << " is " << allocations[idx].count << " slots at " << allocations[idx].start << " but got " << returnedCount << std::endl;
-                        throw std::runtime_error("Allocated block size does not match requested size");
-                    }
-
-                    largePool.Deallocate(allocations[idx].start);
-                    allocations[idx].active = false;
-                    successfulDeallocations++;
-                }
-            } else {
-                // Try to allocate a random number of slots (1-80, with bias toward larger)
-                uint32_t count;
-                int randVal = std::rand() % 100;
-                if (randVal < 50) {
-                    count = 1 + (std::rand() % 8);        // Small allocations (1-8)
-                } else if (randVal < 80) {
-                    count = 10 + (std::rand() % 40);      // Medium allocations (10-49)
-                } else {
-                    count = 100 + (std::rand() % 30) * 7;      // Large allocations (100-294)
-                    largeAllocations++;
-                }
-                
-                uint32_t start = largePool.Allocate(count);
-
-                if (start != UINT32_MAX) {
-                    //std::cout << "Allocated allocation " << allocations.size() << " is " << count << " slots at " << start << std::endl;
-                    auto const returnedCount = largePool.GetBlockSize(start);
-                    if (returnedCount != count)
-                    {
-                        std::cout << "Allocation " << allocations.size() << " is " << count << " slots at " << start << " but got " << returnedCount << std::endl;
-                        throw std::runtime_error("Allocated block size does not match requested size");
-                    }
-                    allocations.push_back({start, count, true});
-                    successfulAllocations++;
-                }
-                else
-                {
-                    //std::cout << "Failed to allocate " << count << " slots in large pool" << std::endl;
-                }
-            }
-
-            // Occasionally print progress
-            if (i % 200 == 0) {
-                std::cout << "Enhanced stress test iteration " << i << "/1000, allocations: " 
-                         << successfulAllocations << ", deallocations: " << successfulDeallocations 
-                         << ", large allocations: " << largeAllocations << std::endl;
-            }
-        }
-        
-        // Clean up remaining allocations (only the safe ones)
-        for (const auto& alloc : allocations) {
-            if (alloc.active)
-            {
-                //std::cout << std::format("Cleaning: 0x{:016x}", reinterpret_cast<uint64_t*>(&largePool)[4]) << std::endl;
-                largePool.Deallocate(alloc.start);
-                successfulDeallocations++;
-            }
-        }
-        
-        std::cout << "Enhanced stress test completed - Total allocations: " << successfulAllocations 
-                 << ", Total deallocations: " << successfulDeallocations 
-                 << ", Large allocations (>64): " << largeAllocations << std::endl;
-        
-        auto const fullAllocation = largePool.Allocate(PoolSize);
-        if (fullAllocation == 0) {
-            std::cout << "Pool was appropriately empty after stress test" << std::endl;
-            largePool.Deallocate(fullAllocation);
-        } else {
-            throw std::runtime_error("Pool was not empty after stress test");
-        }
-
-        if (successfulAllocations < 100) {
-            throw std::runtime_error("Enhanced stress test didn't perform enough allocations");
-        }
-        
-        if (largeAllocations < 10) {
-            throw std::runtime_error("Enhanced stress test didn't perform enough large allocations");
-        }
-    }
 
     std::cout << "PoolAllocator tests passed!" << std::endl;
+    return true;
 }
 catch(const std::exception& e)
 {
     std::cerr << "Containers::PoolAllocator test failed: " << e.what() << '\n';
+    return false;
 }
 
 
@@ -1175,8 +1203,52 @@ int main()
 {
     std::cout << "Running RPi Unit Tests..." << std::endl;
 
-    Test_Containers_CircularFifo();
-    Test_Containers_FindConsecutiveZeros();
-    Test_Containers_FindConsecutiveZerosAligned();
-    Test_Containers_PoolAllocator();
+    struct TestResult {
+        std::string name;
+        bool passed;
+    };
+
+    std::vector<TestResult> results;
+
+    // Run all tests and track results
+    results.push_back({"CircularFifo"               , Test_Containers_CircularFifo               ()});
+    results.push_back({"FindConsecutiveZeros"       , Test_Containers_FindConsecutiveZeros       ()});
+    results.push_back({"FindConsecutiveZerosAligned", Test_Containers_FindConsecutiveZerosAligned()});
+    results.push_back({"PoolAllocator"              , Test_Containers_PoolAllocator              ()});
+    results.push_back({"PoolAllocator Stress"       , Test_Containers_PoolAllocator_StressTest   ()});
+
+    // Count passed and failed tests
+    int passedCount = 0;
+    int failedCount = 0;
+    std::vector<std::string> failedTests;
+
+    for (const auto& result : results) {
+        if (result.passed) {
+            passedCount++;
+        } else {
+            failedCount++;
+            failedTests.push_back(result.name);
+        }
+    }
+
+    // Print summary
+    std::cout << "\n" << std::string(50, '=') << std::endl;
+    std::cout << "TEST SUMMARY" << std::endl;
+    std::cout << std::string(50, '=') << std::endl;
+    std::cout << "Total tests: " << results.size() << std::endl;
+    std::cout << "Passed: " << passedCount << std::endl;
+    std::cout << "Failed: " << failedCount << std::endl;
+
+    if (failedCount > 0) {
+        std::cout << "\nFailed tests:" << std::endl;
+        for (const auto& testName : failedTests) {
+            std::cout << "  - " << testName << std::endl;
+        }
+        std::cout << std::string(50, '=') << std::endl;
+        return 1;
+    } else {
+        std::cout << "\nAll tests passed successfully!" << std::endl;
+        std::cout << std::string(50, '=') << std::endl;
+        return 0;
+    }
 }
