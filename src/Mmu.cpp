@@ -274,21 +274,21 @@ References:
 // Each entry maps 1G of virtual memory, for a total of 512G per table.
 struct alignas(0x1000) L1PageTable
 {
-    L1Entry entries[512]; // 512 entries, each 8 bytes
+    L1Entry entries[512]{}; // 512 entries, each 8 bytes
 };
 
 // L2 page table: map RAM, video, and peripherals
 // Each entry maps 2M of virtual memory, for a total of 1G per table.
 struct alignas(0x1000) L2PageTable
 {
-    L2Entry entries[512]; // 512 entries, each 8 bytes
+    L2Entry entries[512]{}; // 512 entries, each 8 bytes
 };
 
 // L3 page table: map RAM, video, and peripherals
 // Each entry maps 4K of virtual memory, for a total of 2M per table.
 struct alignas(0x1000) L3PageTable
 {
-    L3Entry entries[512]; // 512 entries, each 8 bytes
+    L3Entry entries[512]{}; // 512 entries, each 8 bytes
 };
 
 alignas(0x1000) static constinit L2PageTable l2_page_table = []() constexpr
@@ -424,8 +424,7 @@ void MapOnePage(L2PageTable& table, uintptr_t virtualPageIndex, L3Entry entry)
         tableEntry = TableDescriptor(tablePhysicalAddress);
         // Clean the cache line containing the modified page table entry
         asm volatile ("dc civac, %0" : : "r"(&tableEntry) : "memory");
-        nextTable = reinterpret_cast<L3PageTable*>(PhysicalMemoryApertureBase + tablePhysicalAddress);
-        *nextTable = {};
+        nextTable = new(reinterpret_cast<void*>(PhysicalMemoryApertureBase + tablePhysicalAddress)) L3PageTable;
     }
     else if (tableEntry.IsTable())
     {
@@ -447,8 +446,7 @@ void MapOnePage(L1PageTable& table, uintptr_t virtualPageIndex, L3Entry entry)
         tableEntry = TableDescriptor(tablePhysicalAddress);
         // Clean the cache line containing the modified page table entry
         asm volatile ("dc civac, %0" : : "r"(&tableEntry) : "memory");
-        nextTable = reinterpret_cast<L2PageTable*>(PhysicalMemoryApertureBase + tablePhysicalAddress);
-        *nextTable = {};
+        nextTable = new(reinterpret_cast<void*>(PhysicalMemoryApertureBase + tablePhysicalAddress)) L2PageTable;
     }
     else if (tableEntry.IsTable())
     {

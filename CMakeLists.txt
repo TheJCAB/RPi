@@ -20,6 +20,9 @@ target_compile_options(KernelRuntime INTERFACE
     -frtti
     #-fPIC
     -mcmodel=tiny
+    -mcpu=cortex-a53
+    #-fno-builtin-__atomic_compare_exchange
+    -mno-outline-atomics
     #-flto
     #-H
 )
