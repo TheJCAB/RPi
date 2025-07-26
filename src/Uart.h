@@ -62,7 +62,8 @@ public:
     void Unlock();
 
 private:
-    bool locked = false;
+    bool locked     = false;
+    bool wasEnabled = false;
 };
 
 }

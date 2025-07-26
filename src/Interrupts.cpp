@@ -285,7 +285,7 @@ extern "C" Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
     {
         if (pendingCoreInterrupts.CNTVIRQ)
         {
-            //Uart::Raw::Putc('@'); // Printf tracing of the handler.
+            //Uart::Putc('@'); // Printf tracing of the handler.
             auto const spark = CoreInterruptsData[coreId].VirtualTimerHandler();
             if (spark)
             {

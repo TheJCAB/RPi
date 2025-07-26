@@ -12,25 +12,34 @@ extern uint64_t const PerformanceFrequency;
 //[[noreturn]] void Panic(char const* message);
 [[noreturn]] void Panic(char const* fmt, ...);
 
-inline uint64_t DisableInterrupts()
+inline bool DisableInterrupts()
 {
     uint64_t state;
     asm volatile("mrs %0, daif" : "=r"(state));
     asm volatile("msr daifset, #2" ::: "memory");
-    return state;
+    return (state & 0x80) == 0;
 }
 
-inline void RestoreInterrupts(uint64_t state)
+inline void RestoreInterrupts(bool enabled)
 {
-    asm volatile("msr daif, %0" :: "r"(state) : "memory");
+    if (enabled)
+    {
+        // Reenable IRQs
+        asm volatile("msr daifclr, #2" ::: "memory");
+    }
+    else
+    {
+        // Disable IRQs
+        asm volatile("msr daifset, #2" ::: "memory");
+    }
 }
 
 struct WithInterruptsDisabled
 {
-    uint32_t const State;
+    bool const WasEnabled;
 
-    WithInterruptsDisabled() : State(DisableInterrupts()) {}
-    ~WithInterruptsDisabled() { RestoreInterrupts(State); }
+    WithInterruptsDisabled() : WasEnabled(DisableInterrupts()) {}
+    ~WithInterruptsDisabled() { RestoreInterrupts(WasEnabled); }
 
     WithInterruptsDisabled(WithInterruptsDisabled const&) = delete;
     WithInterruptsDisabled(WithInterruptsDisabled&&) = delete;

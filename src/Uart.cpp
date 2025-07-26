@@ -7,6 +7,7 @@
 #include "Gpio.h"
 
 #include <atomic>
+#include <mutex>
 
 namespace Uart
 {
@@ -34,7 +35,8 @@ struct PL011Registers
 static constexpr PL011Registers PL011{};
 
 bool useMutex = false;
-std::atomic<bool> Mutex;
+//std::atomic<bool> Mutex;
+std::mutex Mutex;
 
 void Init()
 {
@@ -200,95 +202,31 @@ template void PutDec(bool     value);
 
 } // namespace Raw
 
-
-
-void Putc(char c)
-{
-    if (useMutex) while (Mutex.exchange(true)) {} // Spin until mutex is available
-    Raw::Putc(c);
-    if (useMutex) Mutex.store(false); // Release mutex
-}
-
-char Getc()
-{
-    if (useMutex) while (Mutex.exchange(true)) {} // Spin until mutex is available
-    char c = Raw::Getc();
-    if (useMutex) Mutex.store(false); // Release mutex
-    return c;
-}
-
-char TryGetc()
-{
-    if (useMutex && Mutex.exchange(true)) return 0;
-    char c = Raw::TryGetc();
-    if (useMutex) Mutex.store(false); // Release mutex
-    return c;
-}
-
-void Puts(char const* str)
-{
-    if (useMutex) while (Mutex.exchange(true)) {} // Spin until mutex is available
-    Raw::Puts(str);
-    if (useMutex) Mutex.store(false); // Release mutex
-}
-
-void PutHex(auto value)
-{
-    if (useMutex) while (Mutex.exchange(true)) {} // Spin until mutex is available
-    Raw::PutHex(value);
-    if (useMutex) Mutex.store(false); // Release mutex
-}
-
-void PutBin(auto value)
-{
-    if (useMutex) while (Mutex.exchange(true)) {} // Spin until mutex is available
-    Raw::PutBin(value);
-    if (useMutex) Mutex.store(false); // Release mutex
-}
-
-void PutDec(auto value)
-{
-    if (useMutex) while (Mutex.exchange(true)) {} // Spin until mutex is available
-    Raw::PutDec(value);
-    if (useMutex) Mutex.store(false); // Release mutex
-}
-
-template void PutHex(uint64_t value);
-template void PutHex(uint32_t value);
-template void PutHex(uint16_t value);
-template void PutHex(uint8_t  value);
-template void PutHex(bool     value);
-
-template void PutBin(uint64_t value);
-template void PutBin(uint32_t value);
-template void PutBin(uint16_t value);
-template void PutBin(uint8_t  value);
-template void PutBin(bool     value);
-
-template void PutDec(uint64_t value);
-template void PutDec(uint32_t value);
-template void PutDec(uint16_t value);
-template void PutDec(uint8_t  value);
-template void PutDec(bool     value);
-
 LockedStream::LockedStream(bool tryOnly)
 {
     if (useMutex)
     {
-        // Spin until mutex is available
-        while (Mutex.exchange(true))
+        wasEnabled = Cpu::DisableInterrupts();
+        if (tryOnly)
         {
-            if (tryOnly) return;
+            locked = Mutex.try_lock();
+            if (!locked) Cpu::RestoreInterrupts(wasEnabled);
+        }
+        else
+        {
+            // Lock the mutex
+            Mutex.lock();
+            locked = true;
         }
     }
-    locked = true;
 }
 
 LockedStream::~LockedStream()
 {
     if (locked && useMutex)
     {
-        Mutex.store(false); // Release mutex
+        Mutex.unlock();
+        Cpu::RestoreInterrupts(wasEnabled);
     }
 }
 
@@ -296,7 +234,8 @@ void LockedStream::Unlock()
 {
     if (locked && useMutex)
     {
-        Mutex.store(false); // Release mutex
+        Mutex.unlock();
+        Cpu::RestoreInterrupts(wasEnabled);
     }
     locked = false;
 }
@@ -355,6 +294,61 @@ template void LockedStream::PutDec(uint32_t value);
 template void LockedStream::PutDec(uint16_t value);
 template void LockedStream::PutDec(uint8_t  value);
 template void LockedStream::PutDec(bool     value);
+
+
+void Putc(char c)
+{
+    LockedStream{}.Putc(c);
+}
+
+char Getc()
+{
+    return LockedStream{}.Getc();
+}
+
+char TryGetc()
+{
+    return LockedStream{}.TryGetc();
+}
+
+void Puts(char const* str)
+{
+    LockedStream{}.Puts(str);
+}
+
+void PutHex(auto value)
+{
+    LockedStream{}.PutHex(value);
+}
+
+void PutBin(auto value)
+{
+    LockedStream{}.PutBin(value);
+}
+
+void PutDec(auto value)
+{
+    LockedStream{}.PutDec(value);
+}
+
+template void PutHex(uint64_t value);
+template void PutHex(uint32_t value);
+template void PutHex(uint16_t value);
+template void PutHex(uint8_t  value);
+template void PutHex(bool     value);
+
+template void PutBin(uint64_t value);
+template void PutBin(uint32_t value);
+template void PutBin(uint16_t value);
+template void PutBin(uint8_t  value);
+template void PutBin(bool     value);
+
+template void PutDec(uint64_t value);
+template void PutDec(uint32_t value);
+template void PutDec(uint16_t value);
+template void PutDec(uint8_t  value);
+template void PutDec(bool     value);
+
 
 }
 // namespace Uart
