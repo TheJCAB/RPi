@@ -6,16 +6,35 @@
 namespace Mmu
 {
 
+constexpr uint32_t PageSize = 4096;
+
 void Init();
 
 void EnableCachesAndMMU();
 
-void* AllocatePages(uint32_t num_pages);
+void* AllocatePages         (uint32_t pageCount);
+void* AllocateAndCommitPages(uint32_t pageCount);
+
+void CommitPages(void const* address, uint32_t pageCount);
 
 template < typename T >
-inline T* AllocatePages(uint32_t num_pages)
+inline T* AllocatePages(uint32_t pageCount)
 {
-    return static_cast<T*>(AllocatePages(num_pages));
+    return static_cast<T*>(AllocatePages(pageCount));
+}
+
+template < typename T >
+inline T* AllocateAndCommitPages(uint32_t pageCount)
+{
+    return static_cast<T*>(AllocateAndCommitPages(pageCount));
+}
+
+void* AllocateGpuMemory(uint32_t pageCount);
+
+template < typename T >
+inline T* AllocateGpuMemory(uint32_t pageCount)
+{
+    return static_cast<T*>(AllocateGpuMemory(pageCount));
 }
 
 }

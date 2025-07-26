@@ -37,6 +37,7 @@
 
 #include "Cpu.h"
 #include "Mmio.h"
+#include "Mmu.h"
 #include "Mailbox.h"
 #include "Timer.h"
 #include "Processor.h"
@@ -437,9 +438,12 @@ HCDHost::HCDHost(uintptr_t baseAddress, ClockRate clock, uint8_t numChannels)
 
     m_NumChannels = numChannels > MaxChannels ? MaxChannels : numChannels;
 
+    auto const dmaBuffer = static_cast<std::byte*>(Mmu::AllocateGpuMemory((m_NumChannels * HCDChannel::MaxPacketSize + Mmu::PageSize + 1) / Mmu::PageSize));
+
     for (uint8_t channel = 0; channel < m_NumChannels; ++channel)
     {
-        m_Channels[channel] = std::make_unique<HCDChannel>(*this, baseAddress + 0x100u + 0x20u * channel, channel);
+        std::span<std::byte, HCDChannel::MaxPacketSize> channelDmaBuffer{ dmaBuffer + channel * HCDChannel::MaxPacketSize, HCDChannel::MaxPacketSize };
+        m_Channels[channel] = std::make_unique<HCDChannel>(*this, baseAddress + 0x100u + 0x20u * channel, channel, channelDmaBuffer);
     }
 }
 

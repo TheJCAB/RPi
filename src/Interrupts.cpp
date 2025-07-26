@@ -3,10 +3,12 @@
 #include "Interrupts.h"
 #include "Scheduler.h"
 
+
 #include "Cpu.h"
 #include "Mmio.h"
 #include "Timer.h"
 #include "Uart.h"
+#include "Debugger.h"
 
 #include <stdint.h>
 
@@ -266,13 +268,29 @@ void DisableCoreVirtualTimerInterrupt()
 extern "C" Scheduler::ThreadInfo* InterruptDispatcher(ThreadContext* context, uint32_t code)
 {
     auto const coreId = Cpu::mpidr_el1->CoreId;
+
+    //static uint32_t contextCount = 0;
+    //if (coreId == 0 && (++contextCount & 0x3F) == 0)
+    //{
+    //    Debugger::RawPrintThreadContext(context);
+    //}
+
     auto& registers = RefCoreInterruptRegisters(coreId);
 
+    uint32_t retryCount = 100;
     while (auto pendingCoreInterrupts = registers.IrqPending.get())
     {
         if (pendingCoreInterrupts.CNTVIRQ)
         {
+            //Uart::Raw::Putc('@');
             CoreInterruptsData[coreId].VirtualTimerHandler();
+        }
+        if (--retryCount == 0)
+        {
+            Uart::Raw::Puts("Panic: Unhandled core interrupt: ");
+            Uart::Raw::PutBin(pendingCoreInterrupts.Raw32);
+            Uart::Raw::Puts("\n");
+            Cpu::Halt();
         }
     }
 
@@ -283,6 +301,7 @@ extern "C" Scheduler::ThreadInfo* InterruptDispatcher(ThreadContext* context, ui
     }
 
     // Check for basic IRQs
+    retryCount = 100;
     while (auto basicPending = IrqBasicPending.get())
     {
         Uart::Raw::Puts("Basic IRQs pending: ");
@@ -319,6 +338,14 @@ extern "C" Scheduler::ThreadInfo* InterruptDispatcher(ThreadContext* context, ui
             Uart::Raw::Puts("\n");
 
             // Handle IRQ2
+        }
+
+        if (--retryCount == 0)
+        {
+            Uart::Raw::Puts("Panic: Unhandled SoC interrupt: ");
+            Uart::Raw::PutBin(basicPending.Raw32);
+            Uart::Raw::Puts("\n");
+            Cpu::Halt();
         }
     }
 

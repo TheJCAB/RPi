@@ -1,6 +1,7 @@
 
 #include "Cpu.h"
 #include "Uart.h"
+#include "Heap.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -169,6 +170,18 @@ constexpr std::align_val_t MinHeapAlign{ 16 };
 
 static std::atomic<uintptr_t> CurrentHeapPos = 0;
 
+Heap::Heap* g_globalHeap = nullptr;
+
+void InitGlobalHeap()
+{
+    g_globalHeap = Heap::CreateHeap();
+    if (!g_globalHeap)
+    {
+        Uart::Raw::Puts("Failed to create global heap\n");
+        Cpu::Halt();
+    }
+}
+
 void *HeapAlloc(size_t size, std::align_val_t alignVal)
 {
     auto const alignment = static_cast<size_t>(alignVal);
@@ -177,6 +190,9 @@ void *HeapAlloc(size_t size, std::align_val_t alignVal)
         return nullptr; // Invalid alignment
     }
 
+    return Heap::AllocateAligned(g_globalHeap, size, alignment);
+
+/*
     auto currentHeapPos = CurrentHeapPos.load(std::memory_order_relaxed);
 
     for (;;)
@@ -193,6 +209,7 @@ void *HeapAlloc(size_t size, std::align_val_t alignVal)
             return result;
         }
     }
+*/
 }
 
 void HeapFree(void* ptr, size_t size) noexcept
@@ -204,8 +221,7 @@ void HeapFree(void* ptr, size_t size) noexcept
 
     if (size == 0)
     {
-        // Without size information there's no way to know how much to try to deallocate.
-        return;
+        return Heap::Deallocate(g_globalHeap, ptr);
     }
 
     // Simple heap implementation - no actual deallocation unless it's from the top.

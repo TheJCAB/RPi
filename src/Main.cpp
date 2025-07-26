@@ -17,6 +17,7 @@
 #include "Processor.h"
 #include "Mmu.h"
 #include "Scheduler.h"
+#include "Debugger.h"
 #include "Syscall.h"
 #include "Timer.h"
 #include "Run.h"
@@ -28,6 +29,8 @@
 #include "emb-stdio.h"
 
 void parse_dtb(void* dtb);
+
+void InitGlobalHeap();
 
 extern "C"
 {
@@ -75,6 +78,7 @@ void Core1()
     BootLib::PL011Uart uart{ Mmio::Base + BootLib::PL011Uart::Uart0RegistersOffset };
     uart.Puts("Core 1 says hello\n");
 
+#if 0
     uint8_t* buffer = Mmu::AllocatePages<uint8_t>(2);
     uart.Puts("Buffer is ");
     uart.PutHex(reinterpret_cast<uintptr_t>(buffer));
@@ -126,10 +130,12 @@ void Core1()
     uart.PutHex(reinterpret_cast<uint8_t*>(0x7'2000'0000)[0x3FFF]);
     uart.Puts("\n");
 
-//    Core1Ready = true; // Signal that core 1 is ready
-//
-//    asm volatile ("dmb ish"); // Release barrier
-//    asm volatile ("sev");
+#endif // 0
+
+    Core1Ready = true; // Signal that core 1 is ready
+
+    asm volatile ("dmb ish"); // Release barrier
+    asm volatile ("sev");
 
 
     while (true)
@@ -295,6 +301,8 @@ void Core0(void* dtb)
 
     Exception::Init();
 
+    InitGlobalHeap();
+
     parse_dtb(dtb);
     
     Uart::useMutex = true;
@@ -390,8 +398,22 @@ void Core0(void* dtb)
     Uart::Puts("\n\n\n");
 
     Scheduler::Init();
+    printf("Scheduler initialized. Main thread ThreadInfo: 0x%0X\n", reinterpret_cast<uintptr_t>(&Scheduler::GetCurrentThreadInfo()));
 
-    Scheduler::AddSpark({ [](uintptr_t){ Uart::Puts("Core 0 Spark running\n"); }, 0 });
+    auto const debuggerThread = Debugger::Init();
+
+    Debugger::DebuggerThread = debuggerThread;
+
+    if (Debugger::DebuggerThread == nullptr)
+    {
+        Uart::Puts("Debugger thread not initialized.\n");
+    }
+    else
+    {
+        Uart::Puts("Debugger thread initialized.\n");
+    }
+
+    Scheduler::AddSpark({ [](uintptr_t){ Uart::Raw::Puts("Core 0 Spark running\n"); }, 0 });
     Uart::Puts("Core 0 Spark is scheduled\n");
 
     // A naked syscall.

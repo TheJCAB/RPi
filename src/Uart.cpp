@@ -292,6 +292,15 @@ LockedStream::~LockedStream()
     }
 }
 
+void LockedStream::Unlock()
+{
+    if (locked && useMutex)
+    {
+        Mutex.store(false); // Release mutex
+    }
+    locked = false;
+}
+
 void LockedStream::Putc(char c)
 {
     if (locked) Raw::Putc(c);
@@ -349,3 +358,8 @@ template void LockedStream::PutDec(bool     value);
 
 }
 // namespace Uart
+
+extern "C" void RawPutc(char c)
+{
+    Uart::Raw::Putc(c);
+}

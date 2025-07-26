@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <new>
+#include <optional>
 #include <stdexcept>
 #include <typeinfo>
 
@@ -59,7 +60,13 @@ void __cxa_guard_release(uint64_t* guard_object) {
 }
 // extern "C"
 
+std::bad_optional_access::~bad_optional_access() noexcept {
+    // Default destructor implementation
+}
 
+const char* std::bad_optional_access::what() const noexcept {
+    return "bad_optional_access";
+}
 std::bad_array_new_length::bad_array_new_length() noexcept {
     // Default constructor implementation
 }

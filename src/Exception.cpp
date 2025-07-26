@@ -5,6 +5,7 @@
 #include "Uart.h"
 #include "Processor.h"
 #include "ThreadContext.h"
+#include "Debugger.h"
 
 namespace Exception
 {
@@ -105,7 +106,23 @@ void PutRawSynchronousExceptionInfo(Uart::LockedStream& stream, uint32_t code, u
     stream.Puts("\n");
 }
 
-extern "C" [[noreturn]] ThreadContext* MainExceptionHandler(ThreadContext* context, uint32_t code)
+void PutThreadContext(Uart::LockedStream& stream, ThreadContext* context)
+{
+    stream.Puts("Thread Context:\n");
+    for (uint32_t i = 0; i < 31; ++i)
+    {
+        stream.PutHex(context->X[i]);
+        stream.Puts(" X");
+        stream.PutDec(i);
+        stream.Puts("\n");
+    }
+    stream.PutHex(context->Sp);
+    stream.Puts(" SP\n");
+    stream.PutHex(context->Pc);
+    stream.Puts(" PC\n");
+}
+
+extern "C" Scheduler::ThreadInfo* MainExceptionHandler(ThreadContext* context, uint32_t code)
 {
     Uart::LockedStream stream(true);
 
@@ -184,6 +201,20 @@ extern "C" [[noreturn]] ThreadContext* MainExceptionHandler(ThreadContext* conte
             break;
     }
 
+    if (Debugger::DebuggerThread != nullptr)
+    {
+        stream.Puts("Entering debugger.\n\n");
+        stream.Unlock();
+
+        Debugger::DebuggerThread->Context->X[0] = reinterpret_cast<uintptr_t>(context);
+        return Debugger::DebuggerThread;
+    }
+    else
+    {
+        stream.Puts("No debugger thread available.\n");
+        PutThreadContext(stream, context);
+    }
+
     Processor::Halt();
 }
 
@@ -211,7 +242,7 @@ void Init()
     // Enable SError, IRQ and FIQ.
     // Note: SError means synchronous exceptions, all caused by the executing code,
     // but not necessarily means errors. It includes system calls, memory faults, etc...
-    Cpu::daifclr = 7;
+    Cpu::daifclr.set<7>();
 
     Cpu::InstructionSynchronizationBarrier();
 }

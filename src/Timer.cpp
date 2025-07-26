@@ -248,11 +248,13 @@ void HandleArmVirtualTimerInterrupt()
             Scheduler::AddSpark(spark);
 
             // TODO: The scheduler should use the timer to handle scheduling on its own
+            //Uart::Raw::Putc('$');
             Scheduler::YieldToSparks();
         }
     }
     
     // Set up the timer for the next scheduled event
+    //Uart::Raw::Putc('^');
     SetupTimerForNext();
 }
 

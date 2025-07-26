@@ -25,7 +25,9 @@ add_kernel_image(kernel8
     Run.cpp             Run.h
     Mmio.cpp            Mmio.h
     Mmu.cpp             Mmu.h
+    Heap.cpp            Heap.h
     Scheduler.cpp       Scheduler.h
+    Debugger.cpp        Debugger.h
     TimerExample.cpp    TimerExample.h
     Timer.cpp           Timer.h
     UsbDevices.cpp      UsbDevices.h

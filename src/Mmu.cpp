@@ -404,17 +404,17 @@ constexpr uintptr_t VirtualMemoryAllocatorPageOffset = VirtualMemoryAllocatorOff
 
 void MapOnePage(L3PageTable& table, uintptr_t virtualPageIndex, L3Entry entry)
 {
-    printf("L3 table %zX entry index is %zX\n", &table, virtualPageIndex);
+//    printf("L3 table %zX entry index is %zX\n", &table, virtualPageIndex);
     auto& tableEntry = table.entries[virtualPageIndex];
     tableEntry = entry;
     // Clean the cache line containing the modified page table entry
     asm volatile ("dc civac, %0" : : "r"(&tableEntry) : "memory");
-    printf("L3 table entry at %zX: %llX\n", &tableEntry, reinterpret_cast<uint64_t&>(tableEntry));
+//    printf("L3 table entry at %zX: %llX\n", &tableEntry, reinterpret_cast<uint64_t&>(tableEntry));
 }
 
 void MapOnePage(L2PageTable& table, uintptr_t virtualPageIndex, L3Entry entry)
 {
-    printf("L2 table %zX entry index is %zX\n", &table, virtualPageIndex >> 9);
+//    printf("L2 table %zX entry index is %zX\n", &table, virtualPageIndex >> 9);
     auto& tableEntry = table.entries[virtualPageIndex >> 9];
     L3PageTable* nextTable = nullptr;
     if (!tableEntry.IsValid())
@@ -430,13 +430,13 @@ void MapOnePage(L2PageTable& table, uintptr_t virtualPageIndex, L3Entry entry)
     {
         nextTable = reinterpret_cast<L3PageTable*>(PhysicalMemoryApertureBase + (tableEntry.table.output_addr << 12));
     }
-    printf("L2 table entry at %zX: %llX\n", &tableEntry, reinterpret_cast<uint64_t&>(tableEntry));
+//    printf("L2 table entry at %zX: %llX\n", &tableEntry, reinterpret_cast<uint64_t&>(tableEntry));
     MapOnePage(*nextTable, virtualPageIndex & ~(UINTPTR_MAX << 9), entry);
 }
 
 void MapOnePage(L1PageTable& table, uintptr_t virtualPageIndex, L3Entry entry)
 {
-    printf("L1 table %zX entry index is %zX\n", &table, virtualPageIndex >> 18);
+//    printf("L1 table %zX entry index is %zX\n", &table, virtualPageIndex >> 18);
     auto& tableEntry = table.entries[virtualPageIndex >> 18];
     L2PageTable* nextTable = nullptr;
     if (!tableEntry.IsValid())
@@ -452,24 +452,23 @@ void MapOnePage(L1PageTable& table, uintptr_t virtualPageIndex, L3Entry entry)
     {
         nextTable = reinterpret_cast<L2PageTable*>(PhysicalMemoryApertureBase + (tableEntry.table.output_addr << 12));
     }
-    printf("L1 table entry at %zX: %llX\n", &tableEntry, reinterpret_cast<uint64_t&>(tableEntry));
+//    printf("L1 table entry at %zX: %llX\n", &tableEntry, reinterpret_cast<uint64_t&>(tableEntry));
     MapOnePage(*nextTable, virtualPageIndex & ~(UINTPTR_MAX << 18), entry);
 }
 
 void MapOnePage(uintptr_t virtualPageIndex, L3Entry entry)
 {
-    printf("Mapping virtual page %zX to physical page %zX\n", virtualPageIndex, entry.page.output_addr << 12);
+//    printf("Mapping virtual page %zX to physical page %zX\n", virtualPageIndex, entry.page.output_addr << 12);
     MapOnePage(*l1_page_table, virtualPageIndex, entry);
 }
 
-void* AllocatePages(uint32_t num_pages)
+void CommitPages(uint32_t basePage, uint32_t pageCount)
 {
-    auto const basePage = VirtualMemoryAllocator.Allocate(num_pages) + VirtualMemoryAllocatorPageOffset;
-    for (uint32_t i = 0; i < num_pages; ++i)
+    for (uint32_t i = 0; i < pageCount; ++i)
     {
         // Get a physical page and map it to the virtual page
         auto const physicalPageAddress = (PhysicalMemoryAllocator.Allocate(1) + PhysicalMemoryAllocatorPageOffset) << 12;
-        printf("Mapping virtual page %zX to physical page %zX\n", basePage + i, physicalPageAddress);
+        //printf("Mapping virtual page %zX to physical page %zX\n", basePage + i, physicalPageAddress);
 
         //printf("L1 table entry was %llX\n", reinterpret_cast<uint64_t&>(l1_page_table->entries[basePage >> 18]));
         //l1_page_table->entries[basePage >> 18] = L1NormalMem(physicalPageAddress);
@@ -478,13 +477,38 @@ void* AllocatePages(uint32_t num_pages)
         MapOnePage(basePage + i, L3NormalMem(physicalPageAddress));
     }
     // Flush the TLB for the newly mapped virtual pages
-    //for (uint32_t i = 0; i < num_pages; ++i)
+    //for (uint32_t i = 0; i < pageCount; ++i)
     //{
     //    asm volatile ("tlbi vae1, %0" : : "r"((basePage + i) << 12) : "memory");
     //}
     Cpu::InstructionSynchronizationBarrier();
     Cpu::InnerDataSynchronizationBarrier();
-    return reinterpret_cast<void*>(basePage * 0x1000); // Return the virtual address of the first page
+}
+
+void* AllocatePages(uint32_t pageCount)
+{
+    // Return the virtual address of the first page
+    return reinterpret_cast<void*>(VirtualMemoryAllocator.Allocate(pageCount) * 0x1000 + VirtualMemoryAllocatorOffset);
+}
+
+void* AllocateAndCommitPages(uint32_t pageCount)
+{
+    auto const result = AllocatePages(pageCount);
+    CommitPages(result, pageCount);
+    return result;
+}
+
+void CommitPages(void const* address, uint32_t pageCount)
+{
+    auto const basePage = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(address) >> 12);
+    CommitPages(basePage, pageCount);
+}
+
+void* AllocateGpuMemory(uint32_t pageCount)
+{
+    auto const gpuPhysicalAddress = (PhysicalMemoryAllocator.Allocate(pageCount) + PhysicalMemoryAllocatorPageOffset) << 12;
+    //printf("Allocated GPU memory at physical address %zX\n", gpuPhysicalAddress);
+    return reinterpret_cast<void*>(gpuPhysicalAddress + 0xC000'0000u);
 }
 
 //uint64_t GetMairEl1()

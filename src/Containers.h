@@ -492,7 +492,7 @@ public:
         uint32_t wordIndex = blockStart / 64;
         uint32_t bitIndex = blockStart % 64;
 
-        Word currentWord = std::atomic_ref{Words[wordIndex]}.load(std::memory_order_relaxed);
+        Word currentWord = std::atomic_ref{ const_cast<Word&>(Words[wordIndex]) }.load(std::memory_order_relaxed);
         if (!(currentWord.starts & (1ull << bitIndex)))
         {
             //printf("wordIndex: %u, bitIndex: %u, Starts[wordIndex]: 0x%016llx\n", wordIndex, bitIndex, currentWord.starts);
@@ -509,7 +509,7 @@ public:
         auto position = bitIndex + count;
         while (position == 64 && ++wordIndex < WordCount)
         {
-            Word nextWord = std::atomic_ref{Words[wordIndex]}.load(std::memory_order_relaxed);
+            Word nextWord = std::atomic_ref{ const_cast<Word&>(Words[wordIndex]) }.load(std::memory_order_relaxed);
             //printf("GetBlockSize %s: wordIndex: %u, bitmap: 0x%016llx, starts: 0x%016llx\n", name, wordIndex, nextWord.bitmap, nextWord.starts);
 
             position = std::countr_one(nextWord.bitmap ^ nextWord.starts);

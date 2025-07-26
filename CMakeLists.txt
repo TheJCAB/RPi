@@ -17,6 +17,7 @@ target_compile_options(KernelRuntime INTERFACE
     -ffixed-x18
     -Wno-builtin-macro-redefined
     -O3
+    #-O0
     -frtti
     #-fPIC
     -mcmodel=tiny
@@ -25,6 +26,7 @@ target_compile_options(KernelRuntime INTERFACE
     -mno-outline-atomics
     #-flto
     #-H
+    -g
 )
 
 target_link_libraries(KernelRuntime INTERFACE cxx-headers)
@@ -44,6 +46,7 @@ function(add_kernel_image TargetName)
         -fdata-sections
         -fpie
         #-flto
+        -g
     )
 
     target_link_libraries(${TargetName} PRIVATE KernelRuntime)

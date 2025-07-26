@@ -5,6 +5,8 @@
 #include "Cpu.h"
 #include "Uart.h"
 
+#include "emb-stdio.h"
+
 #include <deque>
 
 namespace Scheduler
@@ -62,6 +64,7 @@ void Init()
         .Core   = &coreInfo,
     };
     SwapCurrentThreadInfo(threadInfo);
+    printf("Scheduler initialized. Main thread ThreadInfo: 0x%0X 0x%0X\n", reinterpret_cast<uintptr_t>(&Scheduler::GetCurrentThreadInfo()), threadInfo);
 
     Timer::ScheduleSpark(
         Cpu::GetPerformanceTicksForMs(50),
@@ -90,7 +93,9 @@ bool ScheduleOneSpark()
     {
     };
     auto const oldSparkInfo = std::exchange(threadInfo.Spark, &sparkInfo);
+    //Uart::Raw::Putc('&');
     pendingSpark.Spark.Func(pendingSpark.Spark.Context);
+    //Uart::Raw::Putc(':');
     threadInfo.Spark = oldSparkInfo;
     threadInfo.Task  = oldTask;
 
@@ -149,14 +154,6 @@ ThreadInfo& CreateThread(ThreadFunction* func, uintptr_t context)
 
     auto const threadContext = reinterpret_cast<ThreadContext*>(stackHigh) - 1;
 
-    Uart::Puts("Creating thread with stack at ");
-    Uart::PutHex(reinterpret_cast<uintptr_t>(stackLow));
-    Uart::Puts(" and context at ");
-    Uart::PutHex(reinterpret_cast<uintptr_t>(threadContext));
-    Uart::Puts(" core at: ");
-    Uart::PutHex(reinterpret_cast<uintptr_t>(GetCurrentThreadInfo().Core));
-    Uart::Puts("\n");
-
     auto const info = new ThreadInfo
     {
         .Context = threadContext,
@@ -165,6 +162,16 @@ ThreadInfo& CreateThread(ThreadFunction* func, uintptr_t context)
         .Spark  = nullptr,
         .Task   = nullptr,
     };
+
+    Uart::Puts("Creating thread ");
+    Uart::PutHex(reinterpret_cast<uintptr_t>(info));
+    Uart::Puts(" with stack at ");
+    Uart::PutHex(reinterpret_cast<uintptr_t>(stackLow));
+    Uart::Puts(" and context at ");
+    Uart::PutHex(reinterpret_cast<uintptr_t>(threadContext));
+    Uart::Puts(" core at: ");
+    Uart::PutHex(reinterpret_cast<uintptr_t>(GetCurrentThreadInfo().Core));
+    Uart::Puts("\n");
 
     threadContext->X[ 0] = context; // Set the first argument in X0
     threadContext->X[18] = reinterpret_cast<uintptr_t>(info); // Set the thread info pointer in X18

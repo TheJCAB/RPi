@@ -19,7 +19,11 @@ Scheduler::ThreadInfo* SyscallDispatcher(ThreadContext* threadContext, uint32_t 
     switch (iss)
     {
     case 0:
-        Uart::Puts("YieldToThread\n");
+        Uart::Puts("YieldToThread from ");
+        Uart::PutHex(reinterpret_cast<uintptr_t>(&Scheduler::GetCurrentThreadInfo()));
+        Uart::Puts(" to ");
+        Uart::PutHex(reinterpret_cast<uintptr_t>(threadContext->X[0]));
+        Uart::Puts("\n");
         return reinterpret_cast<Scheduler::ThreadInfo*>(threadContext->X[0]);
     case 1:
         Uart::Puts("Hello from ISS 1\n");

@@ -15,12 +15,12 @@ class HCDHost;
 class HCDChannel
 {
 public:
-    HCDChannel(HCDHost&, uintptr_t baseAddress, uint8_t channelNumber);
-
     // Maximum packet size of any USB endpoint.
     // 1024 is the maximum allowed by USB 2.0.
     // Most endpoints will provide maximum packet sizes much smaller than this.
     static constexpr uint32_t MaxPacketSize = 1024;
+
+    HCDChannel(HCDHost&, uintptr_t baseAddress, uint8_t channelNumber, std::span<std::byte, 1024> dmaBuffer);
 
     void Reset();
     void SetMaxPacketSize(uint16_t size);
@@ -80,5 +80,5 @@ private:
     // Aligned buffer for DMA which need to also be multiple of 4 bytes
     // Fortunately max packet size under USB2 is 1024 so that is a given
     // Aligning to cache line size so we can flush/invalidate with impunity.
-    alignas(64) std::byte m_DmaBuffer[MaxPacketSize];
+    std::span<std::byte, 1024> m_DmaBuffer;
 };

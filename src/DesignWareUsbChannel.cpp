@@ -357,9 +357,7 @@ void HCDChannel::StartInTransfer()
     // Clear any left over split
     registers.SplitCtrl = [](auto& reg){ reg.complete_split = false; };
 
-    std::byte* dmaBuffer  = Mailbox::AsGpuPointer(m_DmaBuffer);
-
-    registers.DmaAddr = Mailbox::AsGpuAddress(dmaBuffer) | 0xC000'0000u;
+    registers.DmaAddr = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(m_DmaBuffer.data()));
 
     auto nextFrame = m_Host.GetCurrentFrame() + 1;
 
@@ -493,11 +491,10 @@ uint32_t HCDChannel::TransferIn(UsbPipe const& pipe, usb_transfer_type Type, std
         // Clear any left over split
         registers.SplitCtrl = [](auto& reg) { reg.complete_split = false; };
 
-        std::byte* dmaBuffer = Mailbox::AsGpuPointer(m_DmaBuffer);
-
+        
         //Processor::FlushDataCache(dmaBuffer, bufferLength - offset);
-
-        registers.DmaAddr = Mailbox::AsGpuAddress(dmaBuffer) | 0xC000'0000u;
+        
+        registers.DmaAddr = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(m_DmaBuffer.data()));
 
         auto nextFrame = m_Host.GetCurrentFrame() + 1;
 
@@ -576,7 +573,7 @@ uint32_t HCDChannel::TransferIn(UsbPipe const& pipe, usb_transfer_type Type, std
             //Processor::InvalidateDataCache(dmaBuffer, transferred);
             for (int i = 0; i < transferred; ++i)
             {
-                buffer[offset + i] = dmaBuffer[i];
+                buffer[offset + i] = m_DmaBuffer[i];
             }
             if (transferred >= 8)
             {
@@ -619,10 +616,10 @@ uint32_t HCDChannel::TransferOut(UsbPipe const& pipe, usb_transfer_type Type, st
         LOG_DEBUG("Data = <empty>\n");
     }
 
-    if (buffer.size() > std::size(m_DmaBuffer))
+    if (buffer.size() > m_DmaBuffer.size())
     {
         LOG("HCD: Channel %u transfer size exceeds DMA buffer size (%zu > %zu).\n",
-            m_Number, buffer.size(), std::size(m_DmaBuffer));
+            m_Number, buffer.size(), m_DmaBuffer.size());
         return 0; // Nothing to transfer
     }
 
@@ -683,17 +680,15 @@ uint32_t HCDChannel::TransferOut(UsbPipe const& pipe, usb_transfer_type Type, st
         // Clear any left over split
         registers.SplitCtrl = [](auto& reg) { reg.complete_split = false; };
 
-        std::byte* dmaBuffer = Mailbox::AsGpuPointer(m_DmaBuffer);
-
         // Copy the data to the DMA buffer
         for (size_t i = 0; i < buffer.size() - offset; ++i)
         {
-            dmaBuffer[i] = buffer[offset + i];
+            m_DmaBuffer[i] = buffer[offset + i];
         }
 
         //Processor::FlushDataCache(dmaBuffer, buffer.size() - offset);
 
-        registers.DmaAddr = Mailbox::AsGpuAddress(dmaBuffer) | 0xC000'0000u;
+        registers.DmaAddr = static_cast<uint32_t>(reinterpret_cast<uintptr_t>(m_DmaBuffer.data()));
 
         auto nextFrame = m_Host.GetCurrentFrame() + 1;
 
@@ -775,7 +770,7 @@ uint32_t HCDChannel::TransferOut(UsbPipe const& pipe, usb_transfer_type Type, st
     return transferSizeInBytes;
 }
 
-HCDChannel::HCDChannel(HCDHost& host, uintptr_t baseAddress, uint8_t channelNumber)
+HCDChannel::HCDChannel(HCDHost& host, uintptr_t baseAddress, uint8_t channelNumber, std::span<std::byte, MaxPacketSize> dmaBuffer)
     : registers   { *reinterpret_cast<Registers*>(baseAddress) }
     , m_Host        { host                      }
     , m_Number      { channelNumber             }
@@ -789,6 +784,7 @@ HCDChannel::HCDChannel(HCDHost& host, uintptr_t baseAddress, uint8_t channelNumb
     , m_Direction   { USB_DIRECTION_OUT         }
     , m_Callback    { nullptr                   }
     , m_Context     { 0                         }
+    , m_DmaBuffer   { dmaBuffer                 }
 {
     registers.Characteristic = HostChannelCharacteristic
     {

@@ -143,9 +143,10 @@ SynchronousExceptionVector:
     b.eq    DispatchToSyscall
 
     // Otherwise this is like an interrupt, we'll need to preserve all the volatiles.
-    mov     x1, #0x10
     bl      PreserveVolatileRegisters
+    bl      PreserveNonvolatileRegisters
     mov     x0, sp
+    mov     x1, #0x10
     bl      MainExceptionHandler
     cbnz    x0, CompleteContextSwitch
     b       RestoreVolatilesAndERet
@@ -167,9 +168,14 @@ IrqExceptionVector:
     str     x30,      [sp, #(30 *  8)]
     mov     x1, #0x11
     bl      PreserveVolatileRegisters
+bl      PreserveNonvolatileRegisters
+//mov x0,#'#'
+//bl RawPutc
     mov     x0, sp
     bl      InterruptDispatcher
     cbnz    x0, CompleteContextSwitch
+//    mov x0,#'.'
+//    bl RawPutc
 
 RestoreVolatilesAndERet:
     bl      RestoreVolatileRegisters
@@ -365,6 +371,7 @@ RestoreNonvolatileRegisters:
     ret
 
 DispatchToSyscall:
+    bl      PreserveNonvolatileRegisters
     mov     x0, sp // ThreadContext as a parameter.
     bl      SyscallDispatcher
     cbnz    x0, 1f

@@ -131,8 +131,19 @@ struct ImmediateSystemRegisterProxy
 
     ImmediateSystemRegisterProxy(ImmediateSystemRegisterProxy&&) = delete;
     ImmediateSystemRegisterProxy& operator=(ImmediateSystemRegisterProxy&&) = delete;
+//
+    //inline void operator=(uint64_t value) const
+    //{
+    //    asm volatile (
+    //        "msr %1, %0"
+    //        :
+    //        : "n"(value),
+    //          "i"(RegisterName)
+    //    );
+    //}
 
-    inline void operator=(uint64_t value) const
+    template < uint64_t value >
+    inline void set() const
     {
         asm volatile (
             "msr %1, %0"

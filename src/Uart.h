@@ -59,6 +59,8 @@ public:
     void PutBin(auto value);
     void PutDec(auto value);
 
+    void Unlock();
+
 private:
     bool locked = false;
 };
