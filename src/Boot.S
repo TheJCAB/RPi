@@ -148,8 +148,7 @@ SynchronousExceptionVector:
     mov     x0, sp
     mov     x1, #0x10
     bl      MainExceptionHandler
-    cbnz    x0, CompleteContextSwitch
-    b       RestoreVolatilesAndERet
+    b       CallSparkIfAny
 
     // IRQ
     .align  7
@@ -173,7 +172,12 @@ bl      PreserveNonvolatileRegisters
 //bl RawPutc
     mov     x0, sp
     bl      InterruptDispatcher
-    cbnz    x0, CompleteContextSwitch
+
+CallSparkIfAny:
+    cbz     x1, RestoreVolatilesAndERet
+    blr     x1
+    b       CallSparkIfAny
+    
 //    mov x0,#'.'
 //    bl RawPutc
 
@@ -318,7 +322,10 @@ PreserveVolatileRegisters:
 
 // Read the entire set of volatile registers from the stack, in ThreadContext layout.
 // Except the arguments x0-7 and q0-7 which have already been done.
+// TODO: AAPCS indicates x0-7 can be used to return, but in practice only x0-1 seem to be used.
+// 
 RestoreVolatileRegisters:
+    // TODO: Use a flag to indicate volatile registers should be zeroed instead of restored.
     add      x8, sp, #ThreadContext_V // Can't reach far enough using SP.
     ldp     q30, q31, [x8, #(30 * 16)]
     ldp     q28, q29, [x8, #(28 * 16)]
@@ -374,12 +381,15 @@ DispatchToSyscall:
     bl      PreserveNonvolatileRegisters
     mov     x0, sp // ThreadContext as a parameter.
     bl      SyscallDispatcher
-    cbnz    x0, 1f
-    b       RestoreParametersAndERet
-1:  bl      ZeroVolatileRegisters
-    // fallthrough...
+    b       CallSparkIfAny
 
-CompleteContextSwitch:
+//    cbnz    x0, 1f
+//    b       RestoreParametersAndERet
+//1:  bl      ZeroVolatileRegisters
+//    // fallthrough...
+
+.global ThreadContextSwitchSpark
+ThreadContextSwitchSpark:
     // We'll switch the context. x0 has the new ThreadInfo.
     // We need to put the actual SP in X17.
     // We haven't popped x16-18 or x30(lr) yet, so we skip over them.
@@ -388,7 +398,6 @@ CompleteContextSwitch:
     mov     x8, sp
     str     x8, [x18]
 
-    ldr     x8, [x0]
-    mov     sp, x8
+    mov     sp, x0
     bl      RestoreNonvolatileRegisters
     b       RestoreVolatilesAndERet

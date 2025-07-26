@@ -1,11 +1,13 @@
-#include <stdint.h>
-#include <stddef.h>
+#include "Exception.h"
 
 #include "Cpu.h"
 #include "Uart.h"
 #include "Processor.h"
 #include "ThreadContext.h"
 #include "Debugger.h"
+
+#include <stdint.h>
+#include <stddef.h>
 
 namespace Exception
 {
@@ -122,7 +124,7 @@ void PutThreadContext(Uart::LockedStream& stream, ThreadContext* context)
     stream.Puts(" PC\n");
 }
 
-extern "C" Scheduler::ThreadInfo* MainExceptionHandler(ThreadContext* context, uint32_t code)
+extern "C" Spark MainExceptionHandler(ThreadContext* context, uint32_t code)
 {
     Uart::LockedStream stream(true);
 
@@ -206,8 +208,8 @@ extern "C" Scheduler::ThreadInfo* MainExceptionHandler(ThreadContext* context, u
         stream.Puts("Entering debugger.\n\n");
         stream.Unlock();
 
-        Debugger::DebuggerThread->Context->X[0] = reinterpret_cast<uintptr_t>(context);
-        return Debugger::DebuggerThread;
+        Debugger::DebuggerThread->ContextWhenSuspended->X[0] = reinterpret_cast<uintptr_t>(context);
+        return MakeSpark(Debugger::DebuggerThread->ContextWhenSuspended);
     }
     else
     {

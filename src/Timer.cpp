@@ -34,7 +34,7 @@ struct CoreTimerData
 
 CoreTimerData CoreData[4];
 
-void HandleArmVirtualTimerInterrupt();
+Interrupts::Spark HandleArmVirtualTimerInterrupt();
 
 // Helper function to find the next timer that should fire
 uint32_t FindNextScheduledTimerTriggerTime()
@@ -228,7 +228,7 @@ constexpr uint32_t Timer_Reload    = 0xB418u;
 */
 
 // Enhanced interrupt handler that supports both scheduled and periodic timers
-void HandleArmVirtualTimerInterrupt()
+Interrupts::Spark HandleArmVirtualTimerInterrupt()
 {
     auto const coreId = Cpu::mpidr_el1->CoreId;
     auto& coreData = CoreData[coreId];
@@ -256,6 +256,8 @@ void HandleArmVirtualTimerInterrupt()
     // Set up the timer for the next scheduled event
     //Uart::Raw::Putc('^');
     SetupTimerForNext();
+
+    return {};
 }
 
 }

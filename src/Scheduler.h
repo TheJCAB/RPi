@@ -25,13 +25,21 @@ struct TaskInfo
 
 struct ThreadInfo
 {
-    ThreadContext*       Context;
+    ThreadContext*       ContextWhenSuspended;
     std::span<std::byte> StackBuffer;
     CoreInfo*            Core;
     SparkInfo*           Spark;
     TaskInfo*            Task;
 };
 
+// TODO: Scheduler Sparks should be meant to be run in "user mode".
+// They should be non-time-critical "fire and forget" snippets to be run as background tasks.
+// They should still take priority over threads, just like IRQs take priority over "regular" code.
+// We probably should add a priority scheme for Sparks, so that some can be more important than others.
+// Threads should be the lowest in the priority totem pole.
+// Ideally, user-mode Sparks should be short-lived, and it should be possible for the scheduler
+// to kill them or worse if they run too long, based on heuristic (too IRQ time should be deducted).
+// Ideally, much "user mode" code will be structured using coroutines that schedule Sparks when suspended.
 using SparkFunction = void(uintptr_t context);
 
 struct Spark

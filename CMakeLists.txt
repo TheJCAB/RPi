@@ -22,7 +22,7 @@ target_compile_options(KernelRuntime INTERFACE
     #-fPIC
     -mcmodel=tiny
     -mcpu=cortex-a53
-    #-fno-builtin-__atomic_compare_exchange
+    #-mabi=darwinpcs # explore later
     -mno-outline-atomics
     #-flto
     #-H

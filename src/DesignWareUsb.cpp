@@ -665,7 +665,7 @@ DWCRESULT HCDReceiveFifoFlush(void) {
     return DWCRESULT::Ok;
 }
 
-void InterruptHandler()
+Interrupts::Spark InterruptHandler()
 {
     // See what's what.
     CoreInterrupts interrupts = DWC_CORE->INTERRUPT;
@@ -716,6 +716,8 @@ void InterruptHandler()
     }
 
     DWC_CORE->INTERRUPT = interrupts;
+
+    return {};
 }
 
 uint8_t HCDGetHostChannelCount()

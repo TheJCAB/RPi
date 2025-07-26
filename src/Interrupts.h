@@ -1,8 +1,15 @@
+#pragma once
+
+#include "Exception.h"
+
+#include <stdint.h>
+#include <stddef.h>
 
 namespace Interrupts
 {
 
-using HandlerFunction = void(*)();
+using Spark           = Exception::Spark;
+using HandlerFunction = Exception::HandlerFunction;
 
 void EnableUsb(HandlerFunction);
 

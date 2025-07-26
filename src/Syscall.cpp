@@ -1,5 +1,6 @@
 
 #include "Scheduler.h"
+#include "Exception.h"
 
 #include "Uart.h"
 
@@ -7,7 +8,7 @@
 #include <stddef.h>
 
 extern "C"
-Scheduler::ThreadInfo* SyscallDispatcher(ThreadContext* threadContext, uint32_t code)
+Exception::Spark SyscallDispatcher(ThreadContext* threadContext, uint32_t code)
 {
     auto threadInfo = &Scheduler::GetCurrentThreadInfo();
 
@@ -19,12 +20,17 @@ Scheduler::ThreadInfo* SyscallDispatcher(ThreadContext* threadContext, uint32_t 
     switch (iss)
     {
     case 0:
+    {
         Uart::Puts("YieldToThread from ");
         Uart::PutHex(reinterpret_cast<uintptr_t>(&Scheduler::GetCurrentThreadInfo()));
         Uart::Puts(" to ");
         Uart::PutHex(reinterpret_cast<uintptr_t>(threadContext->X[0]));
         Uart::Puts("\n");
-        return reinterpret_cast<Scheduler::ThreadInfo*>(threadContext->X[0]);
+
+        auto newThreadInfo = reinterpret_cast<Scheduler::ThreadInfo*>(threadContext->X[0]);
+        return Exception::MakeSpark(std::exchange(newThreadInfo->ContextWhenSuspended, nullptr));
+    }
+
     case 1:
         Uart::Puts("Hello from ISS 1\n");
         break;
@@ -33,5 +39,5 @@ Scheduler::ThreadInfo* SyscallDispatcher(ThreadContext* threadContext, uint32_t 
         break;
     }
 
-    return nullptr;
+    return {};
 }

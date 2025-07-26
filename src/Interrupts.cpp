@@ -265,10 +265,13 @@ void DisableCoreVirtualTimerInterrupt()
     };
 }
 
-extern "C" Scheduler::ThreadInfo* InterruptDispatcher(ThreadContext* context, uint32_t code)
+extern "C" Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
 {
     auto const coreId = Cpu::mpidr_el1->CoreId;
 
+    // If we get into a deadlock in the "user" code, we can use this to debug it.
+    // This will tell us what is deadlocked. Just need to make sure it doesn't trigger until the deadlock happens.
+    // Use contextCount in any way desired to achieve this goal.
     //static uint32_t contextCount = 0;
     //if (coreId == 0 && (++contextCount & 0x3F) == 0)
     //{
@@ -282,9 +285,15 @@ extern "C" Scheduler::ThreadInfo* InterruptDispatcher(ThreadContext* context, ui
     {
         if (pendingCoreInterrupts.CNTVIRQ)
         {
-            //Uart::Raw::Putc('@');
-            CoreInterruptsData[coreId].VirtualTimerHandler();
+            //Uart::Raw::Putc('@'); // Printf tracing of the handler.
+            auto const spark = CoreInterruptsData[coreId].VirtualTimerHandler();
+            if (spark)
+            {
+                return spark;
+            }
         }
+
+        // Ensure we don't just loop indefinitely if some interrupt is defined but not handled.
         if (--retryCount == 0)
         {
             Uart::Raw::Puts("Panic: Unhandled core interrupt: ");
@@ -297,7 +306,7 @@ extern "C" Scheduler::ThreadInfo* InterruptDispatcher(ThreadContext* context, ui
     // If not core 0, return
     if (coreId > 0)
     {
-        return nullptr;
+        return {};
     }
 
     // Check for basic IRQs
@@ -349,7 +358,7 @@ extern "C" Scheduler::ThreadInfo* InterruptDispatcher(ThreadContext* context, ui
         }
     }
 
-    return nullptr;
+    return {};
 }
 
 /*

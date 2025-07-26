@@ -156,11 +156,11 @@ ThreadInfo& CreateThread(ThreadFunction* func, uintptr_t context)
 
     auto const info = new ThreadInfo
     {
-        .Context = threadContext,
-        .StackBuffer{ stackLow, stackSize },
-        .Core   = GetCurrentThreadInfo().Core,
-        .Spark  = nullptr,
-        .Task   = nullptr,
+        .ContextWhenSuspended = threadContext,
+        .StackBuffer          { stackLow, stackSize },
+        .Core                 = GetCurrentThreadInfo().Core,
+        .Spark                = nullptr,
+        .Task                 = nullptr,
     };
 
     Uart::Puts("Creating thread ");
