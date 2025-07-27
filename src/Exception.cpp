@@ -234,6 +234,7 @@ extern "C" Spark MainExceptionHandler(ThreadContext* context, uint32_t code)
 
     if (Debugger::DebuggerThread != nullptr)
     {
+        PutThreadContext(stream, context);
         stream.Puts("Entering debugger.\n\n");
         stream.Unlock();
 

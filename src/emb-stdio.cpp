@@ -374,7 +374,7 @@ int _doprnt(const char *fmt, va_list ap, int (*putc_func) (int, void*, uintptr_t
 				hashtype = 3;
 				ularg = (unsigned long long) va_arg(ap, void*);
 				pad_char = '0';
-				fmin = sizeof(void*);
+				fmin = sizeof(void*) * 2;
 				break;
 
             case 'b':

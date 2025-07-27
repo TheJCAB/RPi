@@ -123,7 +123,7 @@ void Puts(char const* str)
     }
 }
 
-void PutHex(auto value)
+void PutHex(std::integral auto value)
 {
     char const* hexDigits = "0123456789ABCDEF";
 
@@ -139,7 +139,12 @@ void PutHex(auto value)
     }
 }
 
-void PutBin(auto value)
+void PutHex(void const volatile* value)
+{
+    PutHex(reinterpret_cast<uintptr_t>(value));
+}
+
+void PutBin(std::integral auto value)
 {
     const char* binDigits = "01";
     Putc('0');
@@ -154,7 +159,7 @@ void PutBin(auto value)
     }
 }
 
-void PutDec(auto value)
+void PutDec(std::integral auto value)
 {
     if (value == 0)
     {
@@ -262,17 +267,22 @@ void LockedStream::Puts(char const* str)
     if (locked) Raw::Puts(str);
 }
 
-void LockedStream::PutHex(auto value)
+void LockedStream::PutHex(std::integral auto value)
 {
     if (locked) Raw::PutHex(value);
 }
 
-void LockedStream::PutBin(auto value)
+void LockedStream::PutHex(void const volatile* value)
+{
+    if (locked) Raw::PutHex(value);
+}
+
+void LockedStream::PutBin(std::integral auto value)
 {
     if (locked) Raw::PutBin(value);
 }
 
-void LockedStream::PutDec(auto value)
+void LockedStream::PutDec(std::integral auto value)
 {
     if (locked) Raw::PutDec(value);
 }
@@ -316,17 +326,22 @@ void Puts(char const* str)
     LockedStream{}.Puts(str);
 }
 
-void PutHex(auto value)
+void PutHex(std::integral auto value)
 {
     LockedStream{}.PutHex(value);
 }
 
-void PutBin(auto value)
+void PutHex(void const volatile* value)
+{
+    LockedStream{}.PutHex(value);
+}
+
+void PutBin(std::integral auto value)
 {
     LockedStream{}.PutBin(value);
 }
 
-void PutDec(auto value)
+void PutDec(std::integral auto value)
 {
     LockedStream{}.PutDec(value);
 }

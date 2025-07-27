@@ -86,6 +86,7 @@
         "cstdarg": "cpp",
         "expected": "cpp",
         "fstream": "cpp",
-        "iostream": "cpp"
+        "iostream": "cpp",
+        "coroutine": "cpp"
     }
 }

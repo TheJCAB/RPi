@@ -273,6 +273,83 @@ ChannelInterrupts HCDChannel::WaitOnTransmissionResult(uint32_t timeout)
     }
 }
 
+
+struct HCDChannel::TransmissionAwaitable
+{
+    Cpu::PerformanceTimeDiff Timeout;
+    uint64_t TransmissionNumber;
+    HCDChannel& Channel;
+
+    bool await_ready() const
+    {
+        return false;
+    }
+
+    bool await_suspend(std::coroutine_handle<> handle) const
+    {
+        Channel.m_waitingCoroutineHandle.store({ TransmissionNumber, handle.address() }, std::memory_order_release);
+
+//        Timer::ScheduleSpark(Timeout, Scheduler::MakeUserModeSpark(
+//            [](uintptr_t arg) -> Scheduler::Spark
+//            {
+//                HCDChannel& channel = *reinterpret_cast<HCDChannel*>(arg);
+//                auto const transmissionNumber = ???;
+//
+//                auto current = channel.m_waitingCoroutineHandle.load(std::memory_order_relaxed);
+//                while (current.TransmissionNumber == transmissionNumber && current.Address != nullptr)
+//                {
+//                    if (channel.m_waitingCoroutineHandle.compare_exchange_strong(current, { 0, nullptr }, std::memory_order_acquire))
+//                    {
+//                        std::coroutine_handle<>::from_address(current.Address).resume();
+//                        return {};
+//                    }
+//                }
+//                return {};
+//            },
+//            Timeout
+//        ));
+
+        Channel.registers.InterruptMask = [&](auto& reg)
+        {
+            //reg.TransferComplete        = true;
+            reg.Halt                    = true;
+            //reg.Stall                   = true;
+            //reg.NegativeAcknowledgement = true;
+        };
+        Channel.registers.Characteristic = [&](auto& reg)
+        {
+            reg.channel_enable    = true;
+        };
+        return true;
+    }
+
+    ChannelInterrupts await_resume()
+    {
+        ChannelInterrupts result;
+        result.Raw32 = Channel.m_interruptStatus;
+        return result;
+    }
+};
+
+HCDChannel::TransmissionAwaitable HCDChannel::StartTransmission(Cpu::PerformanceTimeDiff timeout)
+{
+    return TransmissionAwaitable{ timeout, ++m_currentTransmissionNumber, *this };
+}
+
+Async::task<ChannelInterrupts> HCDChannel::AwaitTransmissionResult(uint32_t timeout)
+{
+    auto ticksTimeout = Cpu::GetPerformanceTicksForUs(timeout);
+    auto original_tick = Cpu::GetPerformanceCounter();
+    for (;;) {
+        co_await Async::DelayInMicroseconds(100);
+        ChannelInterrupts tempInt = registers.Interrupt;
+        if (tempInt.Halt || Cpu::GetPerformanceCounter() - original_tick > ticksTimeout)
+        {
+            co_return tempInt;
+        }
+    }
+}
+
 void HCDChannel::Prepare(
     UsbPipe const&    pipe, // Endpoint information
     usb_transfer_type Type,
@@ -370,67 +447,94 @@ void HCDChannel::StartInTransfer()
     };
 }
 
-void HCDChannel::HandleInTransferInterrupt()
+void HCDChannel::HandleInterrupt()
 {
-    ChannelInterrupts interrupts = registers.Interrupt;
-    if (interrupts.TransferComplete)
-    {
-        HostTransferSize size = registers.TransferSize;
-        if (size.packet_count > 0)
-        {
+    //printf("HCD: Channel %u (%p) interrupt received.\n", m_Number, this);
 
-            LOG_DEBUG("HCD: Channel %u transfer size is zero, no data transferred.\n", m_Number);
-            return;
-        }
+    auto const resumableCoroutine = m_waitingCoroutineHandle.exchange({}, std::memory_order_acquire);
+    if (resumableCoroutine.Address)
+    {
+        m_interruptStatus = registers.Interrupt->Raw32;
 
-        LOG_DEBUG("HCD: Channel %u transfer complete.\n", m_Number);
-        if (m_Callback)
-        {
-            if (m_Callback(m_Context, *this))
-            {
-                LOG_DEBUG("HCD: Callback for channel %u returned true.\n", m_Number);
-            }
-            else
-            {
-                LOG_DEBUG("HCD: Callback for channel %u returned false.\n", m_Number);
-            }
-        }
-    }
-    else if (interrupts.Stall)
-    {
-        // Must retry later.
-        LOG_DEBUG("HCD: Channel %u stalled.\n", m_Number);
-    }
-    else if (interrupts.NegativeAcknowledgement)
-    {
-        // Rejected by the device.
-        LOG_DEBUG("HCD: Channel %u NAKed.\n", m_Number);
-    }
-    else if (interrupts.Halt)
-    {
-        if (m_SplitEnabled)
-        {
-            registers.SplitCtrl = [](auto& reg)
-            {
-                reg.complete_split = true; // Mark split as complete
-            };
-        }
-        else
-        {
-            LOG_DEBUG("HCD: Channel %u halted.\n", m_Number);
-        }
+        //Uart::Putc('=');
+        Scheduler::AddSpark(
+            Scheduler::MakeUserModeSpark(
+                [](uintptr_t arg) -> Scheduler::Spark
+                {
+                    std::coroutine_handle<>::from_address(reinterpret_cast<void*>(arg)).resume();
+                    return {};
+                },
+                reinterpret_cast<uintptr_t>(resumableCoroutine.Address)
+            )
+        );
     }
     else
     {
-        LOG_DEBUG("HCD: Channel %u unknown interrupt.\n", m_Number);
+        // We must have missed it (it timed out).
     }
+
+    registers.Interrupt = 0xFFFFFFFF;
+    registers.InterruptMask = 0;
+
+//    ChannelInterrupts interrupts = registers.Interrupt;
+//    if (interrupts.TransferComplete)
+//    {
+//        HostTransferSize size = registers.TransferSize;
+//        if (size.packet_count > 0)
+//        {
+//
+//            LOG_DEBUG("HCD: Channel %u transfer size is zero, no data transferred.\n", m_Number);
+//            return;
+//        }
+//
+//        LOG_DEBUG("HCD: Channel %u transfer complete.\n", m_Number);
+//        if (m_Callback)
+//        {
+//            if (m_Callback(m_Context, *this))
+//            {
+//                LOG_DEBUG("HCD: Callback for channel %u returned true.\n", m_Number);
+//            }
+//            else
+//            {
+//                LOG_DEBUG("HCD: Callback for channel %u returned false.\n", m_Number);
+//            }
+//        }
+//    }
+//    else if (interrupts.Stall)
+//    {
+//        // Must retry later.
+//        LOG_DEBUG("HCD: Channel %u stalled.\n", m_Number);
+//    }
+//    else if (interrupts.NegativeAcknowledgement)
+//    {
+//        // Rejected by the device.
+//        LOG_DEBUG("HCD: Channel %u NAKed.\n", m_Number);
+//    }
+//    else if (interrupts.Halt)
+//    {
+//        if (m_SplitEnabled)
+//        {
+//            registers.SplitCtrl = [](auto& reg)
+//            {
+//                reg.complete_split = true; // Mark split as complete
+//            };
+//        }
+//        else
+//        {
+//            LOG_DEBUG("HCD: Channel %u halted.\n", m_Number);
+//        }
+//    }
+//    else
+//    {
+//        LOG_DEBUG("HCD: Channel %u unknown interrupt.\n", m_Number);
+//    }
 }
 
 /*-INTERNAL: HCDChannelTransfer----------------------------------------------
  Sends/recieves data from the given buffer and size directed by pipe settings.
  19Feb17 LdB
  --------------------------------------------------------------------------*/
-uint32_t HCDChannel::TransferIn(UsbPipe const& pipe, usb_transfer_type Type, std::span<std::byte> buffer, PacketId packetId)
+Async::task<uint32_t> HCDChannel::TransferIn(UsbPipe const& pipe, usb_transfer_type Type, std::span<std::byte> buffer, PacketId packetId)
 {
     LOG_DEBUG("HCD: Channel %u IN transfer, length %zu, packetId %d, address %u, endpoint %u, type %u, speed %u\n",
         m_Number, buffer.size(), packetId, pipe.Number, pipe.EndPoint, Type, pipe.Speed
@@ -501,18 +605,16 @@ uint32_t HCDChannel::TransferIn(UsbPipe const& pipe, usb_transfer_type Type, std
         /* Launch transmission */
         registers.Characteristic = [&](auto& reg)
         {
-            reg.channel_enable    = true;
             reg.odd_frame         = nextFrame & 1;
             reg.packets_per_frame = 1;
-            reg.channel_disable   = false;
         };
 
         // Polling wait on transmission only option right now .. other options soon :-)
-        auto tempInt = WaitOnTransmissionResult(5000);
+        auto tempInt = co_await StartTransmission(Cpu::GetPerformanceTicksForUs(5'000));
         if (!tempInt.Halt)
         {
             LOG("HCD: Request on channel %i has timed out.\n", m_Number);
-            return 0;
+            co_return 0u;
         }
         LOG_DEBUG("HCD: Channel %u transmission result: 0x%08X\n", m_Number, tempInt.Raw32);
 
@@ -524,7 +626,7 @@ uint32_t HCDChannel::TransferIn(UsbPipe const& pipe, usb_transfer_type Type, std
                 result, (unsigned int)sendCtrl.Raw32, (unsigned int)tempInt.Raw32, 
                 (unsigned int)tempSplit.Raw32, result != DWCRESULT::Ok ? 0 : (*registers.TransferSize).size);
         }
-        if (sendCtrl.ActionFatalError) return 0;
+        if (sendCtrl.ActionFatalError) co_return 0u;
 
         sendCtrl.SplitTries = 0;
         while (sendCtrl.ActionResendSplit) {                        // Decision was made to resend split
@@ -536,15 +638,12 @@ uint32_t HCDChannel::TransferIn(UsbPipe const& pipe, usb_transfer_type Type, std
             // Set we are completing the split
             registers.SplitCtrl = [](auto& reg) { reg.complete_split = true; };
 
-            // Launch transmission
-            registers.Characteristic = [](auto& reg) { reg.channel_enable = true; };
-
             // Polling wait on transmission only option right now .. other options soon :-)
-            tempInt = WaitOnTransmissionResult(5000);
+            tempInt = co_await StartTransmission(Cpu::GetPerformanceTicksForUs(5'000));
             if (!tempInt.Halt)
             {
                 LOG("HCD: Request split completion on channel:%i has timed out.\n", m_Number);
-                return 0;
+                co_return 0u;
             }
             LOG_DEBUG("HCD: Channel %u transmission result: 0x%08X\n", m_Number, tempInt.Raw32);
 
@@ -552,9 +651,9 @@ uint32_t HCDChannel::TransferIn(UsbPipe const& pipe, usb_transfer_type Type, std
             result = HCDCheckErrorAndAction(tempInt, isLowSpeed, &sendCtrl);
             LOG_DEBUG("Result: %i Action: 0x%08x tempInt: 0x%08x tempSplit: 0x%08x Bytes sent: %i\n",
                 result, sendCtrl.Raw32, tempInt.Raw32, tempSplit.Raw32, result != DWCRESULT::Ok ? 0 : (*registers.TransferSize).size);
-            if (sendCtrl.ActionFatalError) return 0;            // Fatal error occured bail
-            if (sendCtrl.LongerDelay) Cpu::DelayInMicroseconds(10000);            // Not yet response slower delay
-                else Cpu::DelayInMicroseconds(2500);                                // Small delay between split resends
+            if (sendCtrl.ActionFatalError) co_return 0u;            // Fatal error occured bail
+            if (sendCtrl.LongerDelay) co_await Async::DelayInMicroseconds(10'000);            // Not yet response slower delay
+                else co_await Async::DelayInMicroseconds(2'500);                                // Small delay between split resends
         }
 
         uint32_t const newPacketCount = registers.TransferSize->packet_count;
@@ -587,10 +686,10 @@ uint32_t HCDChannel::TransferIn(UsbPipe const& pipe, usb_transfer_type Type, std
         currentPacketCount = newPacketCount;
     }
 
-    return transferSizeInBytes;
+    co_return transferSizeInBytes;
 }
 
-uint32_t HCDChannel::TransferOut(UsbPipe const& pipe, usb_transfer_type Type, std::span<std::byte const> buffer, PacketId packetId) 
+Async::task<uint32_t> HCDChannel::TransferOut(UsbPipe const& pipe, usb_transfer_type Type, std::span<std::byte const> buffer, PacketId packetId) 
 {
     LOG_DEBUG("HCD: Channel %u OUT transfer, length %zu, packetId %d, address %u, endpoint %u, type %u, speed %u, ",
         m_Number, buffer.size(), packetId, pipe.Number, pipe.EndPoint, Type, pipe.Speed
@@ -620,7 +719,7 @@ uint32_t HCDChannel::TransferOut(UsbPipe const& pipe, usb_transfer_type Type, st
     {
         LOG("HCD: Channel %u transfer size exceeds DMA buffer size (%zu > %zu).\n",
             m_Number, buffer.size(), m_DmaBuffer.size());
-        return 0; // Nothing to transfer
+        co_return 0u; // Nothing to transfer
     }
 
     // Program the channel.
@@ -695,18 +794,16 @@ uint32_t HCDChannel::TransferOut(UsbPipe const& pipe, usb_transfer_type Type, st
         /* Launch transmission */
         registers.Characteristic = [&](auto& reg)
         {
-            reg.channel_enable    = true;
             reg.odd_frame         = nextFrame & 1;
             reg.packets_per_frame = 1;
-            reg.channel_disable   = false;
         };
 
         // Polling wait on transmission only option right now .. other options soon :-)
-        auto tempInt = WaitOnTransmissionResult(5000);
+        auto tempInt = co_await StartTransmission(Cpu::GetPerformanceTicksForUs(5'000));
         if (!tempInt.Halt)
         {
-            LOG("HCD: Request on channel %i has timed out.\n", m_Number);
-            return 0;
+            LOG_DEBUG("HCD: Request on channel %i has timed out.\n", m_Number);
+            co_return 0u;
         }
         LOG_DEBUG("HCD: Channel %u transmission result: 0x%08X\n", m_Number, tempInt.Raw32);
 
@@ -718,11 +815,11 @@ uint32_t HCDChannel::TransferOut(UsbPipe const& pipe, usb_transfer_type Type, st
                 result, (unsigned int)sendCtrl.Raw32, (unsigned int)tempInt.Raw32, 
                 (unsigned int)tempSplit.Raw32, result != DWCRESULT::Ok ? 0 : (*registers.TransferSize).size);
         }
-        if (sendCtrl.ActionFatalError) return 0;
+        if (sendCtrl.ActionFatalError) co_return 0u;
 
         sendCtrl.SplitTries = 0;
         while (sendCtrl.ActionResendSplit) {                        // Decision was made to resend split
-            Cpu::DelayInMicroseconds(250);
+            co_await Async::DelayInMicroseconds(250);
             // Clear channel interrupts
             registers.Interrupt = 0xFFFFFFFF;
             registers.InterruptMask = 0x0;
@@ -730,15 +827,12 @@ uint32_t HCDChannel::TransferOut(UsbPipe const& pipe, usb_transfer_type Type, st
             // Set we are completing the split
             registers.SplitCtrl = [](auto& reg) { reg.complete_split = true; };
 
-            // Launch transmission
-            registers.Characteristic = [](auto& reg) { reg.channel_enable = true; };
-
             // Polling wait on transmission only option right now .. other options soon :-)
-            tempInt = WaitOnTransmissionResult(5000);
+            tempInt = co_await StartTransmission(Cpu::GetPerformanceTicksForUs(5'000));
             if (!tempInt.Halt)
             {
                 LOG("HCD: Request split completion on channel:%i has timed out.\n", m_Number);
-                return 0;
+                co_return 0u;
             }
             LOG_DEBUG("HCD: Channel %u transmission result: 0x%08X\n", m_Number, tempInt.Raw32);
 
@@ -746,9 +840,9 @@ uint32_t HCDChannel::TransferOut(UsbPipe const& pipe, usb_transfer_type Type, st
             result = HCDCheckErrorAndAction(tempInt, isLowSpeed, &sendCtrl);
             LOG_DEBUG("Result: %i Action: 0x%08x tempInt: 0x%08x tempSplit: 0x%08x Bytes sent: %i\n",
                 result, sendCtrl.Raw32, tempInt.Raw32, tempSplit.Raw32, result != DWCRESULT::Ok ? 0 : (*registers.TransferSize).size);
-            if (sendCtrl.ActionFatalError) return 0;            // Fatal error occured bail
-            if (sendCtrl.LongerDelay) Cpu::DelayInMicroseconds(10000);            // Not yet response slower delay
-                else Cpu::DelayInMicroseconds(2500);                                // Small delay between split resends
+            if (sendCtrl.ActionFatalError) co_return 0u;            // Fatal error occured bail
+            if (sendCtrl.LongerDelay) co_await Async::DelayInMicroseconds(10'000);            // Not yet response slower delay
+            else co_await Async::DelayInMicroseconds(2'500);                                // Small delay between split resends
         }
 
         uint32_t const newPacketCount = registers.TransferSize->packet_count;
@@ -767,7 +861,7 @@ uint32_t HCDChannel::TransferOut(UsbPipe const& pipe, usb_transfer_type Type, st
         currentPacketCount = newPacketCount;
     }
 
-    return transferSizeInBytes;
+    co_return transferSizeInBytes;
 }
 
 HCDChannel::HCDChannel(HCDHost& host, uintptr_t baseAddress, uint8_t channelNumber, std::span<std::byte, MaxPacketSize> dmaBuffer)

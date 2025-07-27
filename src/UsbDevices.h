@@ -31,6 +31,7 @@
 #pragma once
 
 #include "UsbSpec.h"
+#include "Async.h"
 
 #include <span>
 
@@ -77,7 +78,7 @@ struct HidDevice;
  host controller driver, and enumerating the initial device tree.
  24Feb17 LdB
  --------------------------------------------------------------------------*/
-RESULT UsbInitialize ();
+Async::task<RESULT> UsbInitialize();
 
 DeviceDescriptor GetDeviceDescriptor(uint8_t devNumber);
 

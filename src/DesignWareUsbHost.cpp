@@ -382,12 +382,36 @@ void HCDHost::HandlePortInterrupt()
 
 void HCDHost::HandleChannelInterrupt()
 {
-
     uint32_t interrupt = registers.INTERRUPT;
 
-    Uart::Raw::Puts("TODO registers.INTERRUPT: ");
-    Uart::Raw::PutBin(interrupt);
-    Uart::Raw::Puts("\n");
+//    Uart::Puts("Host: ");
+//    Uart::PutHex(this);
+//    Uart::Puts("\n");
+//
+//    Uart::Puts("Interrupt: ");
+//    Uart::PutBin(interrupt);
+//    Uart::Puts("\n");
+//
+//    Uart::Puts("Interrupt mask: ");
+//    Uart::PutBin(registers.INTERRUPTMASK.get());
+//    Uart::Puts("\n");
+
+    uint32_t channelsMask = interrupt;
+    while (channelsMask)
+    {
+        uint32_t channel = std::countr_zero(channelsMask);
+        channelsMask &= ~(1u << channel);
+
+        if (channel >= m_NumChannels)
+        {
+            Cpu::Panic("HCD: Channel %u interrupt received, but only %u channels are available.\n", channel, m_NumChannels);
+        }
+
+        //printf("HCD: Channel %u (%p) interrupt received.\n", channel, m_Channels[channel].get());
+        //Uart::Putc('!');
+
+        m_Channels[channel]->HandleInterrupt();
+    }
 
     registers.INTERRUPT = interrupt;
 }
@@ -429,12 +453,15 @@ HCDHost::HCDHost(uintptr_t baseAddress, ClockRate clock, uint8_t numChannels)
     Cpu::DelayInMicroseconds(60000);
     tempPort = *registers.PORT;
     LOG_DEBUG("HCD: Reset host port: 0x%08X\n", tempPort.Raw32);
-    
+
     tempPort.Raw32 &= HOSTPORTMASK;
     tempPort.Reset = false;
     registers.PORT = tempPort;
 
-    LOG_DEBUG("HCD: Host successfully started.\n");
+    registers.INTERRUPT = 0xFFFFFFFF;
+    registers.INTERRUPTMASK = 0;
+
+    LOG_DEBUG("HCD: Host %p successfully started.\n", this);
 
     m_NumChannels = numChannels > MaxChannels ? MaxChannels : numChannels;
 
@@ -442,9 +469,13 @@ HCDHost::HCDHost(uintptr_t baseAddress, ClockRate clock, uint8_t numChannels)
 
     for (uint8_t channel = 0; channel < m_NumChannels; ++channel)
     {
+        LOG_DEBUG("HCD: Initializing channel %u at %p\n", channel, reinterpret_cast<void*>(baseAddress + 0x100u + 0x20u * channel));
         std::span<std::byte, HCDChannel::MaxPacketSize> channelDmaBuffer{ dmaBuffer + channel * HCDChannel::MaxPacketSize, HCDChannel::MaxPacketSize };
         m_Channels[channel] = std::make_unique<HCDChannel>(*this, baseAddress + 0x100u + 0x20u * channel, channel, channelDmaBuffer);
+        m_freeChannels[channel] = m_Channels[channel].get();
     }
+
+    LOG_DEBUG("HCD: Initialized %u channels\n", m_NumChannels);
 }
 
 HCDHost::LockedChannel HCDHost::GetChannel()
@@ -453,14 +484,12 @@ HCDHost::LockedChannel HCDHost::GetChannel()
     {
         for (uint8_t i = 0; i < m_NumChannels; ++i)
         {
-            static_assert(sizeof(std::unique_ptr<HCDChannel>) == sizeof(HCDChannel*),
-                "We're playing aromic games here, so make sure apples are bit-compatible with unique apples"
-            );
-            std::atomic_ref channelSlot{ reinterpret_cast<HCDChannel*&>(m_Channels[i]) };
+            auto& channelSlot = m_freeChannels[i];
 
-            HCDChannel* currentChannel = channelSlot.load(std::memory_order_relaxed);
+            auto currentChannel = channelSlot.load(std::memory_order_relaxed);
             if (currentChannel != nullptr && channelSlot.compare_exchange_strong(currentChannel, nullptr, std::memory_order_acquire))
             {
+                registers.INTERRUPTMASK |= 1u << currentChannel->GetNumber();
                 return LockedChannel{ currentChannel };
             }
         }
@@ -477,10 +506,9 @@ void HCDHost::ReleaseChannel::operator()(HCDChannel* channel) const noexcept
 
     //LOG_DEBUG("HCD: Releasing channel %u\n", channel->GetNumber());
 
-    static_assert(sizeof(std::unique_ptr<HCDChannel>) == sizeof(HCDChannel*),
-        "We're playing aromic games here, so make sure apples are bit-compatible with unique apples"
-    );
-    std::atomic_ref channelSlot{ reinterpret_cast<HCDChannel*&>(channel->GetHost().m_Channels[channel->GetNumber()]) };
+    channel->GetHost().registers.INTERRUPTMASK &= ~(1u << channel->GetNumber());
+
+    auto& channelSlot = channel->GetHost().m_freeChannels[channel->GetNumber()];
 
     auto const nullChannel{ channelSlot.exchange(channel, std::memory_order_release) };
     if (nullChannel != nullptr)

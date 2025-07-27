@@ -46,10 +46,10 @@ public:
     );
     void StartInTransfer();
 
-    void HandleInTransferInterrupt();
+    void HandleInterrupt();
 
-    uint32_t TransferIn (UsbPipe const& pipe, usb_transfer_type Type, std::span<std::byte      > buffer, PacketId packetId);
-    uint32_t TransferOut(UsbPipe const& pipe, usb_transfer_type Type, std::span<std::byte const> buffer, PacketId packetId);
+    Async::task<uint32_t> TransferIn (UsbPipe const& pipe, usb_transfer_type Type, std::span<std::byte      > buffer, PacketId packetId);
+    Async::task<uint32_t> TransferOut(UsbPipe const& pipe, usb_transfer_type Type, std::span<std::byte const> buffer, PacketId packetId);
 
     uint32_t GetNumber() const noexcept { return m_Number; }
 
@@ -57,6 +57,13 @@ public:
 
 private:
     ChannelInterrupts WaitOnTransmissionResult(uint32_t timeout);
+
+    Async::task<ChannelInterrupts> AwaitTransmissionResult(uint32_t timeout);
+
+    struct TransmissionAwaitable;
+    friend TransmissionAwaitable;
+
+    TransmissionAwaitable StartTransmission(Cpu::PerformanceTimeDiff timeout);
 
 private:
     union Registers;
@@ -76,6 +83,16 @@ private:
     UsbDirection      m_Direction;
     InCallback        m_Callback;
     uintptr_t         m_Context;
+
+    uint64_t m_currentTransmissionNumber = 0;
+
+    struct WaitingCoroutine
+    {
+        uint64_t TransmissionNumber = 0;
+        void*    Address            = nullptr;
+    };
+    std::atomic<WaitingCoroutine> m_waitingCoroutineHandle;
+    uint32_t m_interruptStatus = 0;
 
     // Aligned buffer for DMA which need to also be multiple of 4 bytes
     // Fortunately max packet size under USB2 is 1024 so that is a given

@@ -597,7 +597,7 @@ RESULT HCDSumbitControlMessage (UsbDevice* device,
 
     LOG_DEBUG("Setup phase\n");
     // Setup phase
-    uint32_t transferLength = channel.TransferOut(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, { (std::byte const*)&request, sizeof(request) }, USB_PID_SETUP);
+    uint32_t transferLength = Async::WaitOnTask(channel.TransferOut(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, { (std::byte const*)&request, sizeof(request) }, USB_PID_SETUP));
     if (transferLength != sizeof(request))
     {
         LOG("HCD: SETUP packet to device: %#x req: %#x req Type: %#x Speed: %i PacketSize: %i LowNode: %i LowPort: %i Error: %i\n",
@@ -616,12 +616,12 @@ RESULT HCDSumbitControlMessage (UsbDevice* device,
 
         // Nothing more to send, just receive the status.
         LOG_DEBUG("No transfer phase, just status phase\n");
-        channel.TransferIn(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, {}, USB_PID_DATA1);
+        Async::WaitOnTask(channel.TransferIn(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, {}, USB_PID_DATA1));
     }
     else if (Direction == USB_DIRECTION_OUT)
     {
         LOG_DEBUG("Transfer phase\n");
-        lastTransfer = channel.TransferOut(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, { buffer, bufferLength }, USB_PID_DATA1);
+        lastTransfer = Async::WaitOnTask(channel.TransferOut(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, { buffer, bufferLength }, USB_PID_DATA1));
         if (lastTransfer != bufferLength)
         {
             LOG("HCD: OUT transfer to device %i failed, expected %u bytes, got %u bytes.\n",
@@ -629,12 +629,12 @@ RESULT HCDSumbitControlMessage (UsbDevice* device,
             return ErrorGeneral; // Some parameter or communication issue.
         }
         LOG_DEBUG("Status phase\n");
-        channel.TransferIn(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, {}, USB_PID_DATA1);
+        Async::WaitOnTask(channel.TransferIn(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, {}, USB_PID_DATA1));
     }
     else
     {
         LOG_DEBUG("Transfer phase\n");
-        lastTransfer = channel.TransferIn(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, { buffer, bufferLength }, USB_PID_DATA1);
+        lastTransfer = Async::WaitOnTask(channel.TransferIn(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, { buffer, bufferLength }, USB_PID_DATA1));
         if (lastTransfer != bufferLength)
         {
             LOG("HCD: IN transfer to device %i failed, expected %u bytes, got %u bytes.\n",
@@ -642,7 +642,7 @@ RESULT HCDSumbitControlMessage (UsbDevice* device,
             return ErrorGeneral; // Some parameter or communication issue.
         }
         LOG_DEBUG("Status phase\n");
-        channel.TransferOut(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, {}, USB_PID_DATA1);
+        Async::WaitOnTask(channel.TransferOut(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, {}, USB_PID_DATA1));
     }
 
     if (bytesTransferred) *bytesTransferred = lastTransfer;
@@ -1714,13 +1714,13 @@ RESULT HCDGetDescriptor (UsbDevice* device,
 
 /// Initializes the USB driver by performing necessary interfactions with the
 /// host controller driver, and enumerating the initial device tree.
-RESULT UsbInitialize (void)
+Async::task<RESULT> UsbInitialize()
 {
-    auto hostEx = HCDInitialize();
+    auto hostEx = co_await HCDInitialize();
     if (!hostEx.has_value())
     {
         LOG("FATAL ERROR: HCD failed to Initialize.\n");
-        return ResultFromDwcResult(hostEx.error());
+        co_return ResultFromDwcResult(hostEx.error());
     }
 
     Host = std::move(hostEx).value();
@@ -1729,9 +1729,9 @@ RESULT UsbInitialize (void)
     if (auto const thisResult = UsbAttachRootHub(); thisResult != RESULT::Ok)
     {
         LOG("USBD: Failed to enumerate devices.\n");
-        return thisResult;
+        co_return thisResult;
     }
-    return Ok;
+    co_return Ok;
 }
 
 DeviceDescriptor GetDeviceDescriptor(uint8_t devNumber)
@@ -2319,9 +2319,11 @@ RESULT HCDEndpointTransfer(UsbDevice* device, UsbEndpointDescriptor endpoint, st
     }
 
     // Start the interrupt transfer with the correct data toggle
-    auto const transferred = endpoint.EndpointAddress.Direction == USB_DIRECTION_IN
-        ? channel->TransferIn (pipe, endpoint.Attributes.Type, { buffer, bufferLength }, packetId)
-        : channel->TransferOut(pipe, endpoint.Attributes.Type, { buffer, bufferLength }, packetId);
+    auto const transferred = Async::WaitOnTask(
+        endpoint.EndpointAddress.Direction == USB_DIRECTION_IN
+            ? channel->TransferIn (pipe, endpoint.Attributes.Type, { buffer, bufferLength }, packetId)
+            : channel->TransferOut(pipe, endpoint.Attributes.Type, { buffer, bufferLength }, packetId)
+    );
 
     // Update data toggle on successful transfer for interrupt endpoints
     if (transferred > 0 && endpoint.Attributes.Type == USB_TRANSFER_TYPE_INTERRUPT)

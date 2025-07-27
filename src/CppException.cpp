@@ -1,5 +1,7 @@
 
 
+#include "Cpu.h"
+
 #include <stddef.h>
 #include <stdlib.h>
 
@@ -8,6 +10,7 @@
 #include <new>
 #include <optional>
 #include <stdexcept>
+#include <exception>
 #include <typeinfo>
 
 extern "C"
@@ -59,6 +62,27 @@ void __cxa_guard_release(uint64_t* guard_object) {
 
 }
 // extern "C"
+
+std::exception_ptr::exception_ptr(exception_ptr const&) noexcept {
+    // Default constructor implementation
+}
+
+std::exception_ptr& std::exception_ptr::operator=(std::exception_ptr const&) noexcept {
+    // Default copy assignment implementation
+    return *this;
+}
+
+std::exception_ptr::~exception_ptr() noexcept {
+    // Default destructor implementation
+}
+
+void std::rethrow_exception(std::exception_ptr p) {
+    Cpu::Panic("rethrow_exception not implemented");
+}
+
+std::exception_ptr std::current_exception() noexcept {
+    return {};
+}
 
 std::bad_optional_access::~bad_optional_access() noexcept {
     // Default destructor implementation

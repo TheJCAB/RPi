@@ -23,6 +23,7 @@
 #include "Run.h"
 #include "UsbDevices.h"
 #include "PCIe.h"
+#include "Async.h"
 
 #include "TimerExample.h"
 
@@ -436,6 +437,18 @@ void Core0(void* dtb)
 
     Uart::Puts("\n\n\n");
 
+    Async::task<void> asyncTask = []() -> Async::task<void> {
+        for (int i = 0; i < 20; ++i)
+        {
+            Uart::Puts("Async task is running\n");
+            co_await Async::DelayInMilliseconds(1000);
+        }
+        Uart::Puts("Async task is done\n");
+        co_return;
+    }();
+
+    Uart::Puts("\n\n\n");
+
     Mailbox::Send(0, 0x80); // UART 1 and USB enabled?
 
     SdCard sdCard{ Mmio::Base + SdCard::RegistersOffset };
@@ -505,7 +518,9 @@ void Core0(void* dtb)
     }
     else
     {
-        UsbInitialize();
+        auto usbInitTask = UsbInitialize();
+
+        (void)WaitOnTask(std::move(usbInitTask));
 
         UsbCheckForChange();
 

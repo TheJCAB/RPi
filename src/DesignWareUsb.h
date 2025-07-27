@@ -31,6 +31,7 @@
 #pragma once
 
 #include "UsbSpec.h"
+#include "Async.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -78,4 +79,4 @@ enum class DWCRESULT : uint8_t
 class HCDHost;
 
 // Starts the HCD system once completed this routiune the system is operational.
-std::expected<std::shared_ptr<HCDHost>, DWCRESULT> HCDInitialize();
+Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize();

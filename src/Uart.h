@@ -5,6 +5,8 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include <concepts>
+
 namespace Uart
 {
 
@@ -22,9 +24,10 @@ void Putc(char c);
 char Getc();
 char TryGetc();
 void Puts(char const* str);
-void PutHex(auto value);
-void PutBin(auto value);
-void PutDec(auto value);
+void PutHex(std::integral auto value);
+void PutHex(void const volatile* value);
+void PutBin(std::integral auto value);
+void PutDec(std::integral auto value);
 
 }
 // namespace Raw
@@ -33,9 +36,10 @@ void Putc(char c);
 char Getc();
 char TryGetc();
 void Puts(char const* str);
-void PutHex(auto value);
-void PutBin(auto value);
-void PutDec(auto value);
+void PutHex(std::integral auto value);
+void PutHex(void const volatile* value);
+void PutBin(std::integral auto value);
+void PutDec(std::integral auto value);
 
 class LockedStream
 {
@@ -55,9 +59,10 @@ public:
     char Getc();
     char TryGetc();
     void Puts(char const* str);
-    void PutHex(auto value);
-    void PutBin(auto value);
-    void PutDec(auto value);
+    void PutHex(std::integral auto value);
+    void PutHex(void const volatile* value);
+    void PutBin(std::integral auto value);
+    void PutDec(std::integral auto value);
 
     void Unlock();
 

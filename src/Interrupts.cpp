@@ -293,6 +293,21 @@ extern "C" Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
             }
         }
 
+        if (pendingCoreInterrupts.GPU)
+        {
+            //Uart::Putc('>'); // Printf tracing of the handler.
+            auto basicPending = IrqBasicPending.get();
+            // Handle basic IRQs
+            if (basicPending.USB)
+            {
+                // Handle USB IRQ
+                if (UsbHandler)
+                {
+                    UsbHandler();
+                }
+            }
+        }
+
         // Ensure we don't just loop indefinitely if some interrupt is defined but not handled.
         if (--retryCount == 0)
         {

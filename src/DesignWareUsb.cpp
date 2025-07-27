@@ -30,6 +30,8 @@
 //    {++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
 #include "DesignWareUsb.h"
 
+#include "Async.h"
+
 #include <stdlib.h>                // C standard needed for NULL
 #include <stdint.h>                // C standard needed for uint8_t, uint32_t, uint64_t etc
 #include <string.h>                // C standard needed for memset
@@ -557,7 +559,7 @@ bool PhyInitialized = false;
  11Feb17 LdB
  --------------------------------------------------------------------------*/
 bool PowerOnUsb(void) {
-    uint32_t __attribute__((aligned(16))) volatile mailbox_message_buffer[8];
+    static uint32_t __attribute__((aligned(16))) volatile mailbox_message_buffer[8];
     auto mailbox_message = Mailbox::AsGpuPointer(mailbox_message_buffer);
     mailbox_message[0] = sizeof(mailbox_message);
     mailbox_message[1] = 0;
@@ -581,7 +583,7 @@ bool PowerOnUsb(void) {
  11Feb17 LdB
  --------------------------------------------------------------------------*/
 DWCRESULT PowerOffUsb(void) {
-    uint32_t __attribute__((aligned(16))) volatile mailbox_message_buffer[8];
+    static uint32_t __attribute__((aligned(16))) volatile mailbox_message_buffer[8];
     auto mailbox_message = Mailbox::AsGpuPointer(mailbox_message_buffer);
     mailbox_message[0] = sizeof(mailbox_message);
     mailbox_message[1] = 0;
@@ -729,7 +731,7 @@ uint8_t HCDGetHostChannelCount()
 {                       INTERNAL HOST CONTROL FUNCTIONS                        }
 {==========================================================================*/
 
-std::expected<std::shared_ptr<HCDHost>, DWCRESULT> HCDInitialize()
+Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
 {
     auto const registersAddress = Mmio::Base + USB_CORE_OFFSET;
     DWC_CORE = reinterpret_cast<CoreRegisters*>(registersAddress);
@@ -744,21 +746,21 @@ std::expected<std::shared_ptr<HCDHost>, DWCRESULT> HCDInitialize()
     if (vendorId.O != 'O' || vendorId.T != 'T' || vendorId.Version != 2)
     {
         LOG("Driver incompatible. Expected OT2.xxx (BCM2708x).\n");
-        return DWCRESULT::ErrorIncompatible;
+        co_return DWCRESULT::ErrorIncompatible;
     }
 
     if (DWC_CORE->HARDWARE1->Architecture != InternalDma)
     {
         // We only allow DMA transfer
         LOG("HCD: Host architecture does not support Internal DMA\n");
-        return DWCRESULT::ErrorIncompatible;
+        co_return DWCRESULT::ErrorIncompatible;
     }
 
     if (DWC_CORE->HARDWARE1->HighSpeedPhysical == NotSupported)
     {
         // We need high speed transfers
         LOG("HCD: High speed physical unsupported\n");
-        return DWCRESULT::ErrorIncompatible;
+        co_return DWCRESULT::ErrorIncompatible;
     }
 
     // Clear and disable all interrupts.
@@ -769,7 +771,7 @@ std::expected<std::shared_ptr<HCDHost>, DWCRESULT> HCDInitialize()
     if (!PowerOnUsb())
     {
         LOG("HCD: Failed to power on USB Host Controller.\n");
-        return DWCRESULT::ErrorIncompatible;
+        co_return DWCRESULT::ErrorIncompatible;
     }
 
     // And now we set it up.
@@ -781,15 +783,15 @@ std::expected<std::shared_ptr<HCDHost>, DWCRESULT> HCDInitialize()
     coreUsb.TsDlinePulseEnable = 0;
     DWC_CORE->CONTROL = coreUsb;
 
-    Cpu::DelayInMicroseconds(1000);
+    co_await Async::DelayInMicroseconds(1'000);
 
     LOG_DEBUG("HCD: Master reset.\n");                                
     if ((result = HCDReset()) != DWCRESULT::Ok) {
         LOG("FATAL ERROR: Could not do a Master reset on HCD.\n");
-        return result;
+        co_return result;
     }
 
-    Cpu::DelayInMicroseconds(1000);
+    co_await Async::DelayInMicroseconds(1'000);
 
     if (!PhyInitialized) {
         LOG_DEBUG("HCD: One time phy initialisation.\n");
@@ -801,11 +803,11 @@ std::expected<std::shared_ptr<HCDHost>, DWCRESULT> HCDInitialize()
         DWC_CORE->CONTROL = coreUsb;
         if ((result = HCDReset()) != DWCRESULT::Ok) {
             LOG("FATAL ERROR: Could not do a Master reset on HCD.\n");
-            return result;
+            co_return result;
         }
     }
 
-    Cpu::DelayInMicroseconds(1000);
+    co_await Async::DelayInMicroseconds(1'000);
 
     coreUsb = *DWC_CORE->CONTROL;
     if ((*DWC_CORE->HARDWARE1).HighSpeedPhysical == Ulpi
@@ -820,14 +822,14 @@ std::expected<std::shared_ptr<HCDHost>, DWCRESULT> HCDInitialize()
     }
     DWC_CORE->CONTROL = coreUsb;
 
-    Cpu::DelayInMicroseconds(1000);
+    co_await Async::DelayInMicroseconds(1'000);
 
     CoreAhb tempAhb = *DWC_CORE->AHB;
     tempAhb.DmaEnable = true;
     tempAhb.DmaRemainderMode = Incremental;
     DWC_CORE->AHB = tempAhb;
 
-    Cpu::DelayInMicroseconds(1000);
+    co_await Async::DelayInMicroseconds(1'000);
 
     coreUsb = *DWC_CORE->CONTROL;
     switch ((*DWC_CORE->HARDWARE1).OperatingMode) {
@@ -855,15 +857,15 @@ std::expected<std::shared_ptr<HCDHost>, DWCRESULT> HCDInitialize()
     LOG_DEBUG("HCD: Core started.\n");
     LOG_DEBUG("HCD: Starting host.\n");
 
-    Cpu::DelayInMicroseconds(1000);
+    co_await Async::DelayInMicroseconds(1'000);
 
     DWC_POWER_AND_CLOCK = {};
 
-    Cpu::DelayInMicroseconds(1000);
+    co_await Async::DelayInMicroseconds(1'000);
 
     DWC_CORE->RECEIVESIZE = ReceiveFifoSize;
 
-    Cpu::DelayInMicroseconds(1000);
+    co_await Async::DelayInMicroseconds(1'000);
 
     DWC_CORE->NONPERIODICFIFO_SIZE = [](auto& r)
     {
@@ -871,7 +873,7 @@ std::expected<std::shared_ptr<HCDHost>, DWCRESULT> HCDInitialize()
         r.StartAddress = ReceiveFifoSize;
     };
 
-    Cpu::DelayInMicroseconds(1000);
+    co_await Async::DelayInMicroseconds(1'000);
 
     DWC_CORE->PERIODICINFO_HostSize = [](auto& r)
     {
@@ -879,7 +881,7 @@ std::expected<std::shared_ptr<HCDHost>, DWCRESULT> HCDInitialize()
         r.StartAddress = ReceiveFifoSize + NonPeriodicFifoSize;
     };
 
-    Cpu::DelayInMicroseconds(1000);
+    co_await Async::DelayInMicroseconds(1'000);
 
     LOG_DEBUG("HCD: Set HNP: enabled.\n");
 
@@ -888,15 +890,15 @@ std::expected<std::shared_ptr<HCDHost>, DWCRESULT> HCDInitialize()
     DWC_CORE->OTGCONTROL = tempOtgControl;
     //DWC_CORE->OTGINTERRUPT = 0xFFFF'FFFFu; // Clear all OTG interrupts
 
-    Cpu::DelayInMicroseconds(1000);
+    co_await Async::DelayInMicroseconds(1'000);
 
     if ((result = HCDTransmitFifoFlush(FlushAll)) != DWCRESULT::Ok)
-        return result;
-    Cpu::DelayInMicroseconds(1000);
+        co_return result;
+    co_await Async::DelayInMicroseconds(1'000);
 
     if ((result = HCDReceiveFifoFlush()) != DWCRESULT::Ok)
-        return result;
-    Cpu::DelayInMicroseconds(1000);
+        co_return result;
+    co_await Async::DelayInMicroseconds(1'000);
 
     HCDHost::ClockRate clockRate;
 
@@ -912,7 +914,7 @@ std::expected<std::shared_ptr<HCDHost>, DWCRESULT> HCDInitialize()
 
     Host = std::make_shared<HCDHost>(registersAddress + 0x400, clockRate, DWC_CORE->HARDWARE1->HostChannelMax + 1);
 
-    Cpu::DelayInMicroseconds(1000);
+    co_await Async::DelayInMicroseconds(1'000);
 
     Interrupts::EnableUsb(InterruptHandler);
 
@@ -932,5 +934,5 @@ std::expected<std::shared_ptr<HCDHost>, DWCRESULT> HCDInitialize()
     
     LOG_DEBUG("HCD: Successfully started.\n");
 
-    return Host;
+    co_return Host;
 }

@@ -59,4 +59,5 @@ private:
     uint8_t m_NumChannels = 0;
 
     std::unique_ptr<HCDChannel> m_Channels[MaxChannels]{};
+    std::atomic<HCDChannel*> m_freeChannels[MaxChannels]{};
 };

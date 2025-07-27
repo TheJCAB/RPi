@@ -173,7 +173,7 @@ IrqExceptionVector:
 1:
     mov     x0, sp
     bl      InterruptDispatcher
-    cbz     x1, RestoreVolatilesAndERet // No spark, so exit. This should be common.
+    cbz     x1, GetAndRunNextScheduledSpark // RestoreVolatilesAndERet // No spark, so exit. This should be common.
 2:
     tbnz    x1, #0, RunUserModeSpark  // Bit 0 is set for user-mode sparks.
     blr     x1
