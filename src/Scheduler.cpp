@@ -1,4 +1,5 @@
 #include "Scheduler.h"
+#include "Interrupts.h"
 #include "Containers.h"
 #include "Timer.h"
 
@@ -45,12 +46,14 @@ inline ThreadInfo& SwapCurrentThreadInfo(ThreadInfo* newInfo)
     return *oldInfo;
 }
 
-void TimerSpark(uintptr_t)
+Spark TimerSpark(uintptr_t)
 {
     Timer::ScheduleSpark(
         Cpu::GetPerformanceTicksForMs(50),
-        { TimerSpark, 0 }
+        { .Func = TimerSpark }
     );
+    //Uart::Putc('-');
+    return {};
 }
 
 void Init()
@@ -68,7 +71,7 @@ void Init()
 
     Timer::ScheduleSpark(
         Cpu::GetPerformanceTicksForMs(50),
-        { TimerSpark, 0 }
+        { .Func = TimerSpark }
     );
 }
 
@@ -79,13 +82,14 @@ void AddSpark(Spark const& spark)
     info.PendingSparksFifo.Push({ spark, nullptr });
 }
 
-bool ScheduleOneSpark()
+extern "C"
+Interrupts::Spark GetNextScheduledSpark()
 {
     auto& threadInfo = GetCurrentThreadInfo();
     auto const coreInfo = threadInfo.Core;
     if (coreInfo->PendingSparksFifo.IsEmpty())
     {
-        return false; // No sparks to schedule
+        return {}; // No sparks to schedule
     }
     auto const pendingSpark = coreInfo->PendingSparksFifo.Pop();
     auto const oldTask = std::exchange(threadInfo.Task, pendingSpark.Task);
@@ -93,13 +97,11 @@ bool ScheduleOneSpark()
     {
     };
     auto const oldSparkInfo = std::exchange(threadInfo.Spark, &sparkInfo);
-    //Uart::Raw::Putc('&');
-    pendingSpark.Spark.Func(pendingSpark.Spark.Context);
-    //Uart::Raw::Putc(':');
+    //pendingSpark.Spark.Func(pendingSpark.Spark.Context);
     threadInfo.Spark = oldSparkInfo;
     threadInfo.Task  = oldTask;
 
-    return true;
+    return { pendingSpark.Spark.Context, pendingSpark.Spark.Func };
 }
 
 [[noreturn]] void Schedule(CoreInfo& info)
@@ -107,44 +109,44 @@ bool ScheduleOneSpark()
     while (true) {}
 }
 
-[[noreturn]] void SetSparkContinuation(Spark const& spark)
-{
-    auto& threadInfo = GetCurrentThreadInfo();
-    auto const coreInfo = threadInfo.Core;
-    coreInfo->PendingSparksFifo.Push({ spark, threadInfo.Task });
+//[[noreturn]] void SetSparkContinuation(Spark const& spark)
+//{
+//    auto& threadInfo = GetCurrentThreadInfo();
+//    auto const coreInfo = threadInfo.Core;
+//    coreInfo->PendingSparksFifo.Push({ spark, threadInfo.Task });
+//
+//    Schedule(*coreInfo);
+//}
 
-    Schedule(*coreInfo);
-}
+//void YieldToSparks()
+//{
+//    while (ScheduleOneSpark())
+//    {
+//        // Keep scheduling sparks until there are no more pending sparks
+//    }
+//    auto& threadInfo = GetCurrentThreadInfo();
+//    auto const coreInfo = threadInfo.Core;
+//    if (coreInfo->PendingThreadsFifo.IsEmpty())
+//    {
+//        // No threads to schedule, just yield
+//        return;
+//    }
+//}
 
-void YieldToSparks()
-{
-    while (ScheduleOneSpark())
-    {
-        // Keep scheduling sparks until there are no more pending sparks
-    }
-    auto& threadInfo = GetCurrentThreadInfo();
-    auto const coreInfo = threadInfo.Core;
-    if (coreInfo->PendingThreadsFifo.IsEmpty())
-    {
-        // No threads to schedule, just yield
-        return;
-    }
-}
-
-void DelayInMilliseconds(uint32_t ms)
-{
-    if (ms == 0)
-    {
-        return; // No delay needed
-    }
-
-    auto const targetTime = Cpu::GetPerformanceCounter() + Cpu::GetPerformanceTicksForMs(ms);
-    while (Cpu::GetPerformanceCounter() < targetTime)
-    {
-        ScheduleOneSpark(); // Allow other sparks to run while waiting
-        // Busy-wait until the specified time has passed
-    }
-}
+//void DelayInMilliseconds(uint32_t ms)
+//{
+//    if (ms == 0)
+//    {
+//        return; // No delay needed
+//    }
+//
+//    auto const targetTime = Cpu::GetPerformanceCounter() + Cpu::GetPerformanceTicksForMs(ms);
+//    while (Cpu::GetPerformanceCounter() < targetTime)
+//    {
+//        ScheduleOneSpark(); // Allow other sparks to run while waiting
+//        // Busy-wait until the specified time has passed
+//    }
+//}
 
 ThreadInfo& CreateThread(ThreadFunction* func, uintptr_t context)
 {

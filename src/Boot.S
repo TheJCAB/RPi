@@ -114,10 +114,13 @@ SPEL0ErrorExceptionVector:
     // synchronous
     .align  7
 SynchronousExceptionVector:
-// Align the stack?
-//    mov x1, sp
-//    and x0, x1, #0xF
-//    sub sp, x1, x0
+    // Detect the user mode spark return first.
+    stp     x0, x1, [sp, #-16]!
+    mrs     x0, ESR_EL1
+    ubfx    x1, x0, #26, #6
+    sub     x1, x1, #0x15
+    cbz     x1, DispatchToSyscall
+    ldp     x0, x1, [sp], #16
 
     // 32 instructions max!
     // Preserve the parameter registers first.
@@ -132,23 +135,19 @@ SynchronousExceptionVector:
     // And LR which we're about to use.
     str     x30,      [sp, #(30 *  8)]
 
-    // Now figure out what sort of exception this is.
-    mrs     x0, ESR_EL1
-    lsr     x1, x0, #26
-    and     x1, x1, #0x3F
-
-    // If it's a syscall, it's special in that it was done on purpose.
-    // The rest of volatile registers can be trashed, we don't need to preserve them.
-    cmp     x1, #0x15
-    b.eq    DispatchToSyscall
-
-    // Otherwise this is like an interrupt, we'll need to preserve all the volatiles.
+    // Otherwise this is like an interrupt, we'll need to preserve registers
     bl      PreserveVolatileRegisters
     bl      PreserveNonvolatileRegisters
     mov     x0, sp
     mov     x1, #0x10
     bl      MainExceptionHandler
-    b       CallSparkIfAny
+
+    cbz     x1, RestoreAllRegistersAndERet // No spark, so exit. This should be common.
+2:
+    tbnz    x1, #0, RunUserModeSpark  // Bit 0 is set for user-mode sparks.
+    blr     x1
+    cbnz    x1, 2b
+    b       RestoreAllRegistersAndERet
 
     // IRQ
     .align  7
@@ -167,34 +166,19 @@ IrqExceptionVector:
     str     x30,      [sp, #(30 *  8)]
     mov     x1, #0x11
     bl      PreserveVolatileRegisters
-bl      PreserveNonvolatileRegisters
+    bl      PreserveNonvolatileRegisters // Not strictly necessary, but helps with debugging.
 //mov x0,#'#'
 //bl RawPutc
+
+1:
     mov     x0, sp
     bl      InterruptDispatcher
-
-CallSparkIfAny:
-    cbz     x1, RestoreVolatilesAndERet
+    cbz     x1, RestoreVolatilesAndERet // No spark, so exit. This should be common.
+2:
+    tbnz    x1, #0, RunUserModeSpark  // Bit 0 is set for user-mode sparks.
     blr     x1
-    b       CallSparkIfAny
-    
-//    mov x0,#'.'
-//    bl RawPutc
-
-RestoreVolatilesAndERet:
-    bl      RestoreVolatileRegisters
-
-RestoreParametersAndERet:
-    ldr     x30,      [sp, #(30 *  8)]
-    ldp      x6,  x7, [sp, #( 6 *  8)]
-    ldp      x4,  x5, [sp, #( 4 *  8)]
-    ldp      x2,  x3, [sp, #( 2 *  8)]
-    ldp      x0,  x1, [sp], #ThreadContext_V
-    ldp      q6,  q7, [sp, #( 6 * 16)]
-    ldp      q4,  q5, [sp, #( 4 * 16)]
-    ldp      q2,  q3, [sp, #( 2 * 16)]
-    ldp      q0,  q1, [sp], #ThreadContext_VSize
-    eret
+    cbnz    x1, 2b
+    b       1b
 
     // FIQ
     .align  7
@@ -323,6 +307,7 @@ PreserveVolatileRegisters:
 // Read the entire set of volatile registers from the stack, in ThreadContext layout.
 // Except the arguments x0-7 and q0-7 which have already been done.
 // TODO: AAPCS indicates x0-7 can be used to return, but in practice only x0-1 seem to be used.
+// So we could tighten things up here.
 // 
 RestoreVolatileRegisters:
     // TODO: Use a flag to indicate volatile registers should be zeroed instead of restored.
@@ -377,16 +362,52 @@ RestoreNonvolatileRegisters:
     ldp     x18, x19, [sp, #(18 * 8)]
     ret
 
+// Back to "user mode" to run a spark in x1 (with bit zero set) and context in x0.
+// All "user mode" registers must be preserved in a context just pushed to the stack.
+RunUserModeSpark:
+    and     x1, x1, #~1
+    msr     ELR_EL1, x1
+    adr     lr, UserModeSparkEnd
+    eret
+
+// We need to dispatch a syscall.
+// Syndrome in x0, and x0 and z1 pushed on the stack.
+// Volatile registers can be trashed, as this represents a function call in "user mode".
 DispatchToSyscall:
+    ubfx    x8, x0, #0, #16
+    ldp     x0, x1, [sp], #16
+    cbz     x8, GetAndRunNextScheduledSpark
+
+    stp      q0,  q1, [sp, #-ThreadContext_VSize]!
+    stp      q2,  q3, [sp, #( 2 * 16)]
+    stp      q4,  q5, [sp, #( 4 * 16)]
+    stp      q6,  q7, [sp, #( 6 * 16)]
+    stp      x0,  x1, [sp, #-ThreadContext_V]!
+    stp      x2,  x3, [sp, #( 2 *  8)]
+    stp      x4,  x5, [sp, #( 4 *  8)]
+    stp      x6,  x7, [sp, #( 6 *  8)]
+    // And LR which we're about to use.
+    str     x30,      [sp, #(30 *  8)]
     bl      PreserveNonvolatileRegisters
+
     mov     x0, sp // ThreadContext as a parameter.
     bl      SyscallDispatcher
-    b       CallSparkIfAny
+    b       RunSpark
 
-//    cbnz    x0, 1f
-//    b       RestoreParametersAndERet
-//1:  bl      ZeroVolatileRegisters
-//    // fallthrough...
+// We return from the user-mode spark with a SVC #0.
+// We don't need to preserve anything, just see if there are more sparks to run.
+GetAndRunNextScheduledSpark:
+    bl      GetNextScheduledSpark
+
+RunSpark:
+    cbz     x1, RestoreAllRegistersAndERet
+    tbnz    x1, #0, RunUserModeSpark  // Bit 0 is set for user-mode sparks.
+    blr     x1
+    cbnz    x1, RunSpark
+
+    // No more "kernel mode" sparks.
+    // Go again to see if there are more "user mode" sparks.
+    b       GetAndRunNextScheduledSpark
 
 .global ThreadContextSwitchSpark
 ThreadContextSwitchSpark:
@@ -399,5 +420,25 @@ ThreadContextSwitchSpark:
     str     x8, [x18]
 
     mov     sp, x0
+    // fallthrough
+
+RestoreAllRegistersAndERet:
     bl      RestoreNonvolatileRegisters
-    b       RestoreVolatilesAndERet
+    // fallthrough
+
+RestoreVolatilesAndERet:
+//    mov x0,#'.'
+//    bl RawPutc
+    bl      RestoreVolatileRegisters
+
+RestoreParametersAndERet:
+    ldr     x30,      [sp, #(30 *  8)]
+    ldp      x6,  x7, [sp, #( 6 *  8)]
+    ldp      x4,  x5, [sp, #( 4 *  8)]
+    ldp      x2,  x3, [sp, #( 2 *  8)]
+    ldp      x0,  x1, [sp], #ThreadContext_V
+    ldp      q6,  q7, [sp, #( 6 * 16)]
+    ldp      q4,  q5, [sp, #( 4 * 16)]
+    ldp      q2,  q3, [sp, #( 2 * 16)]
+    ldp      q0,  q1, [sp], #ThreadContext_VSize
+    eret

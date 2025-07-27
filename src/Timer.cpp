@@ -37,20 +37,31 @@ CoreTimerData CoreData[4];
 Interrupts::Spark HandleArmVirtualTimerInterrupt();
 
 // Helper function to find the next timer that should fire
-uint32_t FindNextScheduledTimerTriggerTime()
+uint32_t FindNextScheduledTimerTriggerTime(Cpu::PerformanceTime currentTime)
 {
     auto const coreId = Cpu::mpidr_el1->CoreId;
     auto& coreData = CoreData[coreId];
 
+    // Find the next timer that should fire
     uint32_t next_timer = INVALID_HANDLE;
-    auto earliest_time = Cpu::GetFarFuturePerformanceTime();
-    
+    auto earliestTime = Cpu::GetFarFuturePerformanceTime(currentTime);
+
     for (uint32_t i = 0; i < MAX_SCHEDULED_TIMERS; ++i)
     {
         auto& timer = coreData.scheduled_timers[i];
-        if (timer && timer.trigger_time_ticks < earliest_time)
+        if (!timer)
         {
-            earliest_time = timer.trigger_time_ticks;
+            continue;
+        }
+        if (timer.trigger_time_ticks <= currentTime)
+        {
+            // Timer should fire immediately
+            auto const spark = timer.Spark.exchange({}, std::memory_order_acquire);
+            Scheduler::AddSpark(spark);
+        }
+        else if (timer.trigger_time_ticks < earliestTime)
+        {
+            earliestTime = timer.trigger_time_ticks;
             next_timer = i;
         }
     }
@@ -64,46 +75,29 @@ void SetupTimerForNext()
     auto const coreId = Cpu::mpidr_el1->CoreId;
     auto& coreData = CoreData[coreId];
 
-    for (;;)
+    auto currentTime = Cpu::GetPerformanceCounter();
+
+    uint32_t next_time = FindNextScheduledTimerTriggerTime(currentTime);
+    if (next_time == INVALID_HANDLE)
     {
-        uint32_t next_time = FindNextScheduledTimerTriggerTime();
-        if (next_time == INVALID_HANDLE)
-        {
-            // No timers active, disable the timer
-            coreData.timerIsEnabled = false;
-            Interrupts::DisableCoreVirtualTimerInterrupt();
-            return;
-        }
+        // No timers active, disable the timer
+        coreData.timerIsEnabled = false;
+        Interrupts::DisableCoreVirtualTimerInterrupt();
+        return;
+    }
 
-        auto& timer = coreData.scheduled_timers[next_time];
+    auto& timer = coreData.scheduled_timers[next_time];
 
-        auto current_time = Cpu::GetPerformanceCounter();
+    // Calculate how many ticks until the next timer should fire
+    int64_t ticks_until_fire = static_cast<int64_t>(timer.trigger_time_ticks - currentTime);
 
-        // Calculate how many ticks until the next timer should fire
-        int64_t ticks_until_fire = static_cast<int64_t>(timer.trigger_time_ticks - current_time);
+    // Set the timer interval
+    Cpu::cntv_tval_el0 = static_cast<uint64_t>(ticks_until_fire);
 
-        // Ensure we don't set a negative or zero timer value
-        if (ticks_until_fire <= 0)
-        {
-            auto const spark = coreData.scheduled_timers[next_time].Spark.exchange({}, std::memory_order_acquire);
-            Scheduler::AddSpark(spark);
-
-            // TODO: The scheduler should use the timer to handle scheduling on its own
-            Scheduler::YieldToSparks();
-        }
-        else
-        {
-            // Set the timer interval
-            Cpu::cntv_tval_el0 = static_cast<uint64_t>(ticks_until_fire);
-
-            // Enable timer interrupts if this is the first scheduled timer
-            if (!coreData.timerIsEnabled)
-            {
-                Interrupts::EnableCoreVirtualTimerInterrupt(HandleArmVirtualTimerInterrupt);
-            }
-
-            return;
-        }
+    // Enable timer interrupts if this is the first scheduled timer
+    if (!coreData.timerIsEnabled)
+    {
+        Interrupts::EnableCoreVirtualTimerInterrupt(HandleArmVirtualTimerInterrupt);
     }
 }
 
@@ -230,34 +224,11 @@ constexpr uint32_t Timer_Reload    = 0xB418u;
 // Enhanced interrupt handler that supports both scheduled and periodic timers
 Interrupts::Spark HandleArmVirtualTimerInterrupt()
 {
-    auto const coreId = Cpu::mpidr_el1->CoreId;
-    auto& coreData = CoreData[coreId];
-
-    auto current_time = Cpu::GetPerformanceCounter();
-
-    // Check for scheduled timers that should fire
-    for (size_t i = 0; i < MAX_SCHEDULED_TIMERS; ++i)
-    {
-        auto& timer = coreData.scheduled_timers[i];
-        if (timer && timer.trigger_time_ticks <= current_time)
-        {
-            // This timer should fire
-            auto const spark = coreData.scheduled_timers[i].Spark.exchange({}, std::memory_order_acquire);
-
-            // Call the callback (do this after marking inactive to avoid issues if callback reschedules)
-            Scheduler::AddSpark(spark);
-
-            // TODO: The scheduler should use the timer to handle scheduling on its own
-            //Uart::Raw::Putc('$');
-            Scheduler::YieldToSparks();
-        }
-    }
-    
-    // Set up the timer for the next scheduled event
+    // Set up the timer for the next scheduled event, scheduling the sparks for reached timers.
     //Uart::Raw::Putc('^');
     SetupTimerForNext();
 
-    return {};
+    return Exception::MakeSpark(Scheduler::GetNextScheduledSpark);
 }
 
 }

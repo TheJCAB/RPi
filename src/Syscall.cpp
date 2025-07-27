@@ -1,4 +1,6 @@
 
+#include "Syscall.h"
+
 #include "Scheduler.h"
 #include "Exception.h"
 
@@ -7,19 +9,31 @@
 #include <stdint.h>
 #include <stddef.h>
 
+namespace Syscall
+{
+
+static_assert(Function::SparkReturn == Function{0}, "SparkReturn function must be 0");
+
+extern "C"
+__attribute__((naked))
+void UserModeSparkEnd()
+{
+    asm volatile ("svc #0\n"); // Return from the user-mode spark
+}
+
 extern "C"
 Exception::Spark SyscallDispatcher(ThreadContext* threadContext, uint32_t code)
 {
     auto threadInfo = &Scheduler::GetCurrentThreadInfo();
 
-    auto const iss = Cpu::esr_el1->ISS;
-    Uart::Puts("Syscall ISS ");
-    Uart::PutDec(iss);
+    auto const func = static_cast<Function>(Cpu::esr_el1->ISS);
+    Uart::Puts("Syscall function ");
+    Uart::PutDec(static_cast<uint32_t>(func));
     Uart::Puts("\n");
 
-    switch (iss)
+    switch (func)
     {
-    case 0:
+    case Function::YieldToThread:
     {
         Uart::Puts("YieldToThread from ");
         Uart::PutHex(reinterpret_cast<uintptr_t>(&Scheduler::GetCurrentThreadInfo()));
@@ -31,13 +45,18 @@ Exception::Spark SyscallDispatcher(ThreadContext* threadContext, uint32_t code)
         return Exception::MakeSpark(std::exchange(newThreadInfo->ContextWhenSuspended, nullptr));
     }
 
-    case 1:
+    case Function::HelloFromISS1:
         Uart::Puts("Hello from ISS 1\n");
         break;
+
     default:
         // Handle default case
+        Cpu::Panic("Unknown syscall function: %u\n", static_cast<uint32_t>(func));
         break;
     }
 
     return {};
 }
+
+}
+// namespace Syscall

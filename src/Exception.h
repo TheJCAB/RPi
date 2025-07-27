@@ -31,6 +31,7 @@ namespace Exception
 struct Spark;
 
 using SparkFunction = Spark(uintptr_t context);
+using SparkFunctionNoContext = Spark();
 
 struct Spark
 {
@@ -39,6 +40,16 @@ struct Spark
 
     explicit operator bool() const { return Func != nullptr; }
 };
+
+inline Spark MakeSpark(SparkFunction* func, uintptr_t context)
+{
+    return { .Context = context, .Func = func };
+}
+
+inline Spark MakeSpark(SparkFunctionNoContext* func)
+{
+    return { .Func = reinterpret_cast<SparkFunction*>(reinterpret_cast<uintptr_t>(func)) };
+}
 
 using HandlerFunction = Spark(*)();
 

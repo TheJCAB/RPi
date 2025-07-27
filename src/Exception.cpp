@@ -124,6 +124,25 @@ void PutThreadContext(Uart::LockedStream& stream, ThreadContext* context)
     stream.Puts(" PC\n");
 }
 
+enum class SynchronousExceptionClass : uint8_t
+{
+    Unknown                    = 0b00'0000,
+    WfInstruction              = 0b00'0001,
+    FpDisabled                 = 0b00'0111,
+    IllegalExecutionState      = 0b00'1110,
+    Svc                        = 0b01'0101,
+    SysInstruction             = 0b01'1000,
+    InstructionAbortLowerLevel = 0b10'0000,
+    InstructionAbortSameLevel  = 0b10'0001,
+    PcAlignment                = 0b10'0010,
+    DataAbortLowerLevel        = 0b10'0100,
+    DataAbortSameLevel         = 0b10'0101,
+    SpAlignment                = 0b10'0110,
+    MemoryOperation            = 0b10'0111,
+    FpException                = 0b10'1100,
+    Brk                        = 0b11'1100,
+};
+
 extern "C" Spark MainExceptionHandler(ThreadContext* context, uint32_t code)
 {
     Uart::LockedStream stream(true);
@@ -173,13 +192,23 @@ extern "C" Spark MainExceptionHandler(ThreadContext* context, uint32_t code)
             uint8_t  const ec   = (esr >> 26) & 0b11'1111;
             uint32_t const iss  = (esr >>  0) & 0x01FF'FFFF;
             uint32_t const iss2 = (esr >> 32) & 0x00FF'FFFF;
-            switch (ec)
+            switch (static_cast<SynchronousExceptionClass>(ec))
             {
-                case 0b00'0000: stream.Puts("Unknown exception class\n"); break;
-                case 0b00'0111: stream.Puts("FP/SIMD disabled exception class\n"); break;
-                case 0b01'0101: SvcException(stream, (uint16_t)iss, elr); break;
-                case 0b10'0100: [[fallthrough]];
-                case 0b10'0101: DataAbortException(stream, ec, iss, iss2, far); break;
+                case SynchronousExceptionClass::Unknown                   : stream.Puts("Unknown exception class\n"); break;
+                case SynchronousExceptionClass::WfInstruction             : stream.Puts("WF* instruction exception class\n"); break;
+                case SynchronousExceptionClass::FpDisabled                : stream.Puts("FP/SIMD disabled exception class\n"); break;
+                case SynchronousExceptionClass::IllegalExecutionState     : stream.Puts("Illegal execution state exception class\n"); break;
+                case SynchronousExceptionClass::Svc                       : SvcException(stream, (uint16_t)iss, elr); break;
+                case SynchronousExceptionClass::SysInstruction            : stream.Puts("System instruction exception class\n"); break;
+                case SynchronousExceptionClass::InstructionAbortLowerLevel: [[fallthrough]];
+                case SynchronousExceptionClass::InstructionAbortSameLevel : stream.Puts("Instruction Abort exception class\n"); break;
+                case SynchronousExceptionClass::PcAlignment               : stream.Puts("PC Alignment exception class\n"); break;
+                case SynchronousExceptionClass::DataAbortLowerLevel       : [[fallthrough]];
+                case SynchronousExceptionClass::DataAbortSameLevel        : DataAbortException(stream, ec, iss, iss2, far); break;
+                case SynchronousExceptionClass::SpAlignment               : stream.Puts("SP Alignment exception class\n"); break;
+                case SynchronousExceptionClass::MemoryOperation           : stream.Puts("Memory Operation exception class\n"); break;
+                case SynchronousExceptionClass::FpException               : stream.Puts("FP exception class\n"); break;
+                case SynchronousExceptionClass::Brk                       : stream.Puts("BRK exception class\n"); break;
                 default: stream.Puts("Other synchronous exception class\n"); break;
             }
             PutRawSynchronousExceptionInfo(stream, code, ec, iss, iss2, elr, spsr, far); 
@@ -241,10 +270,10 @@ void Init()
         Cpu::Panic("Exception vectors initialized in an unsupported exception level.\n");
     }
 
-    // Enable SError, IRQ and FIQ.
-    // Note: SError means synchronous exceptions, all caused by the executing code,
-    // but not necessarily means errors. It includes system calls, memory faults, etc...
-    Cpu::daifclr.set<7>();
+    // Enable IRQ and FIQ.
+    // Note: Synchronous exceptions like system calls, memory faults, etc...
+    // are always enabled by definition, all caused by the executing code.
+    Cpu::daifclr.set<3>();
 
     Cpu::InstructionSynchronizationBarrier();
 }

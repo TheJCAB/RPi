@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ThreadContext.h"
+#include "Exception.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -40,14 +41,24 @@ struct ThreadInfo
 // Ideally, user-mode Sparks should be short-lived, and it should be possible for the scheduler
 // to kill them or worse if they run too long, based on heuristic (too IRQ time should be deducted).
 // Ideally, much "user mode" code will be structured using coroutines that schedule Sparks when suspended.
-using SparkFunction = void(uintptr_t context);
 
-struct Spark
+using SparkFunction = Exception::SparkFunction;
+using Spark = Exception::Spark;
+
+using SparkFunctionNoContext = Spark();
+
+inline Spark MakeUserModeSpark(SparkFunction* func, uintptr_t context)
 {
-    SparkFunction* Func;
-    uintptr_t      Context;
-};
+    return { .Context = context, .Func = reinterpret_cast<SparkFunction*>(reinterpret_cast<uintptr_t>(func) | 1) };
+}
 
+inline Spark MakeUserModeSpark(SparkFunctionNoContext* func)
+{
+    return { .Func = reinterpret_cast<SparkFunction*>(reinterpret_cast<uintptr_t>(func) | 1) };
+}
+
+extern "C"
+Spark GetNextScheduledSpark();
 
 void Init();
 void AddSpark(Spark const&);

@@ -34,6 +34,9 @@ uint64_t        GetPerformanceFrequency();
 PerformanceTime GetPerformanceCounter  ();
 void            DelayUntilPerformanceTime (PerformanceTime);
 
+inline PerformanceTime GetMaximumFuturePerformanceTime(PerformanceTime currentTime) { return currentTime + INT64_MAX; }
+inline PerformanceTime GetFarFuturePerformanceTime    (PerformanceTime currentTime) { return currentTime + INT64_MAX/2; }
+
 inline PerformanceTime GetMaximumFuturePerformanceTime() { return Cpu::GetPerformanceCounter() + INT64_MAX; }
 inline PerformanceTime GetFarFuturePerformanceTime    () { return Cpu::GetPerformanceCounter() + INT64_MAX/2; }
 

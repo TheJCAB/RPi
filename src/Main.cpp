@@ -413,7 +413,7 @@ void Core0(void* dtb)
         Uart::Puts("Debugger thread initialized.\n");
     }
 
-    Scheduler::AddSpark({ [](uintptr_t){ Uart::Raw::Puts("Core 0 Spark running\n"); }, 0 });
+    Scheduler::AddSpark(Scheduler::MakeUserModeSpark([](uintptr_t){ Uart::Raw::Puts("Core 0 Spark running\n"); return Scheduler::Spark{}; }, 0));
     Uart::Puts("Core 0 Spark is scheduled\n");
 
     // A naked syscall.
