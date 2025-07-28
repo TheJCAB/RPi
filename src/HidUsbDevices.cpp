@@ -245,7 +245,7 @@ void describe_hid_descriptor(const uint8_t* data, size_t length)
  enumeration it will call this procedure to enumerate connected HID devices.
  11Feb17 LdB
  --------------------------------------------------------------------------*/
-RESULT EnumerateHID (UsbDevice* device)
+Async::task<RESULT> EnumerateHID (UsbDevice* device)
 {
     auto const hidDevice = GetHidDevice(device);
 
@@ -261,7 +261,7 @@ RESULT EnumerateHID (UsbDevice* device)
             interface.Protocol,
             interface.Number);
 
-        if (HIDReadDescriptor(GetDeviceNumber(device), i, &Buf[0], sizeof(Buf)) == Ok) {
+        if (co_await HIDReadDescriptor(GetDeviceNumber(device), i, &Buf[0], sizeof(Buf)) == Ok) {
             LOG_DEBUG("HID REPORT> Page usage: 0x%02x%02x, Usage: 0x%02x%02x, Collection: 0x%02x%02x\n",
                 Buf[0], Buf[1], Buf[2], Buf[3], Buf[4], Buf[5]);
 
@@ -274,7 +274,7 @@ RESULT EnumerateHID (UsbDevice* device)
                 Buf[38], Buf[39], Buf[40], Buf[41], Buf[42], Buf[43], Buf[44], Buf[45], Buf[46], Buf[47], Buf[48], Buf[49], Buf[50], Buf[51]);
         }
     }
-    return Ok;														// Return success
+    co_return Ok;														// Return success
 }
 
 
@@ -288,7 +288,7 @@ RESULT EnumerateHID (UsbDevice* device)
  device is not a HID device, you can always check that by the use of IsHID.
  23Mar17 LdB
  --------------------------------------------------------------------------*/
-RESULT HIDReadDescriptor (uint8_t devNumber,						// Device number (address) of the device to read 
+Async::task<RESULT> HIDReadDescriptor (uint8_t devNumber,						// Device number (address) of the device to read 
                           uint8_t hidIndex,							// Which hid configuration information is requested from
                           uint8_t* Buffer,							// Pointer to a buffer to receive the descriptor
                           uint16_t Length)							// Maxium length of the buffer 
@@ -298,37 +298,37 @@ RESULT HIDReadDescriptor (uint8_t devNumber,						// Device number (address) of 
     volatile uint8_t Hi;
     volatile uint8_t Lo;
 
-    if ((Buffer == NULL) || (Length == 0))	return ErrorArgument;	// Check buffer and length is valid
+    if ((Buffer == NULL) || (Length == 0))	co_return ErrorArgument;	// Check buffer and length is valid
     if ((devNumber == 0) || (devNumber > MaximumDevices))
-        return ErrorDeviceNumber;									// Device number not valid
+        co_return ErrorDeviceNumber;									// Device number not valid
     auto const device = UsbDeviceAtAddress(devNumber);				// Fetch pointer to device number requested
     if (device == nullptr)
     {
-        return ErrorDeviceNumber;
+        co_return ErrorDeviceNumber;
     }
     auto const hidDevice = GetHidDevice(device);			// Fetch pointer to device number requested
     if (hidDevice == nullptr)
     {
-        return ErrorNotHID;
+        co_return ErrorNotHID;
     }
-    if (hidIndex > hidDevice->MaxHID) return ErrorIndex;	// Invalid HID descriptor index requested
+    if (hidIndex > hidDevice->MaxHID) co_return ErrorIndex;	// Invalid HID descriptor index requested
                                                                     // Calculate HID descriptor size
     uint16_t sizeToRead = hidDevice->Descriptor[hidIndex].Length;	// Total size we need to read
 
     /* Okay read the HID descriptor */
-    result = HCDGetDescriptor(device, USB_DESCRIPTOR_TYPE_HID_REPORT, 0,
+    result = co_await HCDGetDescriptor(device, USB_DESCRIPTOR_TYPE_HID_REPORT, 0,
         hidDevice->HIDInterface[hidIndex],					// Index number of HID index
         Buffer, sizeToRead, 0x81, &transfer, false);				// Read the HID report descriptor 	
     if ((result != Ok) || (transfer != sizeToRead)) {				// Read/transfer failed
         LOG("HCD: Fetch HID descriptor %u for device: %u failed.\n",
             hidDevice->HIDInterface[hidIndex], 
             GetDeviceNumber(device));									// Log the error
-        return ErrorDevice;											// No idea what problem is so bail
+        co_return ErrorDevice;											// No idea what problem is so bail
     }
 
     // We buffered for DMA alignment .. Now transfer to user pointer
     if (Length < sizeToRead) sizeToRead = Length;					// Insufficient buffer size for descriptor
-    return Ok;														// Return success
+    co_return Ok;														// Return success
 }
 
 
@@ -337,7 +337,7 @@ RESULT HIDReadDescriptor (uint8_t devNumber,						// Device number (address) of 
  is not a HID device, you can always check that by the use of IsHID.
  23Mar17 LdB
  --------------------------------------------------------------------------*/
-RESULT HIDReadReport (uint8_t devNumber,							// Device number (address) of the device to read
+Async::task<RESULT> HIDReadReport (uint8_t devNumber,							// Device number (address) of the device to read
                       uint8_t hidIndex,								// Which hid configuration information is requested from
                       uint16_t reportValue,							// Hi byte = enum HidReportType  Lo Byte = Report Index (0 = default) 
                       std::byte* Buffer,								// Pointer to a buffer to recieve the report
@@ -345,20 +345,20 @@ RESULT HIDReadReport (uint8_t devNumber,							// Device number (address) of the
 {
     RESULT result;
     uint32_t transfer = 0;											// Preset transfer to zero
-    
-    if ((Buffer == NULL) || (Length == 0))	return ErrorArgument;	// Check buffer and length is valid
+
+    if ((Buffer == NULL) || (Length == 0))	co_return ErrorArgument;	// Check buffer and length is valid
     auto const device = UsbDeviceAtAddress(devNumber);
     if (device == nullptr)
     {
-        return ErrorDeviceNumber;
+        co_return ErrorDeviceNumber;
     }
     auto const hidDevice = GetHidDevice(device);
     if (hidDevice == nullptr)
     {
-        return ErrorNotHID;
+        co_return ErrorNotHID;
     }
-    
-    result = HCDSumbitControlMessageIN(
+
+    result = co_await HCDSubmitControlMessageIN(
         device,												// Control pipe
         Buffer,														// Pass buffer pointer
         Length,														// Read length requested
@@ -371,11 +371,11 @@ RESULT HIDReadReport (uint8_t devNumber,							// Device number (address) of the
         },
         ControlMessageTimeout,										// The standard timeout for any control message
         &transfer);													// Monitor transfer byte count
-    if (result != Ok) return result;								// Return error
-    return Ok;														// Return success
+    if (result != Ok) co_return result;								// Return error
+    co_return Ok;														// Return success
 }
 
-RESULT HIDSetIdle (uint8_t devNumber, uint8_t hidIndex)
+Async::task<RESULT> HIDSetIdle (uint8_t devNumber, uint8_t hidIndex)
 {
     RESULT result;
     uint32_t transfer = 0;											// Preset transfer to zero
@@ -383,15 +383,15 @@ RESULT HIDSetIdle (uint8_t devNumber, uint8_t hidIndex)
     auto const device = UsbDeviceAtAddress(devNumber);
     if (device == nullptr)
     {
-        return ErrorDeviceNumber;
+        co_return ErrorDeviceNumber;
     }
     auto const hidDevice = GetHidDevice(device);
     if (hidDevice == nullptr)
     {
-        return ErrorNotHID;
+        co_return ErrorNotHID;
     }
 
-    result = HCDSumbitControlMessageOUT(
+    result = co_await HCDSubmitControlMessageOUT(
         device,												// Control pipe
         nullptr,													// Pass buffer pointer
         0,															// Read length requested
@@ -404,8 +404,8 @@ RESULT HIDSetIdle (uint8_t devNumber, uint8_t hidIndex)
         },
         ControlMessageTimeout,										// The standard timeout for any control message
         &transfer);													// Monitor transfer byte count
-    if (result != Ok) return result;								// Return error
-    return Ok;														// Return success
+    if (result != Ok) co_return result;								// Return error
+    co_return Ok;														// Return success
 }
 
 
@@ -416,7 +416,7 @@ RESULT HIDSetIdle (uint8_t devNumber, uint8_t hidIndex)
  IsHID.
  23Mar17 LdB
  --------------------------------------------------------------------------*/
-RESULT HIDWriteReport (uint8_t devNumber,							// Device number (address) of the device to write report to
+Async::task<RESULT> HIDWriteReport (uint8_t devNumber,							// Device number (address) of the device to write report to
                        uint8_t hidIndex,							// Which hid configuration information is writing to
                        uint16_t reportValue,						// Hi byte = enum HidReportType  Lo Byte = Report Index (0 = default) 
                        std::byte* Buffer,								// Pointer to a buffer containing the report
@@ -424,20 +424,20 @@ RESULT HIDWriteReport (uint8_t devNumber,							// Device number (address) of th
 {
     RESULT result;
     uint32_t transfer = 0;											// Preset transfer to zero
-    if ((Buffer == NULL) || (Length == 0))	return ErrorArgument;	// Check buffer and length is valid
+    if ((Buffer == NULL) || (Length == 0))	co_return ErrorArgument;	// Check buffer and length is valid
 
     auto const device = UsbDeviceAtAddress(devNumber);
     if (device == nullptr)
     {
-        return ErrorDeviceNumber;
+        co_return ErrorDeviceNumber;
     }
     auto const hidDevice = GetHidDevice(device);
     if (hidDevice == nullptr)
     {
-        return ErrorNotHID;
+        co_return ErrorNotHID;
     }
 
-    result = HCDSumbitControlMessageOUT(
+    result = co_await HCDSubmitControlMessageOUT(
         device,												// Control pipe
         Buffer,														// Transfer buffer pointer
         Length,														// Write length requested
@@ -450,9 +450,9 @@ RESULT HIDWriteReport (uint8_t devNumber,							// Device number (address) of th
         },
         ControlMessageTimeout,										// The standard timeout for any control message
         &transfer);													// Monitor transfer byte count
-    if (result != Ok) return result;								// Return error
-    if (transfer != Length) return ErrorGeneral;					// Device didn't accept all the data
-    return Ok;														// Return success
+    if (result != Ok) co_return result;								// Return error
+    if (transfer != Length) co_return ErrorGeneral;					// Device didn't accept all the data
+    co_return Ok;														// Return success
 }
 
 ///*- HIDSetProtocol ----------------------------------------------------------
@@ -479,7 +479,7 @@ RESULT HIDWriteReport (uint8_t devNumber,							// Device number (address) of th
 //        return ErrorNotHID;
 //    }
 //
-//    result = HCDSumbitControlMessageOUT(
+//    result = HCDSubmitControlMessageOUT(
 //        device,												// Use the control pipe
 //        NULL,														// No buffer for command
 //        0,															// No buffer length because of above
@@ -503,7 +503,7 @@ This call enables the switch between protocols. What protocols are available
 and what interface is retrieved and parsed from Descriptors from the device.
 23Mar17 LdB
 --------------------------------------------------------------------------*/
-RESULT HIDSetProtocol (uint8_t devNumber,							// Device number (address) of the device
+Async::task<RESULT> HIDSetProtocol (uint8_t devNumber,							// Device number (address) of the device
                        uint8_t interface,							// Interface number to change protocol on
                        uint16_t protocol)							// The protocol number request
 {
@@ -512,15 +512,15 @@ RESULT HIDSetProtocol (uint8_t devNumber,							// Device number (address) of th
     auto const device = UsbDeviceAtAddress(devNumber);
     if (device == nullptr)
     {
-        return ErrorDeviceNumber;
+        co_return ErrorDeviceNumber;
     }
     auto const hidDevice = GetHidDevice(device);
     if (hidDevice == nullptr)
     {
-        return ErrorNotHID;
+        co_return ErrorNotHID;
     }
 
-    result = HCDSumbitControlMessageOUT(
+    result = co_await HCDSubmitControlMessageOUT(
         device,												// Use the control pipe
         NULL,														// No buffer for command
         0,															// No buffer length because of above
@@ -533,7 +533,7 @@ RESULT HIDSetProtocol (uint8_t devNumber,							// Device number (address) of th
         },
         ControlMessageTimeout,										// Standard control message timeout
         NULL);														// No data so can ignore transfer bytes
-    return result;
+    co_return result;
 }
 
 /*==========================================================================}
@@ -581,7 +581,7 @@ RESULT HIDSetProtocol (uint8_t devNumber,							// Device number (address) of th
  for asynchronous reading of HID reports without the need for constant polling.
  The function identifies the interrupt IN endpoint and sets up a transfer.
  --------------------------------------------------------------------------*/
-RESULT HIDStartInterruptIN (uint8_t devNumber,                      // Device number (address) of the HID device
+Async::task<RESULT> HIDStartInterruptIN (uint8_t devNumber,                      // Device number (address) of the HID device
                            uint8_t hidIndex,                        // Which HID configuration to use
                            std::byte* Buffer,                         // Buffer to receive interrupt data
                            uint16_t BufferLength,                   // Length of the buffer
@@ -591,22 +591,22 @@ RESULT HIDStartInterruptIN (uint8_t devNumber,                      // Device nu
 
     // Validate parameters
     if ((Buffer == NULL) || (BufferLength == 0))
-        return ErrorArgument;
+        co_return ErrorArgument;
 
     auto const device = UsbDeviceAtAddress(devNumber);
     if (device == nullptr)
     {
-        return ErrorDeviceNumber;
+        co_return ErrorDeviceNumber;
     }
     auto const hidDevice = GetHidDevice(device);
     if (hidDevice == nullptr)
     {
-        return ErrorNotHID;
+        co_return ErrorNotHID;
     }
 
     if (hidIndex >= hidDevice->MaxHID)
     {
-        return ErrorIndex; // Invalid HID index
+        co_return ErrorIndex; // Invalid HID index
     }
 
     // Find the interrupt IN endpoint for this interface
@@ -616,7 +616,7 @@ RESULT HIDStartInterruptIN (uint8_t devNumber,                      // Device nu
     {
         LOG("HID: No interrupt IN endpoint found for device %d, interface %d\n", 
             devNumber, interfaceIndex);
-        return ErrorDevice;
+        co_return ErrorDevice;
     }
 
     LOG_DEBUG("HID: Starting interrupt IN transfer on device %d, endpoint %d, interval %dms\n",
@@ -624,8 +624,8 @@ RESULT HIDStartInterruptIN (uint8_t devNumber,                      // Device nu
 
     // Start the interrupt transfer
     uint32_t transferLength = BufferLength;
-    auto const result = HCDEndpointTransfer(device, endpoint, Buffer, transferLength);
-    
+    auto const result = co_await HCDEndpointTransfer(device, endpoint, Buffer, transferLength);
+
     if (result == RESULT::Ok) {
         if (BytesTransferred != nullptr) *BytesTransferred = transferLength;
         LOG_DEBUG("HID: Interrupt IN transfer completed, %d bytes received\n", transferLength);
@@ -635,7 +635,7 @@ RESULT HIDStartInterruptIN (uint8_t devNumber,                      // Device nu
         if (BytesTransferred != nullptr) *BytesTransferred = 0;
     }
 
-    return result;
+    co_return result;
 }
 
 /*- HIDStopInterruptIN ------------------------------------------------------
@@ -644,21 +644,21 @@ RESULT HIDStartInterruptIN (uint8_t devNumber,                      // Device nu
  Note: The current implementation is a placeholder as the underlying HCD
  layer would need specific abort functionality.
  --------------------------------------------------------------------------*/
-RESULT HIDStopInterruptIN (uint8_t devNumber,                       // Device number (address) of the HID device
+Async::task<RESULT> HIDStopInterruptIN (uint8_t devNumber,                       // Device number (address) of the HID device
                           uint8_t hidIndex)                         // Which HID configuration to stop
 {
     auto const device = UsbDeviceAtAddress(devNumber);
     if (device == nullptr)
     {
-        return ErrorDeviceNumber;
+        co_return ErrorDeviceNumber;
     }
     auto const hidDevice = GetHidDevice(device);
     if (hidDevice == nullptr)
     {
-        return ErrorNotHID;
+        co_return ErrorNotHID;
     }
 
-    if (hidIndex >= hidDevice->MaxHID) return ErrorIndex; // Invalid HID index
+    if (hidIndex >= hidDevice->MaxHID) co_return ErrorIndex; // Invalid HID index
 
     LOG_DEBUG("HID: Stopping interrupt IN transfer for device %d\n", devNumber);
     
@@ -668,7 +668,7 @@ RESULT HIDStopInterruptIN (uint8_t devNumber,                       // Device nu
     // 3. Reset endpoint state if needed
     // For now, we just return Ok as the transfers are synchronous
     
-    return Ok;
+    co_return Ok;
 }
 
 /*- HIDReadInterruptReport --------------------------------------------------
@@ -692,7 +692,7 @@ RESULT HIDStopInterruptIN (uint8_t devNumber,                       // Device nu
     //     // Process keyboard data - only called when device has new data
     // }
  --------------------------------------------------------------------------*/
-RESULT HIDReadInterruptReport (uint8_t devNumber,                   // Device number (address) of the HID device
+Async::task<RESULT> HIDReadInterruptReport (uint8_t devNumber,                   // Device number (address) of the HID device
                               uint8_t hidIndex,                     // Which HID configuration to use
                               std::byte* Buffer,                      // Buffer to receive the report
                               uint16_t BufferLength,                // Length of the buffer
@@ -768,7 +768,7 @@ RESULT HIDGetInterruptInterval (uint8_t devNumber,                  // Device nu
  
  Returns RESULT::Ok if successful, error code otherwise.
  --------------------------------------------------------------------------*/
-RESULT HIDEnableInterruptIN (uint8_t devNumber,                     // Device number (address) of the HID device
+Async::task<RESULT> HIDEnableInterruptIN (uint8_t devNumber,                     // Device number (address) of the HID device
                             uint8_t hidIndex,                       // Which HID configuration to enable
                             bool setProtocol,                       // Whether to set the protocol
                             uint8_t protocolValue,                  // Protocol value (0=boot, 1=report)
@@ -781,17 +781,17 @@ RESULT HIDEnableInterruptIN (uint8_t devNumber,                     // Device nu
     auto const device = UsbDeviceAtAddress(devNumber);
     if (device == nullptr)
     {
-        return ErrorDeviceNumber;
+        co_return ErrorDeviceNumber;
     }
     auto const hidDevice = GetHidDevice(device);
     if (hidDevice == nullptr)
     {
-        return ErrorNotHID;
+        co_return ErrorNotHID;
     }
 
     if (hidIndex >= hidDevice->MaxHID)
     {
-        return ErrorIndex; // Invalid HID index
+        co_return ErrorIndex; // Invalid HID index
     }
 
     // Verify that the device has an interrupt IN endpoint
@@ -801,7 +801,7 @@ RESULT HIDEnableInterruptIN (uint8_t devNumber,                     // Device nu
     {
         LOG("HID: No interrupt IN endpoint found for device %d, interface %d\n", 
             devNumber, interfaceIndex);
-        return ErrorDevice;
+        co_return ErrorDevice;
     }
 
     LOG("HID: Enabling interrupt IN for device %d, interface %d, endpoint %d\n",
@@ -812,7 +812,7 @@ RESULT HIDEnableInterruptIN (uint8_t devNumber,                     // Device nu
         LOG_DEBUG("HID: Setting protocol to %s for device %d\n", 
             protocolValue == 0 ? "boot" : "report", devNumber);
         
-        result = HIDSetProtocol(devNumber, interfaceIndex, protocolValue);
+        result = co_await HIDSetProtocol(devNumber, interfaceIndex, protocolValue);
         if (result != RESULT::Ok) {
             LOG("HID: Warning - Failed to set protocol for device %d: %d\n", 
                 devNumber, result);
@@ -825,7 +825,7 @@ RESULT HIDEnableInterruptIN (uint8_t devNumber,                     // Device nu
         LOG_DEBUG("HID: Setting idle rate to %d (x4ms) for device %d\n", idleRate, devNumber);
         
         // Custom SetIdle implementation with configurable idle rate
-        result = HCDSumbitControlMessageOUT(
+        result = co_await HCDSubmitControlMessageOUT(
             device,
             nullptr,
             0,
@@ -849,7 +849,7 @@ RESULT HIDEnableInterruptIN (uint8_t devNumber,                     // Device nu
     LOG("HID: Interrupt IN enabled for device %d, endpoint %d, interval %dms\n",
         devNumber, endpoint.EndpointAddress.Number, endpoint.Interval);
 
-    return RESULT::Ok;
+    co_return RESULT::Ok;
 }
 
 /*- HIDEnableInterruptINSimple ----------------------------------------------
@@ -860,7 +860,7 @@ RESULT HIDEnableInterruptIN (uint8_t devNumber,                     // Device nu
  This is suitable for most keyboard and mouse applications where you want
  efficient, event-driven input handling.
  --------------------------------------------------------------------------*/
-RESULT HIDEnableInterruptINSimple (uint8_t devNumber,               // Device number (address) of the HID device
+Async::task<RESULT> HIDEnableInterruptINSimple (uint8_t devNumber,               // Device number (address) of the HID device
                                   uint8_t hidIndex)                 // Which HID configuration to enable
 {
     return HIDEnableInterruptIN(devNumber, hidIndex, 

@@ -59,7 +59,7 @@ enum HidReportType {
  device is not a HID device, you can always check that by the use of IsHID.
  23Mar17 LdB
  --------------------------------------------------------------------------*/
-RESULT HIDReadDescriptor (uint8_t devNumber,						// Device number (address) of the device to read 
+Async::task<RESULT> HIDReadDescriptor (uint8_t devNumber,						// Device number (address) of the device to read 
                            uint8_t hidIndex,							// Which hid configuration information is requested from
                           uint8_t* Buffer,							// Pointer to a buffer to receive the descriptor
                           uint16_t Length);							// Maxium length of the buffer 
@@ -69,7 +69,7 @@ RESULT HIDReadDescriptor (uint8_t devNumber,						// Device number (address) of 
  is not a HID device, you can always check that by the use of IsHID.
  23Mar17 LdB
  --------------------------------------------------------------------------*/
-RESULT HIDReadReport (uint8_t devNumber,							// Device number (address) of the device to read
+Async::task<RESULT> HIDReadReport (uint8_t devNumber,							// Device number (address) of the device to read
                       uint8_t hidIndex,								// Which hid configuration information is requested from
                       uint16_t reportValue,							// Hi byte = enum HidReportType  Lo Byte = Report Index (0 = default)  
                       std::byte* Buffer,								// Pointer to a buffer to recieve the report
@@ -81,7 +81,7 @@ RESULT HIDReadReport (uint8_t devNumber,							// Device number (address) of the
  IsHID.
  23Mar17 LdB
  --------------------------------------------------------------------------*/
-RESULT HIDWriteReport (uint8_t devNumber,							// Device number (address) of the device to write report to
+Async::task<RESULT> HIDWriteReport (uint8_t devNumber,							// Device number (address) of the device to write report to
                        uint8_t hidIndex,							// Which hid configuration information is writing to
                        uint16_t reportValue,						// Hi byte = enum HidReportType  Lo Byte = Report Index (0 = default) 
                        std::byte* Buffer,								// Pointer to a buffer containing the report
@@ -95,11 +95,11 @@ RESULT HIDWriteReport (uint8_t devNumber,							// Device number (address) of th
  and what interface is retrieved and parsed from Descriptors from the device.
  23Mar17 LdB
  --------------------------------------------------------------------------*/
-RESULT HIDSetProtocol (uint8_t devNumber,							// Device number (address) of the device
+Async::task<RESULT> HIDSetProtocol (uint8_t devNumber,							// Device number (address) of the device
                        uint8_t interface,							// Interface number to change protocol on
                        uint16_t protocol);							// The protocol number request
 
-RESULT HIDSetIdle (uint8_t devNumber, uint8_t hidIndex);
+Async::task<RESULT> HIDSetIdle (uint8_t devNumber, uint8_t hidIndex);
 
 /*- HIDStartInterruptIN -----------------------------------------------------
  Starts an interrupt IN transfer for the specified HID device and endpoint.
@@ -113,7 +113,7 @@ RESULT HIDSetIdle (uint8_t devNumber, uint8_t hidIndex);
  Note: This is a synchronous call that performs one interrupt transfer.
  For true asynchronous operation, call this function in a loop or timer.
  --------------------------------------------------------------------------*/
-RESULT HIDStartInterruptIN (uint8_t devNumber,                      // Device number (address) of the HID device
+Async::task<RESULT> HIDStartInterruptIN (uint8_t devNumber,                      // Device number (address) of the HID device
                            uint8_t hidIndex,                        // Which HID configuration to use
                            std::byte* Buffer,                         // Buffer to receive interrupt data
                            uint16_t BufferLength,                   // Length of the buffer
@@ -122,7 +122,7 @@ RESULT HIDStartInterruptIN (uint8_t devNumber,                      // Device nu
 /*- HIDStopInterruptIN ------------------------------------------------------
  Stops an active interrupt IN transfer for the specified HID device.
  --------------------------------------------------------------------------*/
-RESULT HIDStopInterruptIN (uint8_t devNumber,                       // Device number (address) of the HID device
+Async::task<RESULT> HIDStopInterruptIN (uint8_t devNumber,                       // Device number (address) of the HID device
                           uint8_t hidIndex);                        // Which HID configuration to stop
 
 /*- HIDReadInterruptReport --------------------------------------------------
@@ -130,7 +130,7 @@ RESULT HIDStopInterruptIN (uint8_t devNumber,                       // Device nu
  a HID report. This is useful for applications that want to use interrupt
  mode but still handle transfers synchronously.
  --------------------------------------------------------------------------*/
-RESULT HIDReadInterruptReport (uint8_t devNumber,                   // Device number (address) of the HID device
+Async::task<RESULT> HIDReadInterruptReport (uint8_t devNumber,                   // Device number (address) of the HID device
                               uint8_t hidIndex,                     // Which HID configuration to use
                               std::byte* Buffer,                      // Buffer to receive the report
                               uint16_t BufferLength,                // Length of the buffer
@@ -155,7 +155,7 @@ RESULT HIDGetInterruptInterval (uint8_t devNumber,                  // Device nu
  automatically after USB configuration, but some devices may require specific
  protocol or idle settings.
  --------------------------------------------------------------------------*/
-RESULT HIDEnableInterruptIN (uint8_t devNumber,                     // Device number (address) of the HID device
+Async::task<RESULT> HIDEnableInterruptIN (uint8_t devNumber,                     // Device number (address) of the HID device
                             uint8_t hidIndex,                       // Which HID configuration to enable
                             bool setProtocol,                       // Whether to set the protocol
                             uint8_t protocolValue,                  // Protocol value (0=boot, 1=report)
@@ -166,6 +166,6 @@ RESULT HIDEnableInterruptIN (uint8_t devNumber,                     // Device nu
  Simplified version of HIDEnableInterruptIN that uses sensible defaults.
  Sets report protocol and idle rate of 0 (only send on state change).
  --------------------------------------------------------------------------*/
-RESULT HIDEnableInterruptINSimple (uint8_t devNumber,               // Device number (address) of the HID device
+Async::task<RESULT> HIDEnableInterruptINSimple (uint8_t devNumber,               // Device number (address) of the HID device
                                   uint8_t hidIndex);                // Which HID configuration to enable
 

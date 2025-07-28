@@ -56,7 +56,7 @@ void Init()
     if (firstKbd)
     {
         printf("Keyboard detected\r\n");
-        HIDEnableInterruptINSimple(firstKbd, 0);
+        Async::WaitOnTask(HIDEnableInterruptINSimple(firstKbd, 0));
         printf("Keyboard configured\r\n");
     }
 }
@@ -74,7 +74,7 @@ static void RefreshStateIfNeeded()
     {
         uint16_t const USB_HID_REPORT_TYPE_INPUT = 1;
         std::byte buf[8];
-        auto const status = HIDReadInterruptReport(firstKbd, 0, buf, sizeof(buf), nullptr);
+        auto const status = Async::WaitOnTask(HIDReadInterruptReport(firstKbd, 0, buf, sizeof(buf), nullptr));
         //auto const status = HIDReadReport(firstKbd, 0, USB_HID_REPORT_TYPE_INPUT << 8 | 1, &buf[0], 8);
         if (status == RESULT::Ok)
         {

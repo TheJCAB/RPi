@@ -585,7 +585,7 @@ namespace Async
     using promise_ptr = std::unique_ptr<promise_base<T>, promise_deleter<T>>;
 
     template<typename T>
-    struct task
+    struct [[nodiscard]] task
     {
         using promise_type = task_promise<T>;
 
@@ -597,7 +597,7 @@ namespace Async
         struct cannot_await_lvalue_use_std_move { void await_ready() {} };
         cannot_await_lvalue_use_std_move operator co_await() & = delete;
 
-        auto operator co_await() && noexcept
+        [[nodiscard]] auto operator co_await() && noexcept
         {
             struct awaiter
             {
@@ -625,7 +625,7 @@ namespace Async
         promise_ptr<T> promise;
     };
 
-    struct DelayAwaitable
+    struct [[nodiscard]] DelayAwaitable
     {
         Cpu::PerformanceTime TargetTime;
 

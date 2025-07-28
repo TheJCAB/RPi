@@ -630,7 +630,7 @@ Async::task<uint32_t> HCDChannel::TransferIn(UsbPipe const& pipe, usb_transfer_t
 
         sendCtrl.SplitTries = 0;
         while (sendCtrl.ActionResendSplit) {                        // Decision was made to resend split
-            Cpu::DelayInMicroseconds(250);
+            co_await Async::DelayInMicroseconds(250);
             // Clear channel interrupts
             registers.Interrupt = 0xFFFFFFFF;
             registers.InterruptMask = 0x0;

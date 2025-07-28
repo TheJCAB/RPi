@@ -170,7 +170,7 @@ UsbEndpointDescriptor  FindEndpoint(UsbDevice* device, uint8_t interfaceIndex, u
  to poll this from time to time.
  10Apr17 LdB
  --------------------------------------------------------------------------*/
-void UsbCheckForChange (void);
+Async::task<void> UsbCheckForChange (void);
 
 /*--------------------------------------------------------------------------}
 {					 PUBLIC DISPLAY USB INTERFACE ROUTINES					}
@@ -206,7 +206,7 @@ void UsbShowTree (UsbDevice *root, const int level, const char tee);
  shorter if the descriptor is shorter than the buffer space provided.
  24Feb17 LdB
  --------------------------------------------------------------------------*/
-RESULT HCDGetDescriptor (UsbDevice* device,
+Async::task<RESULT> HCDGetDescriptor (UsbDevice* device,
                          usb_descriptor_type type,				// The type of descriptor
                          uint8_t index,								// The index of the type descriptor
                          uint16_t langId,							// The language id
@@ -216,30 +216,30 @@ RESULT HCDGetDescriptor (UsbDevice* device,
                          uint32_t *bytesTransferred,     			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)								
                          bool runHeaderCheck);						// Whether to run header check
 
-/*-HCDSumbitControlMessage --------------------------------------------------
+/*-HCDSubmitControlMessage --------------------------------------------------
  Sends a control message to a device. Handles all necessary channel creation
  and other processing. The sequence of a control transfer is defined in the
  USB 2.0 manual section 5.5.  Success is indicated by return of Ok (0) all
  other codes indicate an error.
  24Feb17 LdB
  --------------------------------------------------------------------------*/
-RESULT HCDSumbitControlMessageOUT(
+Async::task<RESULT> HCDSubmitControlMessageOUT(
     UsbDevice* device,
     std::byte* buffer,					// Data buffer both send and recieve				 
     uint32_t bufferLength,				// Buffer length for send or recieve
-    UsbDeviceRequest&& request,	// USB request message
+    UsbDeviceRequest request,	// USB request message
     uint32_t timeout,					// Timeout in microseconds on message
     uint32_t* bytesTransferred			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)				
 );
 
-RESULT HCDSumbitControlMessageIN(
+Async::task<RESULT> HCDSubmitControlMessageIN(
     UsbDevice* device,
     std::byte* buffer,					// Data buffer both send and recieve				 
     uint32_t bufferLength,				// Buffer length for send or recieve
-    UsbDeviceRequest&& request,	// USB request message
+    UsbDeviceRequest request,	// USB request message
     uint32_t timeout,					// Timeout in microseconds on message
     uint32_t* bytesTransferred			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)				
 );
 
 // Sends/recieves data from/to the given buffer to/from the given endpoint.
-RESULT HCDEndpointTransfer(UsbDevice* device, UsbEndpointDescriptor endpoint, std::byte* buffer, uint32_t& bufferLength);
+Async::task<RESULT> HCDEndpointTransfer(UsbDevice* device, UsbEndpointDescriptor endpoint, std::byte* buffer, uint32_t& bufferLength);

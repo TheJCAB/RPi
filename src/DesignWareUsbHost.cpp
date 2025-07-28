@@ -182,11 +182,11 @@ struct __attribute__((__packed__, aligned(4))) HostPort {
     union {
         struct __attribute__((__packed__, aligned(1))) {
             volatile bool Connect : 1;								// @0
-            volatile bool ConnectChanged : 1;						// @1
-            volatile bool Enable : 1;								// @2
-            volatile bool EnableChanged : 1;						// @3
+            volatile bool ConnectChanged : 1;						// @1 funky bit
+            volatile bool Enable : 1;								// @2 funky bit
+            volatile bool EnableChanged : 1;						// @3 funky bit
             volatile bool OverCurrent : 1;							// @4
-            volatile bool OverCurrentChanged : 1;					// @5
+            volatile bool OverCurrentChanged : 1;					// @5 funky bit
             volatile bool Resume : 1;								// @6
             volatile bool Suspend : 1;								// @7
             volatile bool Reset : 1;								// @8
