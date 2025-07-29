@@ -18,17 +18,7 @@ public:
         Clock6MHz,     // 6Mhz clock to USB
     };
 
-    HCDHost(uintptr_t baseAddress, ClockRate, uint8_t numChannels);
-
-    void              DwcClearEnable      ();
-    void              DwcResume           ();
-    void              DwcPowerOff         ();
-    void              DwcConnectionChange ();
-    void              DwcEnableChange     ();
-    void              DwcOverCurrentChange();
-    void              DwcReset            ();
-    void              DwcPowerOn          ();
-    HubPortFullStatus DwcGetPortStatus    ();
+    static Async::task<std::shared_ptr<HCDHost>> Make(uintptr_t baseAddress, ClockRate, uint8_t numChannels);
 
     void HandlePortInterrupt();
     void HandleChannelInterrupt();
@@ -48,6 +38,8 @@ public:
 
 private:
     union Registers;
+
+    HCDHost(Registers& r) : registers(r) {};
 
     Registers& registers;
 

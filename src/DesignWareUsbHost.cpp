@@ -251,115 +251,6 @@ union HCDHost::Registers
 {			    INTERNAL FAKE ROOT HUB MESSAGE HANDLER FUNCTIONS		    }
 {==========================================================================*/
 
-void HCDHost::DwcClearEnable()
-{
-    auto tempPort = *registers.PORT;
-    tempPort.Raw32 &= HOSTPORTMASK;
-    tempPort.Enable = true;
-    registers.PORT = tempPort;
-}
-
-void HCDHost::DwcResume()
-{
-    //DWC_POWER_AND_CLOCK = 0; // ??
-    Cpu::DelayInMicroseconds(5000);
-    auto tempPort = *registers.PORT;
-    tempPort.Raw32 &= HOSTPORTMASK;
-    tempPort.Resume = true;
-    registers.PORT = tempPort;
-    Cpu::DelayInMicroseconds(100000);
-    tempPort = *registers.PORT;
-    tempPort.Raw32 &= HOSTPORTMASK;
-    tempPort.Suspend = false;
-    tempPort.Resume = false;
-    registers.PORT = tempPort;
-}
-
-void HCDHost::DwcPowerOff()
-{
-    auto tempPort = *registers.PORT;
-    tempPort.Raw32 &= HOSTPORTMASK;
-    tempPort.Power = false;
-    registers.PORT = tempPort;
-}
-
-void HCDHost::DwcConnectionChange()
-{
-    auto tempPort = *registers.PORT;
-    tempPort.Raw32 &= HOSTPORTMASK;
-    tempPort.ConnectChanged = true;
-    registers.PORT = tempPort;
-}
-
-void HCDHost::DwcEnableChange()
-{
-    auto tempPort = *registers.PORT;
-    tempPort.Raw32 &= HOSTPORTMASK;
-    tempPort.EnableChanged = true;
-    registers.PORT = tempPort;
-}
-
-void HCDHost::DwcOverCurrentChange()
-{
-    auto tempPort = *registers.PORT;
-    tempPort.Raw32 &= HOSTPORTMASK;
-    tempPort.OverCurrentChanged = true;
-    registers.PORT = tempPort;
-}
-
-void HCDHost::DwcReset()
-{
-    //auto tempPower = *DWC_POWER_AND_CLOCK; // ??
-    //tempPower.EnableSleepClockGating = false;
-    //tempPower.StopPClock = false;
-    //DWC_POWER_AND_CLOCK = tempPower;
-    //Cpu::DelayInMicroseconds(10000);
-    //DWC_POWER_AND_CLOCK = 0;
-
-    auto tempPort = *registers.PORT;
-    tempPort.Raw32 &= HOSTPORTMASK;
-    tempPort.Suspend = false;
-    tempPort.Reset = true;
-    tempPort.Power = true;
-    registers.PORT = tempPort;
-    Cpu::DelayInMicroseconds(60000);
-    tempPort = *registers.PORT;
-    tempPort.Raw32 &= HOSTPORTMASK;
-    tempPort.Reset = false;
-    registers.PORT = tempPort;
-}
-
-void HCDHost::DwcPowerOn()
-{
-    auto tempPort = *registers.PORT;
-    tempPort.Raw32 &= HOSTPORTMASK;
-    tempPort.Power = true;
-    registers.PORT = tempPort;
-}
-
-HubPortFullStatus HCDHost::DwcGetPortStatus()
-{
-    auto tempPort = *registers.PORT;
-    LOG_DEBUG("DwcGetPortStatus: Port 1 status: 0x%08x %032b\n", tempPort.Raw32, tempPort.Raw32);
-    HubPortFullStatus replyPort{};
-    replyPort.Status.Connected = tempPort.Connect;
-    replyPort.Status.Enabled = tempPort.Enable;
-    replyPort.Status.Suspended = tempPort.Suspend;
-    replyPort.Status.OverCurrent = tempPort.OverCurrent;
-    replyPort.Status.Reset = tempPort.Reset;
-    replyPort.Status.Power = tempPort.Power;
-    if (tempPort.Speed == USB_SPEED_HIGH)
-        replyPort.Status.HighSpeedAttatched = true;
-    else if (tempPort.Speed == USB_SPEED_LOW)
-        replyPort.Status.LowSpeedAttatched = true;
-    replyPort.Status.TestMode = tempPort.TestControl;
-    replyPort.Change.ConnectedChanged = tempPort.ConnectChanged;
-    replyPort.Change.EnabledChanged = false;
-    replyPort.Change.OverCurrentChanged = tempPort.OverCurrentChanged;
-    replyPort.Change.ResetChanged = false;
-    return replyPort;
-}
-
 /*==========================================================================}
 {					   INTERNAL HOST CONTROL FUNCTIONS					    }
 {==========================================================================*/
@@ -422,60 +313,88 @@ uint32_t HCDHost::GetCurrentFrame()
 }
 
 /// Initializes the host controller hardware.
-HCDHost::HCDHost(uintptr_t baseAddress, ClockRate clock, uint8_t numChannels)
-    : registers{ *reinterpret_cast<Registers*>(baseAddress) }
+Async::task<std::shared_ptr<HCDHost>> HCDHost::Make(uintptr_t baseAddress, ClockRate clock, uint8_t numChannels)
 {
-    registers.CONFIG = [clock](auto& r) {
+    std::shared_ptr<HCDHost> host{ new HCDHost(*reinterpret_cast<Registers*>(baseAddress)) };
+
+    host->registers.CONFIG = [clock](auto& r) {
         // ULPI FsLs Host mode, I assume other mode is ULPI only  .. documentation would be nice
         r.FslsOnly = true;
         r.ClockRate = clock;
     };
 
-    HostPort tempPort;
-    tempPort = *registers.PORT;
+    HostPort tempPort = *host->registers.PORT;
     LOG_DEBUG("HCD: Initial host port: 0x%08X\n", tempPort.Raw32);
     if (!tempPort.Power) {
         LOG_DEBUG("HCD: Initial power physical host up.\n");
         tempPort.Raw32 &= HOSTPORTMASK;
         tempPort.Power = true;
-        registers.PORT = tempPort;
+        host->registers.PORT = tempPort;
     }
 
-    Cpu::DelayInMicroseconds(1000);
+    co_await Async::DelayInMicroseconds(1000);
 
     LOG_DEBUG("HCD: Initial resetting physical host.\n");
-    tempPort = *registers.PORT;
+    tempPort = *host->registers.PORT;
     LOG_DEBUG("HCD: Powered host port: 0x%08X\n", tempPort.Raw32);
     
     tempPort.Raw32 &= HOSTPORTMASK;
     tempPort.Reset = true;
-    registers.PORT = tempPort;
-    Cpu::DelayInMicroseconds(60000);
-    tempPort = *registers.PORT;
+    host->registers.PORT = tempPort;
+    co_await Async::DelayInMicroseconds(60000);
+    tempPort = *host->registers.PORT;
     LOG_DEBUG("HCD: Reset host port: 0x%08X\n", tempPort.Raw32);
 
     tempPort.Raw32 &= HOSTPORTMASK;
     tempPort.Reset = false;
-    registers.PORT = tempPort;
+    host->registers.PORT = tempPort;
 
-    registers.INTERRUPT = 0xFFFFFFFF;
-    registers.INTERRUPTMASK = 0;
+    host->registers.INTERRUPT = 0xFFFFFFFF;
+    host->registers.INTERRUPTMASK = 0;
 
-    LOG_DEBUG("HCD: Host %p successfully started.\n", this);
+    LOG_DEBUG("HCD: Host %p successfully started.\n", host.get());
 
-    m_NumChannels = numChannels > MaxChannels ? MaxChannels : numChannels;
+    host->m_NumChannels = numChannels > MaxChannels ? MaxChannels : numChannels;
 
-    auto const dmaBuffer = static_cast<std::byte*>(Mmu::AllocateGpuMemory((m_NumChannels * HCDChannel::MaxPacketSize + Mmu::PageSize + 1) / Mmu::PageSize));
+    auto const dmaBuffer = static_cast<std::byte*>(Mmu::AllocateGpuMemory((host->m_NumChannels * HCDChannel::MaxPacketSize + Mmu::PageSize + 1) / Mmu::PageSize));
 
-    for (uint8_t channel = 0; channel < m_NumChannels; ++channel)
+    for (uint8_t channel = 0; channel < host->m_NumChannels; ++channel)
     {
         LOG_DEBUG("HCD: Initializing channel %u at %p\n", channel, reinterpret_cast<void*>(baseAddress + 0x100u + 0x20u * channel));
         std::span<std::byte, HCDChannel::MaxPacketSize> channelDmaBuffer{ dmaBuffer + channel * HCDChannel::MaxPacketSize, HCDChannel::MaxPacketSize };
-        m_Channels[channel] = std::make_unique<HCDChannel>(*this, baseAddress + 0x100u + 0x20u * channel, channel, channelDmaBuffer);
-        m_freeChannels[channel] = m_Channels[channel].get();
+        host->m_Channels[channel] = std::make_unique<HCDChannel>(*host, baseAddress + 0x100u + 0x20u * channel, channel, channelDmaBuffer);
+        host->m_freeChannels[channel] = host->m_Channels[channel].get();
     }
 
     LOG_DEBUG("HCD: Initialized %u channels\n", m_NumChannels);
+
+    co_await Async::DelayInMilliseconds(1);								// Wait 1 millisecond to allow the USB bus to stabilize
+
+    tempPort = *host->registers.PORT;
+    tempPort.Raw32 &= HOSTPORTMASK;
+    tempPort.Power = true;
+    host->registers.PORT = tempPort;
+
+    LOG("HCD: Root HUB powered on.\n");
+    co_await Async::DelayInMilliseconds(2);
+
+    tempPort = *host->registers.PORT;
+    tempPort.Raw32 &= HOSTPORTMASK;
+    tempPort.Suspend = false;
+    tempPort.Reset = true;
+    tempPort.Power = true;
+    host->registers.PORT = tempPort;
+
+    co_await Async::DelayInMilliseconds(60);
+
+    tempPort = *host->registers.PORT;
+    tempPort.Raw32 &= HOSTPORTMASK;
+    tempPort.Reset = false;
+    host->registers.PORT = tempPort;
+
+    co_await Async::DelayInMilliseconds(1);
+
+    co_return host;
 }
 
 HCDHost::LockedChannel HCDHost::GetChannel()

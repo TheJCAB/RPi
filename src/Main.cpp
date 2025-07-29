@@ -522,7 +522,7 @@ void Core0(void* dtb)
 
         (void)WaitOnTask(std::move(usbInitTask));
 
-        UsbCheckForChange();
+        (void)WaitOnTask(UsbCheckForChange());
 
         /* Display the USB tree */
         printf("\n");

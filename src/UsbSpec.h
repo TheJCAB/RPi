@@ -345,34 +345,6 @@ struct __attribute__((__packed__)) UsbStringDescriptor {
     uint16_t Data[];												// +0x2 Amount varies with string length
 };
 
-template < size_t N >
-struct __attribute__((__packed__)) UsbStringDescriptorT {
-    UsbDescriptorHeader Header;								// +0x0 Length of this descriptor, +0x1 DEVICE descriptor type (enum DescriptorType)
-    // This is a template for a string descriptor with a fixed size.
-    // It allows us to create a string descriptor with a specific length.
-    static constexpr size_t Length = N;
-    char16_t Data[N];											// +0x2 Amount varies with string length
-
-    operator UsbStringDescriptor const&() const {
-        // Convert this literal descriptor to a UsbStringDescriptor.
-        // This is useful for passing the descriptor to functions that expect a UsbStringDescriptor.
-        return *reinterpret_cast<UsbStringDescriptor const*>(this);
-    }
-};
-
-template < size_t N >
-constexpr auto LiteralUsbStringDescriptor(char16_t const (&str)[N]) {
-    // Create a string descriptor from a string literal.
-    // The string literal must be null-terminated.
-    UsbStringDescriptorT<N> desc;
-    desc.Header.DescriptorLength = (N + 1) * 2;
-    desc.Header.DescriptorType = USB_DESCRIPTOR_TYPE_STRING;
-    for (size_t i = 0; i < N; ++i) {
-        desc.Data[i] = str[i];
-    }
-    return desc;
-}
-
 /*--------------------------------------------------------------------------}
 { 	   USB HUB descriptor (9 Bytes) as per 11.23.2.1 of USB2.0 manual		}
 {---------------------------------------------------------------------------}*/

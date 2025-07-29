@@ -182,383 +182,9 @@ struct MassStorageDevice {
 };
 
 
-uint8_t RootHubDeviceNumber = 0;
-
 UsbDevice DeviceTable[MaximumDevices] = { 0 };				// Usb node device allocation table
 #define MaximumHubs	16												// Maximum number of HUB payloads we will allow
 HubDevice HubTable[MaximumHubs] = { 0 };						// Usb hub device allocation table
-
-/*--------------------------------------------------------------------------}
-{			USB2.0 DEVICE DESCRIPTOR BLOCK FOR OUR "FAKED" ROOTHUB 			}
-{--------------------------------------------------------------------------*/
-alignas(4) struct DeviceDescriptor RootHubDeviceDescriptor = {
-    .bLength = sizeof(struct DeviceDescriptor),
-    .bDescriptorType = USB_DESCRIPTOR_TYPE_DEVICE,
-    .bcdUSB = 0x0200,
-    .bDeviceClass = DeviceClassHub,
-    .bDeviceSubClass = 0,
-    .bDeviceProtocol = 0,
-    .bMaxPacketSize0 = 64,
-    .idVendor = 0,
-    .idProduct = 0,
-    .bcdDevice = 0x0100,
-    .iManufacturer = 0,
-    .iProduct = 1,									// String 1 see below .. says "FAKED Root Hub (tm)"
-    .iSerialNumber = 0,
-    .bNumConfigurations = 1,
-};
-
-/*--------------------------------------------------------------------------}
-{  Hard-coded configuration descriptor, along with an associated interface  }
-{  descriptor and endpoint descriptor, for the "faked" root hub.			}
-{--------------------------------------------------------------------------*/
-struct __attribute__((__packed__)) RootHubConfig {
-    struct ConfigurationDescriptor Configuration;
-    struct UsbInterfaceDescriptor Interface;
-    struct UsbEndpointDescriptor Endpoint;
-};
-
-alignas(4) constexpr RootHubConfig root_hub_configuration = {
-    .Configuration = []() constexpr {
-        // Some fields are in unnamed structs/unions, not reachable via designated initializers.
-        ConfigurationDescriptor desc{};
-        desc.bLength = sizeof(ConfigurationDescriptor);
-        desc.bDescriptorType = USB_DESCRIPTOR_TYPE_CONFIGURATION;
-        desc.wTotalLength = sizeof(root_hub_configuration);
-        desc.bNumInterfaces = 1;
-        desc.bConfigurationValue = 1;
-        desc.iConfiguration = 2;
-        desc.bMaxPower = 0;
-        desc.RemoteWakeup = false;
-        desc.SelfPowered = true;
-        desc._reserved7 = 1;
-        desc._reserved0_4 = 0;
-        return desc;
-    }(),
-    .Interface = {
-        .Header = {
-            .DescriptorLength = sizeof(struct UsbInterfaceDescriptor),
-            .DescriptorType = USB_DESCRIPTOR_TYPE_INTERFACE,
-        },
-        .Number = 0,
-        .AlternateSetting = 0,
-        .EndpointCount = 1,
-        .Class = InterfaceClass::Hub,
-        .SubClass = 0,
-        .Protocol = 0,
-        .StringIndex = 0,
-    },
-    .Endpoint = {
-        .Header = {
-            .DescriptorLength = sizeof(struct UsbEndpointDescriptor),
-            .DescriptorType = USB_DESCRIPTOR_TYPE_ENDPOINT,
-        },
-        .EndpointAddress = {
-            .Number = 1,
-            .Direction = USB_DIRECTION_IN,
-        },
-        .Attributes = {
-            .Type = USB_TRANSFER_TYPE_INTERRUPT,
-        },
-        .Packet = {
-            .MaxSize = 64,
-        },
-        .Interval = 0xff,
-    },
-};
-
-// USB2.0 DESCRIPTION STRINGS FOR OUR "FAKED" ROOTHUB
-// Note: UTF-16
-constexpr char16_t RootHubLocaleString[] = { char16_t{0x0409} };   // LCID (Locale Identifier) for en-US
-constexpr char16_t RootHubString      [] = u"FAKED Root Hub (tm)";
-constexpr char16_t RootHubConfigString[] = u"FAKE config string";
-
-alignas(4) constexpr auto RootHubString0 = LiteralUsbStringDescriptor(RootHubLocaleString);
-alignas(4) constexpr auto RootHubString1 = LiteralUsbStringDescriptor(RootHubString);
-alignas(4) constexpr auto RootHubString2 = LiteralUsbStringDescriptor(RootHubConfigString);
-
-/*--------------------------------------------------------------------------}
-{			USB2.0 HUB DESCRIPTION FOR OUR "FAKED" ROOTHUB 					}
-{--------------------------------------------------------------------------*/
-alignas(4) struct HubDescriptor RootHubDescriptor = {
-    .Header = {
-        .DescriptorLength = sizeof(struct HubDescriptor),
-        .DescriptorType = USB_DESCRIPTOR_TYPE_HUB,
-    },
-    .PortCount = 1,
-    .Attributes = {
-        .PowerSwitchingMode = Global,
-        .Compound = false,
-        .OverCurrentProtection = Global,
-        .ThinkTime = 0,
-        .Indicators = false,
-    },
-    .PowerGoodDelay = 0,
-    .MaximumHubPower = 0,
-    .DeviceRemovable = { .Port1 = true },
-    .PortPowerCtrlMask = 0xff,
-};
-
-/*==========================================================================}
-{			    INTERNAL FAKE ROOT HUB MESSAGE HANDLER					    }
-{==========================================================================*/
-
-
-static RESULT Reply(std::span<std::byte> const buffer, uint32_t* const bytesTransferred, std::span<std::byte const> const value)
-{
-    // Truncate if needed.
-    auto const replyLength = value.size() > buffer.size() ? buffer.size() : value.size();
-    if (replyLength > 0)
-    {
-        memcpy(buffer.data(), value.data(), replyLength);
-    }
-    if (bytesTransferred) *bytesTransferred = static_cast<uint32_t>(replyLength);
-    return Ok;
-}
-
-static RESULT Reply(std::span<std::byte> const buffer, uint32_t* const bytesTransferred, auto const& value)
-{
-    if constexpr (requires{ { value.Header } -> std::convertible_to<UsbDescriptorHeader>; })
-    {
-        return Reply(buffer, bytesTransferred, std::span{ reinterpret_cast<std::byte const*>(&value), value.Header.DescriptorLength });
-    }
-    else if constexpr (std::convertible_to<decltype(value), std::span<std::byte const>>)
-    {
-        return Reply(buffer, bytesTransferred, static_cast<std::span<std::byte const*>>(value));
-    }
-    else
-    {
-        return Reply(buffer, bytesTransferred, std::span{ reinterpret_cast<std::byte const*>(&value), sizeof(value) });
-    }
-}
-
-RESULT HcdProcessRootHubMessageIn(std::span<std::byte> replyBuffer, UsbDeviceRequest const& request, uint32_t *bytesTransferred)
-{
-    if (bytesTransferred) *bytesTransferred = 0;		// Default to no bytes transferred
-
-    switch (request.Request)
-    {
-    // Details on GetStatus from here http://www.beyondlogic.org/usbnutshell/usb6.shtml
-    case GetStatus:
-        switch (request.Type) {
-        case bmREQ_DEVICE_STATUS  /*0x80*/:
-            // Device status request .. returns a 16 bit status
-            // D0 = Self Powered, D1 = Remote Wakeup, D2 = Test Mode, D3 = Reserved
-            // We are self powered and not in test mode so we return 0x0001
-            return Reply(replyBuffer, bytesTransferred, uint16_t{1});
-
-        case bmREQ_INTERFACE_STATUS /* 0x81 */:
-            // Interface status request .. returns a 16 bit status
-            // Spec says two bytes of 0x00, 0x00. (Both bytes are reserved for future use)
-            return Reply(replyBuffer, bytesTransferred, uint16_t{0});
-
-        case bmREQ_ENDPOINT_STATUS /* 0x82 */:
-            // Endpoint status request .. return a 16 bit status
-            // Two bytes indicating the status (Halted/Stalled) of a endpoint.
-            // D0 = Stall .. 0 No stall for us
-            return Reply(replyBuffer, bytesTransferred, uint16_t{0});
-
-        case bmREQ_HUB_STATUS  /*0xa0*/:
-        {
-            // We are a hub class so we need a standard hub class get status return
-            // So we will return a cleared HubFullStatus ...
-            // Just set LocalPower bit
-            HubFullStatus status{};
-            status.Status.LocalPower = true; // We are self powered
-            return Reply(replyBuffer, bytesTransferred, status);
-        }
-
-        case bmREQ_PORT_STATUS /* 0xa3 */:
-            // PORT request .. Remember we have 1 port which is the actual physical hardware
-            if (request.Index != 1)
-            {
-                // Remember we have only one port so any other port is an error
-                return ErrorArgument;
-            }
-            return Reply(replyBuffer, bytesTransferred, Host->DwcGetPortStatus());
-
-        default:
-            return ErrorArgument;
-        };
-
-    // Details on GetDescriptor from here http://www.beyondlogic.org/usbnutshell/usb5.shtml#DeviceDescriptors
-    case GetDescriptor:
-        switch (request.Type)
-        {
-        case bmREQ_GET_DEVICE_DESCRIPTOR /*0x80*/:
-            // Device descriptor request
-            LOG("Get descriptor type %x\n", (request.Value >> 8) & 0xff);
-            switch ((request.Value >> 8) & 0xff)
-            {
-            case USB_DESCRIPTOR_TYPE_DEVICE:
-                // Return our fake roothub device descriptor
-                LOG("Get descriptor type DEVICE\n");
-                return Reply(replyBuffer, bytesTransferred, RootHubDeviceDescriptor);
-
-            case USB_DESCRIPTOR_TYPE_CONFIGURATION:
-                return Reply(replyBuffer, bytesTransferred, root_hub_configuration);
-
-            case USB_DESCRIPTOR_TYPE_STRING:
-                switch (request.Value & 0xff)
-                {
-                case 0x0:
-                    return Reply(replyBuffer, bytesTransferred, RootHubString0);
-
-                case 0x1:
-                    return Reply(replyBuffer, bytesTransferred, RootHubString1);
-
-                case 0x2:
-                    return Reply(replyBuffer, bytesTransferred, RootHubString2);
-
-                default:
-                    return Ok;
-                }
-
-            default:
-                LOG("Unknown get descriptor type %x\n", (request.Value >> 8) & 0xff);
-                return ErrorArgument;
-            }
-            break;
-        case  bmREQ_GET_HUB_DESCRIPTOR /*0xa0*/:
-            // RootHub descriptor requested
-            return Reply(replyBuffer, bytesTransferred, RootHubDescriptor);
-
-        default:
-            return ErrorArgument;
-        }
-
-    case GetConfiguration:
-        // Get configuration message
-        // Return 1 as a byte. Rememeber we only have 1 config so can't be anything else
-        return Reply(replyBuffer, bytesTransferred, uint8_t{1});
-
-    default:
-        // Any other message is unknown
-        return ErrorArgument;
-    }
-}
-
-RESULT HcdProcessRootHubMessageOut(UsbDeviceRequest const& request)
-{
-    switch (request.Request)
-    {
-    // Details on ClearFeature from here http://www.beyondlogic.org/usbnutshell/usb6.shtml
-    case ClearFeature:
-        switch (request.Type) {
-        case bmREQ_INTERFACE_FEATURE /*0x01*/:
-            // Interface clear feature request
-            // Current USB Specification Revision 2 specifies no interface features.
-            return Ok;
-        case bmREQ_ENDPOINT_FEATURE /*0x02*/:
-            // Endpoint set feature request
-            // 16 bits only option is Halt on D0 which we dont support
-            return Ok;
-        case bmREQ_HUB_FEATURE      /*0x20*/:
-            // Hub clear feature request
-            // Only options DEVICE_REMOTE_WAKEUP and TEST_MODE neither which we support
-            return Ok;
-        case  bmREQ_PORT_FEATURE /*0x23*/:
-            // Port clear feature request
-            if (request.Index != 1)
-            {
-                // Remember we have only one port so any other port is an error
-                return ErrorArgument;
-            }
-            switch ((enum HubPortFeature)request.Value) {		// Check what request to clear is
-            case FeatureEnable:
-                Host->DwcClearEnable();
-                return Ok;
-
-            case FeatureSuspend:
-                Host->DwcResume();
-                return Ok;
-
-            case FeaturePower:
-                LOG("Physical host power off\n");
-                Host->DwcPowerOff();
-                return Ok;
-
-            case FeatureConnectionChange:
-                Host->DwcConnectionChange();
-                return Ok;
-
-            case FeatureEnableChange:
-                Host->DwcEnableChange();
-                return Ok;
-
-            case FeatureOverCurrentChange:
-                Host->DwcOverCurrentChange();
-                return Ok;
-
-            default:
-                // Any other clear feature request just ignore
-                return Ok;
-            }
-        default:
-            // If it's not a device/interface/classor endpoint ClearFeature message is garbage
-            return ErrorArgument;
-        }
-        break;
-    // Details on SetFeature from here http://www.beyondlogic.org/usbnutshell/usb6.shtml
-    case SetFeature:
-        switch (request.Type) {
-        case bmREQ_INTERFACE_FEATURE /*0x01*/:
-        	// Interface set feature request
-            // Current USB Specification Revision 2 specifies no interface features.
-            return Ok;
-
-        case bmREQ_ENDPOINT_FEATURE /*0x02*/:
-            // Endpoint set feature request
-            // 16 bits only option is Halt on D0 which we dont support
-            return Ok;
-
-        case bmREQ_HUB_FEATURE      /*0x20*/:
-            // Hub set feature request
-            // 16 bits only options DEVICE_REMOTE_WAKEUP and TEST_MODE neither which we support
-            return Ok;
-
-        case bmREQ_PORT_FEATURE /* 0x23 */:
-            // Port set feature request
-            if (request.Index != 1)
-            {
-                // Remember we have only one port so any other port is an error
-                return ErrorArgument;
-            }
-            switch ((enum HubPortFeature)request.Value) {
-            case FeatureReset:
-                Host->DwcReset();
-                LOG_DEBUG("Reset physical port .. rootHub %i\n", RootHubDeviceNumber);
-                return Ok;
-
-            case FeaturePower:
-                LOG("Physical host power on\n");
-                Host->DwcPowerOn();
-                return Ok;
-
-            default:
-                return Ok;
-            }
-
-        default:
-            // If it's not a device/interface/class or endpoint SetFeature message is garbage
-            return ErrorArgument;
-        }
-
-    case SetAddress:
-        // Move the roothub to address requested .. should always be from zero to 1
-        RootHubDeviceNumber = request.Value;
-        return Ok;
-
-    case SetConfiguration:
-        // Set configuration message
-        // Just ignore it we have 1 fixed config
-        return Ok;
-
-    default:
-        // Any other message is unknown
-        return ErrorArgument;
-    }
-}
 
 /*-HCDSubmitControlMessage --------------------------------------------------
  Sends a control message to a device. Handles all necessary channel creation
@@ -581,18 +207,6 @@ Async::task<RESULT> HCDSubmitControlMessage (UsbDevice* device,
     LOG_DEBUG("HCD: SETUP packet to device: %#x req: %#x req Type: %#x Speed: %i PacketSize: %i LowNode: %i LowPort: %i\n",
         device->Pipe0.Number, request.Request, request.Type, device->Pipe0.Speed, device->Pipe0.MaxPacketSizeInBytes, device->Pipe0.splitNodePoint, device->Pipe0.splitNodePort);
 
-    if (device->Pipe0.Number == RootHubDeviceNumber) {
-        if (Direction == USB_DIRECTION_IN) {
-            // Root hub IN message
-            LOG_DEBUG("Root hub IN message\n");
-            co_return HcdProcessRootHubMessageIn({ buffer, bufferLength }, request, bytesTransferred);
-        }
-        else if (Direction == USB_DIRECTION_OUT) {
-            // Root hub OUT message
-            LOG_DEBUG("Root hub OUT message\n");
-            co_return HcdProcessRootHubMessageOut(request);
-        }
-    }
     uint32_t lastTransfer = 0;
 
     LOG_DEBUG("Setup phase\n");
@@ -600,8 +214,8 @@ Async::task<RESULT> HCDSubmitControlMessage (UsbDevice* device,
     uint32_t transferLength = co_await channel.TransferOut(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, { (std::byte const*)&request, sizeof(request) }, USB_PID_SETUP);
     if (transferLength != sizeof(request))
     {
-        LOG("HCD: SETUP packet to device: %#x req: %#x req Type: %#x Speed: %i PacketSize: %i LowNode: %i LowPort: %i Error: %i\n",
-            device->Pipe0.Number, request.Request, request.Type, device->Pipe0.Speed, device->Pipe0.MaxPacketSizeInBytes, device->Pipe0.splitNodePoint, device->Pipe0.splitNodePort, result);// Some parameter issue
+        LOG("HCD: SETUP packet to device: %#x req: %#x req Type: %#x Speed: %i PacketSize: %i LowNode: %i LowPort: %i Error: %zu != %zu\n",
+            device->Pipe0.Number, request.Request, request.Type, device->Pipe0.Speed, device->Pipe0.MaxPacketSizeInBytes, device->Pipe0.splitNodePoint, device->Pipe0.splitNodePort, transferLength, sizeof(request));
         co_return ResultFromDwcResult(result);
     }
 
@@ -1053,7 +667,7 @@ RESULT UsbAllocateDevice(struct UsbDevice **device) {
  11Feb17 LdB
  --------------------------------------------------------------------------*/
 void UsbDeallocateDevice (struct UsbDevice *device) {
-    if (IsHub(device->Pipe0.Number)) {								// If this device is a hub we will need to deal with the children
+    if (IsHub(*device)) {								// If this device is a hub we will need to deal with the children
         /* A hub must deallocate all its children first */
         for (int i = 0; i < device->HubPayload->MaxChildren; i++) {	// For each child
             if (device->HubPayload->Children[i] != NULL)			// If that child is valid
@@ -1080,7 +694,7 @@ Async::task<RESULT> HubPortReset(struct UsbDevice *device, uint8_t port) {
     RESULT result;
     struct HubPortFullStatus portStatus;
     uint32_t retry, timeout;
-    if (!IsHub(device->Pipe0.Number)) co_return ErrorDevice;			// If device is not a hub then bail
+    if (!IsHub(*device)) co_return ErrorDevice;			// If device is not a hub then bail
     LOG_DEBUG("HUB: Reseting device: %u Port: %u. source: %i\n", device->Pipe0.Number, port, 0/*source*/);
     for (retry = 0; retry < 3; retry++) {
         if ((result = co_await HCDChangeHubPortFeature(device,
@@ -1133,7 +747,7 @@ Async::task<RESULT> HubPortConnectionChanged(struct UsbDevice *device, uint8_t p
     RESULT result;
     struct HubDevice *data;
     struct HubPortFullStatus portStatus;
-    if (!IsHub(device->Pipe0.Number)) co_return ErrorDevice;
+    if (!IsHub(*device)) co_return ErrorDevice;
 
     data = device->HubPayload;
 
@@ -1208,14 +822,16 @@ Async::task<RESULT> HubPortConnectionChanged(struct UsbDevice *device, uint8_t p
  enumerating of a new device or deallocating an old one.
  10Apr17 LdB
  --------------------------------------------------------------------------*/
-Async::task<RESULT> HubCheckConnection(struct UsbDevice *device, uint8_t port)
+Async::task<RESULT> HubCheckConnection(UsbDevice *device, uint8_t port)
 {
     RESULT result;
-    struct HubPortFullStatus portStatus;
-    struct HubDevice *data;
+    HubPortFullStatus portStatus;
+    HubDevice *data;
 
-    if (!IsHub(device->Pipe0.Number)) co_return ErrorDevice;
+    if (!IsHub(*device)) co_return ErrorDevice;
     data = device->HubPayload;
+
+    LOG("HUB: Checking connection for device %i, Port: %i.\n", device->Pipe0.Number, port);
 
     if ((result = co_await HCDReadHubPortStatus(device, port + 1, (uint8_t*)&portStatus.Raw32)) != Ok) {
         if (result != ErrorDisconnected)
@@ -1223,10 +839,14 @@ Async::task<RESULT> HubCheckConnection(struct UsbDevice *device, uint8_t port)
         co_return result;
     }
 
+    LOG("HUB: device %i, Port: %i, status: %04X:%04X.\n", device->Pipe0.Number, port, portStatus.RawStatus, portStatus.RawChange);
+
     if (portStatus.Change.ConnectedChanged) {
         LOG_DEBUG("Device %i, Port: %i changed\n", device->Pipe0.Number, port);
         co_await HubPortConnectionChanged(device, port);
     }
+
+    LOG_DEBUG("Device %i, Port: %i checking the rest\n", device->Pipe0.Number, port);
 
     if (portStatus.Change.EnabledChanged) {
         if (co_await HCDChangeHubPortFeature(device, FeatureEnableChange, port + 1, false) != Ok) {
@@ -1267,7 +887,7 @@ Async::task<RESULT> HubCheckConnection(struct UsbDevice *device, uint8_t port)
  21Mar17 LdB
  --------------------------------------------------------------------------*/
 Async::task<void> HubCheckForChange(struct UsbDevice *device) {
-    if (IsHub(device->Pipe0.Number)) {
+    if (IsHub(*device)) {
         for (int i = 0; i < device->HubPayload->MaxChildren; i++) {
             if (co_await HubCheckConnection(device, i) != Ok) continue;		// If port is not connected move to next port
             if (device->HubPayload->Children[i] != NULL)			// If child device is valid
@@ -1334,13 +954,13 @@ Async::task<RESULT> EnumerateHub (struct UsbDevice *device) {
 
     LOG("HUB: Hub powering ports on.\n");
     for (int i = 0; i < data->MaxChildren; i++) {					// For each port
-        if (co_await HCDChangeHubPortFeature(device, FeaturePower,
-            i + 1, true) != Ok)										// Power the port							
-            LOG("HUB: device: %i could not power Port%d.\n",
-                device->Pipe0.Number, i + 1);						// Log error
+        if (co_await HCDChangeHubPortFeature(device, FeaturePower, i + 1, true) != Ok)										// Power the port							
+            LOG("HUB: device: %i could not power Port%d.\n", device->Pipe0.Number, i + 1);						// Log error
     }
     co_await Async::DelayInMicroseconds(data->Descriptor.PowerGoodDelay * 2000);				// Every hub has a different power stability delay
     co_await Async::DelayInMicroseconds(1'000);									// Wait 1 millisecond to allow power to stabilize
+
+    LOG("HUB: device: %i checking %u port connections.\n", device->Pipe0.Number, data->MaxChildren);
 
     for (int port = 0; port < data->MaxChildren; port++) {			// Now check for new device to enumerate on each port
         co_await HubCheckConnection(device, port);							// Run connection check on each port
@@ -1601,28 +1221,6 @@ Async::task<RESULT> EnumerateDevice(struct UsbDevice *device, struct UsbDevice* 
     co_return Ok;
 }
 
-/*-INTERNAL: EnumerateDevice ------------------------------------------------
- This is called from USBInitialize and will allocate our fake rootHub device 
- and then begin enumeration of the whole USB bus.
- 11Feb17 LdB
- --------------------------------------------------------------------------*/
-Async::task<RESULT> UsbAttachRootHub(void) {
-    RESULT result;
-    struct UsbDevice *rootHub = NULL;
-    LOG_DEBUG("Allocating RootHub\n");
-    if (DeviceTable[0].PayLoadId != 0)								// If RootHub is already in use
-        UsbDeallocateDevice(&DeviceTable[0]);						// We will need to deallocate it and every child
-    result = UsbAllocateDevice(&rootHub);							// Try allocating the root hub now
-    if (rootHub != &DeviceTable[0]) result = ErrorCompiler;			// Somethign really wrong .. 1st allocation should always be DeviceList[0]
-    if (result != Ok) co_return result;								// Return error result somethging fatal happened
-    DeviceTable[0].Pipe0.Speed = USB_SPEED_FULL;					// Set our fake hub to full speed .. as it's fake we cant really ask it speed can we :-)
-    DeviceTable[0].Pipe0.MaxPacketSizeInBytes = 64;					// Set our fake hub to 64 byte packets .. as it's fake we need to do it manually
-    DeviceTable[0].Config.Status = USB_STATUS_POWERED;				// Set our fake hub status to configured .. as it's fake we need to do manually
-    RootHubDeviceNumber = 0;										// Roothub number is zero
-    co_await Async::DelayInMicroseconds(1'000);								// Wait 1 millisecond to allow the USB bus to stabilize
-    co_return co_await EnumerateDevice(&DeviceTable[0], NULL, 0);				// Ok start enumerating the USB bus as roothub port 1 is the physical bus
-}
-
 /***************************************************************************}
 {					      PUBLIC INTERFACE ROUTINES			                }
 ****************************************************************************/
@@ -1730,11 +1328,24 @@ Async::task<RESULT> UsbInitialize()
     Host = std::move(hostEx).value();
 
     // Attach the root hub .. which will launch enumeration
-    if (auto const thisResult = co_await UsbAttachRootHub(); thisResult != RESULT::Ok)
+    LOG_DEBUG("Allocating RootHub\n");
+
+    UsbDevice& rootHubDevice = DeviceTable[0];
+    rootHubDevice.Pipe0.Number = 1;
+    rootHubDevice.Pipe0.Speed = USB_SPEED_HIGH;
+    rootHubDevice.Config.Status = USB_STATUS_ATTACHED;
+    rootHubDevice.PayLoadId = NoPayload;
+    rootHubDevice.HubPayload = nullptr; // Assigned in enumeration.
+
+    rootHubDevice.ParentHub.Number = 0xFF;
+    rootHubDevice.ParentHub.PortNumber = 0;
+
+    auto const result = co_await EnumerateDevice(&rootHubDevice, nullptr, 0);
+    if (result != Ok)
     {
-        LOG("USBD: Failed to enumerate devices.\n");
-        co_return thisResult;
+        Cpu::Panic("Root HUB: Could not enumerate\n");
     }
+
     co_return Ok;
 }
 
@@ -1809,11 +1420,15 @@ size_t GetDeviceConfigStringString(uint8_t devNumber, std::span<char> buffer)
  is safe to proceed and do things with the hub payload via it's pointer.
  24Feb17 LdB
  --------------------------------------------------------------------------*/
+bool IsHub (UsbDevice& device) {
+    if (device.PayLoadId == HubPayload && device.HubPayload)	// It has a HUB payload ID and the HUB payload pointer is valid
+        return true;											// Confirmed as a hub
+    return false;													// Not a hub
+}
+
 bool IsHub (uint8_t devNumber) {
     if ((devNumber > 0) && (devNumber <= MaximumDevices)) {			// Check the address is valid not zero and max devices or less
-        struct UsbDevice* device = &DeviceTable[devNumber - 1];		// Shortcut to device pointer we are talking about	
-        if (device->PayLoadId == HubPayload && device->HubPayload)	// It has a HUB payload ID and the HUB payload pointer is valid
-            return true;											// Confirmed as a hub
+        return IsHub(DeviceTable[devNumber - 1]);
     }
     return false;													// Not a hub
 }

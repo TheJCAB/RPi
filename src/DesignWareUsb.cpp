@@ -912,9 +912,7 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
         clockRate = HCDHost::ClockRate::Clock30_60MHz;
     }
 
-    Host = std::make_shared<HCDHost>(registersAddress + 0x400, clockRate, DWC_CORE->HARDWARE1->HostChannelMax + 1);
-
-    co_await Async::DelayInMicroseconds(1'000);
+    Host = co_await HCDHost::Make(registersAddress + 0x400, clockRate, DWC_CORE->HARDWARE1->HostChannelMax + 1);
 
     Interrupts::EnableUsb(InterruptHandler);
 
@@ -931,7 +929,8 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
         //.Disconnect = true,
         //.SessionRequest = true,
     }
-    
+
+    LOG_DEBUG("HCD: Interrupts enabled.\n");
     LOG_DEBUG("HCD: Successfully started.\n");
 
     co_return Host;

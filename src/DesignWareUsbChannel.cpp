@@ -865,7 +865,7 @@ Async::task<uint32_t> HCDChannel::TransferOut(UsbPipe const& pipe, usb_transfer_
 }
 
 HCDChannel::HCDChannel(HCDHost& host, uintptr_t baseAddress, uint8_t channelNumber, std::span<std::byte, MaxPacketSize> dmaBuffer)
-    : registers   { *reinterpret_cast<Registers*>(baseAddress) }
+    : registers     { *reinterpret_cast<Registers*>(baseAddress) }
     , m_Host        { host                      }
     , m_Number      { channelNumber             }
     , m_Prepared    { false                     }

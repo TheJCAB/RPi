@@ -96,6 +96,7 @@ size_t GetDeviceConfigStringString(uint8_t devNumber, std::span<char> buffer);
  24Feb17 LdB
  --------------------------------------------------------------------------*/
 bool IsHub (uint8_t devNumber);
+bool IsHub (UsbDevice& device);
 
 /*-IsHid---------------------------------------------------------------------
  Will return if the given usbdevice is infact a hid and thus has hid payload
