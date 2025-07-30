@@ -2,6 +2,7 @@
 #include "Cpu.h"
 #include "Uart.h"
 #include "Heap.h"
+#include "Debugger.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -190,7 +191,16 @@ void *HeapAlloc(size_t size, std::align_val_t alignVal)
         return nullptr; // Invalid alignment
     }
 
-    return Heap::AllocateAligned(g_globalHeap, size, alignment);
+    
+    auto const result = Heap::AllocateAligned(g_globalHeap, size, alignment);
+//    Uart::Puts("HeapAlloc: Allocated ");
+//    Uart::PutDec(size);
+//    Uart::Puts(" bytes at ");
+//    Uart::PutHex(result);
+//    Uart::Puts("\n");
+//    Debugger::RawPrintCallstack();
+
+    return result;
 
 /*
     auto currentHeapPos = CurrentHeapPos.load(std::memory_order_relaxed);
@@ -224,21 +234,27 @@ void HeapFree(void* ptr, size_t size) noexcept
         return Heap::Deallocate(g_globalHeap, ptr);
     }
 
+//    Uart::Puts("HeapAlloc: Freeing from ");
+//    Uart::PutHex(ptr);
+//    Uart::Puts("\n");
+
     // Simple heap implementation - no actual deallocation unless it's from the top.
 
-    auto currentHeapPos = CurrentHeapPos.load(std::memory_order_relaxed);
+    Heap::Deallocate(g_globalHeap, ptr);
 
-    while (reinterpret_cast<uintptr_t>(ptr) == HeapStartAddress + currentHeapPos - size)
-    {
-        // Deallocate only if it matches the last allocation.
-        // Note that we're only deallocating the aligned portion.
-        // Any alignment padding we incurred during allocation is lost.
-        if (CurrentHeapPos.compare_exchange_strong(currentHeapPos, currentHeapPos - size, std::memory_order_release))
-        {
-            // Successfully deallocated
-            return;
-        }
-    }
+//    auto currentHeapPos = CurrentHeapPos.load(std::memory_order_relaxed);
+//
+//    while (reinterpret_cast<uintptr_t>(ptr) == HeapStartAddress + currentHeapPos - size)
+//    {
+//        // Deallocate only if it matches the last allocation.
+//        // Note that we're only deallocating the aligned portion.
+//        // Any alignment padding we incurred during allocation is lost.
+//        if (CurrentHeapPos.compare_exchange_strong(currentHeapPos, currentHeapPos - size, std::memory_order_release))
+//        {
+//            // Successfully deallocated
+//            return;
+//        }
+//    }
 }
 
 extern "C" void *aligned_alloc(size_t alignment, size_t size) { return HeapAlloc(size, std::align_val_t{ alignment }); }

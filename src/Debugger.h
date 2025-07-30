@@ -11,6 +11,7 @@ extern Scheduler::ThreadInfo* DebuggerThread;
 
 void PrintThreadContext(Uart::LockedStream& stream, ThreadContext* context);
 void RawPrintThreadContext(ThreadContext* context);
+void RawPrintCallstack();
 
 //void Debug(ThreadContext* debuggedThread);
 

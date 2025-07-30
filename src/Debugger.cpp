@@ -90,5 +90,30 @@ Scheduler::ThreadInfo* Init()
     return &debuggerThread;
 }
 
+void RawPrintCallstack()
+{
+    Uart::LockedStream stream;
+    stream.Puts("Call Stack:\n");
+    uint64_t fp;
+    asm volatile (
+        "mov %0, x29\n" // Frame pointer
+        : "=r"(fp)
+    );
+    for (;;)
+    {
+        auto frame = *(std::array<uint64_t, 2>*)fp;
+        fp = frame[0];
+        if (fp != 0)
+        {
+            return;
+        }
+        stream.Puts("");
+        stream.PutHex(frame[0]);
+        stream.Puts(" ");
+        stream.PutHex(frame[1]);
+        stream.Puts("\n");
+    }
+}
+
 }
 // namespace Debugger

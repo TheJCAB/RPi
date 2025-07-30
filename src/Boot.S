@@ -20,6 +20,9 @@
 // depending on which core is running at the time.
 .global _start
 _start:
+    mov fp, #0
+    mov lr, #0
+
     // Enable the Floating point and SIMD unit for EL2
     // We're about to dive straight into C++,
     // and the compiler might decide to use all those handy registers right away.

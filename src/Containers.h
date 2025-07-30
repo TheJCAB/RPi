@@ -482,6 +482,67 @@ public:
         }
     }
 
+    struct BlockInformation
+    {
+        uint32_t Start;
+        uint32_t Size;
+        bool     IsAllocated;
+    };
+    BlockInformation GetContainingBlockInformation(uint32_t address) const
+    {
+        if (address >= PoolSize)
+        {
+            Cpu::Panic("%s invalid block start", name);
+        }
+
+        BlockInformation result;
+
+        for (;;)
+        {
+            uint32_t wordIndex = address / 64;
+            uint32_t bitIndex  = address % 64;
+
+            Word currentWord = std::atomic_ref{ const_cast<Word&>(Words[wordIndex]) }.load(std::memory_order_relaxed);
+            if (!(currentWord.starts & (1ull << bitIndex)))
+            {
+                result.IsAllocated = false;
+
+                // Need to find the start.
+                auto startIndex = address;
+                if (bitIndex > 0)
+                {
+                    startIndex -= std::countl_one(~currentWord.bitmap << (64 - bitIndex));
+                }
+                auto startWordIndex = wordIndex;
+                while (startWordIndex > 0 && startIndex % 64 == 0)
+                {
+                    --startWordIndex;
+                    Word startWord = std::atomic_ref{ const_cast<Word&>(Words[startWordIndex]) }.load(std::memory_order_relaxed);
+                    startWordIndex -= std::countl_zero(startWord.bitmap);
+                }
+
+                // And now find the end.
+                auto const endIndex = address + std::countr_one(~currentWord.bitmap >> bitIndex);
+                auto endWordIndex = wordIndex;
+                while (endWordIndex < WordCount && endIndex % 64 == 0)
+                {
+                    ++endWordIndex;
+                    Word endWord = std::atomic_ref{ const_cast<Word&>(Words[endWordIndex]) }.load(std::memory_order_relaxed);
+                    endIndex += std::countr_zero(endWord.bitmap);
+                }
+
+                endIndex = std::min(endIndex, PoolSize);
+
+                result.Start = startIndex;
+                result.Size  = endIndex - startIndex;
+            }
+            else
+            {
+                result.IsAllocated = true;
+            }
+        }
+    }
+
     uint32_t GetBlockSize(uint32_t blockStart) const
     {
         if (blockStart >= PoolSize)
