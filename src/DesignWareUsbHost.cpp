@@ -397,6 +397,11 @@ Async::task<std::shared_ptr<HCDHost>> HCDHost::Make(uintptr_t baseAddress, Clock
     co_return host;
 }
 
+HCDHost::HCDHost(Registers& r) : registers(r) {}
+
+HCDHost::~HCDHost() = default;
+
+
 HCDHost::LockedChannel HCDHost::GetChannel()
 {
     for (;;)

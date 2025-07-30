@@ -36,10 +36,12 @@ public:
     /// will wait until a channel is available if all in use.
     LockedChannel GetChannel();
 
+    ~HCDHost();
+
 private:
     union Registers;
 
-    HCDHost(Registers& r) : registers(r) {};
+    HCDHost(Registers& r);
 
     Registers& registers;
 
@@ -50,6 +52,6 @@ private:
 
     uint8_t m_NumChannels = 0;
 
-    std::unique_ptr<HCDChannel> m_Channels[MaxChannels]{};
+    std::unique_ptr<HCDChannel> m_Channels[MaxChannels];
     std::atomic<HCDChannel*> m_freeChannels[MaxChannels]{};
 };

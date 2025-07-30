@@ -746,21 +746,21 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
     if (vendorId.O != 'O' || vendorId.T != 'T' || vendorId.Version != 2)
     {
         LOG("Driver incompatible. Expected OT2.xxx (BCM2708x).\n");
-        co_return DWCRESULT::ErrorIncompatible;
+        co_return std::unexpected{ DWCRESULT::ErrorIncompatible };
     }
 
     if (DWC_CORE->HARDWARE1->Architecture != InternalDma)
     {
         // We only allow DMA transfer
         LOG("HCD: Host architecture does not support Internal DMA\n");
-        co_return DWCRESULT::ErrorIncompatible;
+        co_return std::unexpected{ DWCRESULT::ErrorIncompatible };
     }
 
     if (DWC_CORE->HARDWARE1->HighSpeedPhysical == NotSupported)
     {
         // We need high speed transfers
         LOG("HCD: High speed physical unsupported\n");
-        co_return DWCRESULT::ErrorIncompatible;
+        co_return std::unexpected{ DWCRESULT::ErrorIncompatible };
     }
 
     // Clear and disable all interrupts.
@@ -771,7 +771,7 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
     if (!PowerOnUsb())
     {
         LOG("HCD: Failed to power on USB Host Controller.\n");
-        co_return DWCRESULT::ErrorIncompatible;
+        co_return std::unexpected{ DWCRESULT::ErrorIncompatible };
     }
 
     // And now we set it up.
@@ -788,7 +788,7 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
     LOG_DEBUG("HCD: Master reset.\n");                                
     if ((result = HCDReset()) != DWCRESULT::Ok) {
         LOG("FATAL ERROR: Could not do a Master reset on HCD.\n");
-        co_return result;
+        co_return std::unexpected{ result };
     }
 
     co_await Async::DelayInMicroseconds(1'000);
@@ -803,7 +803,7 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
         DWC_CORE->CONTROL = coreUsb;
         if ((result = HCDReset()) != DWCRESULT::Ok) {
             LOG("FATAL ERROR: Could not do a Master reset on HCD.\n");
-            co_return result;
+            co_return std::unexpected{ result };
         }
     }
 
@@ -893,11 +893,11 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
     co_await Async::DelayInMicroseconds(1'000);
 
     if ((result = HCDTransmitFifoFlush(FlushAll)) != DWCRESULT::Ok)
-        co_return result;
+        co_return std::unexpected{ result };
     co_await Async::DelayInMicroseconds(1'000);
 
     if ((result = HCDReceiveFifoFlush()) != DWCRESULT::Ok)
-        co_return result;
+        co_return std::unexpected{ result };
     co_await Async::DelayInMicroseconds(1'000);
 
     HCDHost::ClockRate clockRate;

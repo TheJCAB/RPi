@@ -53,162 +53,162 @@ namespace std {
 _LIBCPP_BEGIN_NAMESPACE_STD
 
     // Simple expected implementation for C++20 compatibility
-    template<typename T, typename E>
-    class expected {
-    public:
-        // Constructors
-        constexpr expected(const T& value) : has_value_(true) {
-            new(&storage_.value) T(value);
-        }
-        
-        constexpr expected(T&& value) : has_value_(true) {
-            new(&storage_.value) T(std::move(value));
-        }
-        
-        constexpr expected(const E& error) : has_value_(false) {
-            new(&storage_.error) E(error);
-        }
-        
-        constexpr expected(E&& error) : has_value_(false) {
-            new(&storage_.error) E(std::move(error));
-        }
-        
-        // Copy constructor
-        constexpr expected(const expected& other) : has_value_(other.has_value_) {
-            if (has_value_) {
-                new(&storage_.value) T(other.storage_.value);
-            } else {
-                new(&storage_.error) E(other.storage_.error);
-            }
-        }
-        
-        // Move constructor
-        constexpr expected(expected&& other) noexcept : has_value_(other.has_value_) {
-            if (has_value_) {
-                new(&storage_.value) T(std::move(other.storage_.value));
-            } else {
-                new(&storage_.error) E(std::move(other.storage_.error));
-            }
-        }
-        
-        // Destructor
-        ~expected() {
-            if (has_value_) {
-                storage_.value.~T();
-            } else {
-                storage_.error.~E();
-            }
-        }
-        
-        // Assignment operators
-        expected& operator=(const expected& other) {
-            if (this != &other) {
-                this->~expected();
-                new(this) expected(other);
-            }
-            return *this;
-        }
-        
-        expected& operator=(expected&& other) noexcept {
-            if (this != &other) {
-                this->~expected();
-                new(this) expected(std::move(other));
-            }
-            return *this;
-        }
-        
-        // Value access
-        constexpr bool has_value() const noexcept { return has_value_; }
-        constexpr explicit operator bool() const noexcept { return has_value_; }
-        
-        constexpr T& value() & {
-            if (!has_value_) throw std::runtime_error("Expected has no value");
-            return storage_.value;
-        }
-        
-        constexpr const T& value() const & {
-            if (!has_value_) throw std::runtime_error("Expected has no value");
-            return storage_.value;
-        }
-        
-        constexpr T&& value() && {
-            if (!has_value_) throw std::runtime_error("Expected has no value");
-            return std::move(storage_.value);
-        }
-        
-        constexpr const T&& value() const && {
-            if (!has_value_) throw std::runtime_error("Expected has no value");
-            return std::move(storage_.value);
-        }
-        
-        constexpr E& error() & {
-            if (has_value_) throw std::runtime_error("Expected has value, not error");
-            return storage_.error;
-        }
-        
-        constexpr const E& error() const & {
-            if (has_value_) throw std::runtime_error("Expected has value, not error");
-            return storage_.error;
-        }
-        
-        constexpr T& operator*() & { return value(); }
-        constexpr const T& operator*() const & { return value(); }
-        constexpr T&& operator*() && { return std::move(value()); }
-        constexpr const T&& operator*() const && { return std::move(value()); }
-        
-        constexpr T* operator->() { return &value(); }
-        constexpr const T* operator->() const { return &value(); }
-        
-        template<typename U>
-        constexpr T value_or(U&& default_value) const & {
-            return has_value_ ? storage_.value : static_cast<T>(std::forward<U>(default_value));
-        }
-        
-        template<typename U>
-        constexpr T value_or(U&& default_value) && {
-            return has_value_ ? std::move(storage_.value) : static_cast<T>(std::forward<U>(default_value));
-        }
-
-    private:
-        union Storage {
-            T value;
-            E error;
-            Storage() {}
-            ~Storage() {}
-        } storage_;
-        bool has_value_;
-    };
-
-    // Specialization for void type
-    template<typename E>
-    class expected<void, E> {
-    public:
-        constexpr expected() : has_value_(true) {}
-        
-        constexpr expected(const E& error) : has_value_(false), error_(error) {}
-        constexpr expected(E&& error) : has_value_(false), error_(std::move(error)) {}
-        
-        constexpr bool has_value() const noexcept { return has_value_; }
-        constexpr explicit operator bool() const noexcept { return has_value_; }
-        
-        constexpr void value() const {
-            if (!has_value_) throw std::runtime_error("Expected has no value");
-        }
-        
-        constexpr E& error() & {
-            if (has_value_) throw std::runtime_error("Expected has value, not error");
-            return error_;
-        }
-        
-        constexpr const E& error() const & {
-            if (has_value_) throw std::runtime_error("Expected has value, not error");
-            return error_;
-        }
-
-    private:
-        bool has_value_;
-        E error_{};
-    };
+//    template<typename T, typename E>
+//    class expected {
+//    public:
+//        // Constructors
+//        constexpr expected(const T& value) : has_value_(true) {
+//            new(&storage_.value) T(value);
+//        }
+//        
+//        constexpr expected(T&& value) : has_value_(true) {
+//            new(&storage_.value) T(std::move(value));
+//        }
+//        
+//        constexpr expected(const E& error) : has_value_(false) {
+//            new(&storage_.error) E(error);
+//        }
+//        
+//        constexpr expected(E&& error) : has_value_(false) {
+//            new(&storage_.error) E(std::move(error));
+//        }
+//        
+//        // Copy constructor
+//        constexpr expected(const expected& other) : has_value_(other.has_value_) {
+//            if (has_value_) {
+//                new(&storage_.value) T(other.storage_.value);
+//            } else {
+//                new(&storage_.error) E(other.storage_.error);
+//            }
+//        }
+//        
+//        // Move constructor
+//        constexpr expected(expected&& other) noexcept : has_value_(other.has_value_) {
+//            if (has_value_) {
+//                new(&storage_.value) T(std::move(other.storage_.value));
+//            } else {
+//                new(&storage_.error) E(std::move(other.storage_.error));
+//            }
+//        }
+//        
+//        // Destructor
+//        ~expected() {
+//            if (has_value_) {
+//                storage_.value.~T();
+//            } else {
+//                storage_.error.~E();
+//            }
+//        }
+//        
+//        // Assignment operators
+//        expected& operator=(const expected& other) {
+//            if (this != &other) {
+//                this->~expected();
+//                new(this) expected(other);
+//            }
+//            return *this;
+//        }
+//        
+//        expected& operator=(expected&& other) noexcept {
+//            if (this != &other) {
+//                this->~expected();
+//                new(this) expected(std::move(other));
+//            }
+//            return *this;
+//        }
+//        
+//        // Value access
+//        constexpr bool has_value() const noexcept { return has_value_; }
+//        constexpr explicit operator bool() const noexcept { return has_value_; }
+//        
+//        constexpr T& value() & {
+//            if (!has_value_) throw std::runtime_error("Expected has no value");
+//            return storage_.value;
+//        }
+//        
+//        constexpr const T& value() const & {
+//            if (!has_value_) throw std::runtime_error("Expected has no value");
+//            return storage_.value;
+//        }
+//        
+//        constexpr T&& value() && {
+//            if (!has_value_) throw std::runtime_error("Expected has no value");
+//            return std::move(storage_.value);
+//        }
+//        
+//        constexpr const T&& value() const && {
+//            if (!has_value_) throw std::runtime_error("Expected has no value");
+//            return std::move(storage_.value);
+//        }
+//        
+//        constexpr E& error() & {
+//            if (has_value_) throw std::runtime_error("Expected has value, not error");
+//            return storage_.error;
+//        }
+//        
+//        constexpr const E& error() const & {
+//            if (has_value_) throw std::runtime_error("Expected has value, not error");
+//            return storage_.error;
+//        }
+//        
+//        constexpr T& operator*() & { return value(); }
+//        constexpr const T& operator*() const & { return value(); }
+//        constexpr T&& operator*() && { return std::move(value()); }
+//        constexpr const T&& operator*() const && { return std::move(value()); }
+//        
+//        constexpr T* operator->() { return &value(); }
+//        constexpr const T* operator->() const { return &value(); }
+//        
+//        template<typename U>
+//        constexpr T value_or(U&& default_value) const & {
+//            return has_value_ ? storage_.value : static_cast<T>(std::forward<U>(default_value));
+//        }
+//        
+//        template<typename U>
+//        constexpr T value_or(U&& default_value) && {
+//            return has_value_ ? std::move(storage_.value) : static_cast<T>(std::forward<U>(default_value));
+//        }
+//
+//    private:
+//        union Storage {
+//            T value;
+//            E error;
+//            Storage() {}
+//            ~Storage() {}
+//        } storage_;
+//        bool has_value_;
+//    };
+//
+//    // Specialization for void type
+//    template<typename E>
+//    class expected<void, E> {
+//    public:
+//        constexpr expected() : has_value_(true) {}
+//        
+//        constexpr expected(const E& error) : has_value_(false), error_(error) {}
+//        constexpr expected(E&& error) : has_value_(false), error_(std::move(error)) {}
+//        
+//        constexpr bool has_value() const noexcept { return has_value_; }
+//        constexpr explicit operator bool() const noexcept { return has_value_; }
+//        
+//        constexpr void value() const {
+//            if (!has_value_) throw std::runtime_error("Expected has no value");
+//        }
+//        
+//        constexpr E& error() & {
+//            if (has_value_) throw std::runtime_error("Expected has value, not error");
+//            return error_;
+//        }
+//        
+//        constexpr const E& error() const & {
+//            if (has_value_) throw std::runtime_error("Expected has value, not error");
+//            return error_;
+//        }
+//
+//    private:
+//        bool has_value_;
+//        E error_{};
+//    };
 
 _LIBCPP_END_NAMESPACE_STD
 

@@ -599,7 +599,7 @@ std::expected<std::vector<Capability>, PCIeError> Configuration::enumerate_capab
 std::expected<std::optional<Capability>, PCIeError> Configuration::find_capability(std::uint8_t cap_id) const {
     auto caps_result = enumerate_capabilities();
     if (!caps_result) {
-        return std::expected<std::optional<Capability>, PCIeError>(caps_result.error());
+        return std::unexpected{ caps_result.error() };
     }
     
     for (const auto& cap : caps_result.value()) {
