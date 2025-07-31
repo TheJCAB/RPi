@@ -7,7 +7,7 @@
 #include <string.h>
 
 // DTB constants
-constexpr uint32_t FDT_MAGIC = 0xd00dfeed;
+constexpr uint32_t FDT_MAGIC = 0xd00d'feed;
 constexpr uint32_t FDT_BEGIN_NODE = 0x1;
 constexpr uint32_t FDT_END_NODE = 0x2;
 constexpr uint32_t FDT_PROP = 0x3;

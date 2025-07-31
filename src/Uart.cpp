@@ -12,7 +12,7 @@
 namespace Uart
 {
 
-constexpr uint32_t PL011_MMIO_OFFSET = 0x201000u;
+constexpr uint32_t PL011_MMIO_OFFSET = 0x20'1000u;
 
 struct PL011Registers
 {
@@ -146,7 +146,7 @@ void PutHex(void const volatile* value)
 
 void PutBin(std::integral auto value)
 {
-    const char* binDigits = "01";
+    char const* binDigits = "01";
     Putc('0');
     Putc('b');
     for (int i = sizeof(value) * 8 - 1; i >= 0; --i)

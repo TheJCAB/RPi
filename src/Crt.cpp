@@ -47,10 +47,10 @@ void* memset(void* const dst, int val, size_t size)
     return dst;
 }
 
-void* memcpy(void* restrict s1, const void* restrict s2, size_t n)
+void* memcpy(void* restrict s1, void const* restrict s2, size_t n)
 {
     uint8_t* d = static_cast<uint8_t*>(s1);
-    const uint8_t* s = static_cast<const uint8_t*>(s2);
+    uint8_t const* s = static_cast<uint8_t const*>(s2);
     size_t firstBytes = (uintptr_t)d & 7;
     firstBytes = firstBytes > n ? n : firstBytes;
     n -= firstBytes;
@@ -63,13 +63,13 @@ void* memcpy(void* restrict s1, const void* restrict s2, size_t n)
     {
         n -= wholeQwords * 8;
         uint64_t* qd = reinterpret_cast<uint64_t*>(d);
-        const uint64_t* qs = reinterpret_cast<const uint64_t*>(s);
+        uint64_t const* qs = reinterpret_cast<uint64_t const*>(s);
         for (; wholeQwords > 0; --wholeQwords)
         {
             *qd++ = *qs++;
         }
         d = reinterpret_cast<uint8_t*>(qd);
-        s = reinterpret_cast<const uint8_t*>(qs);
+        s = reinterpret_cast<uint8_t const*>(qs);
     }
     for (; n > 0; --n)
     {
@@ -78,10 +78,10 @@ void* memcpy(void* restrict s1, const void* restrict s2, size_t n)
     return s1;
 }
 
-void* memmove(void* dest, const void* src, size_t n)
+void* memmove(void* dest, void const* src, size_t n)
 {
     uint8_t* d = static_cast<uint8_t*>(dest);
-    const uint8_t* s = static_cast<const uint8_t*>(src);
+    uint8_t const* s = static_cast<uint8_t const*>(src);
     if (d < s || d >= s + n)
     {
         // No overlap or forward copy
@@ -109,9 +109,9 @@ int wctob(wint_t c)
     return static_cast<char>(c);
 }
 
-size_t strlen(const char* s)
+size_t strlen(char const* s)
 {
-    const char* p = s;
+    char const* p = s;
     while (*p != '\0')
     {
         ++p;
@@ -119,7 +119,7 @@ size_t strlen(const char* s)
     return static_cast<size_t>(p - s);
 }
 
-int strcmp(const char* s1, const char* s2)
+int strcmp(char const* s1, char const* s2)
 {
     while (*s1 && *s2 && *s1 == *s2)
     {
@@ -129,7 +129,7 @@ int strcmp(const char* s1, const char* s2)
     return static_cast<uint8_t>(*s1) - static_cast<uint8_t>(*s2);
 }
 
-int strncmp(const char* s1, const char* s2, size_t n)
+int strncmp(char const* s1, char const* s2, size_t n)
 {
     if (n == 0)
     {

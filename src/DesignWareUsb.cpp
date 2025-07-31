@@ -511,7 +511,7 @@ static_assert(sizeof(PowerAndClockReg) == 4, "PowerAndClockReg must be 4 bytes")
 {    PRIVATE POINTERS TO ALL OUR DESIGNWARE 2.0 HOST REGISTER STRUCTURES    }
 ****************************************************************************/
 
-#define USB_CORE_OFFSET  0x980000    // USB CORE OFFSET FROM PERIPHERAL IO BASE ADDRESS
+#define USB_CORE_OFFSET  0x98'0000    // USB CORE OFFSET FROM PERIPHERAL IO BASE ADDRESS
 
 /*--------------------------------------------------------------------------}
 {                     DWC USB CORE REGISTER POINTERS                            }

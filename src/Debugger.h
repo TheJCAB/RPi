@@ -1,4 +1,4 @@
-# pragma once
+#pragma once
 
 #include "Uart.h"
 #include "ThreadContext.h"

@@ -3,7 +3,6 @@
 #include "Mmu.h"
 #include "Containers.h"
 #include "Cpu.h"
-
 #include "emb-stdio.h"
 
 #include <atomic>

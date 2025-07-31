@@ -366,7 +366,7 @@ void HCDChannel::Prepare(
     uint32_t offset = 0;
 
     // Program the channel.
-    registers.Interrupt = 0xFFFFFFFF;
+    registers.Interrupt = 0xFFFF'FFFF;
     registers.InterruptMask = 0x0;
 
     HostChannelCharacteristic tempChar = { 0 };

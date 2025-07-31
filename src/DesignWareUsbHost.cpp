@@ -226,7 +226,7 @@ struct __attribute__((__packed__, aligned(4))) PowerReg {
 {    PRIVATE POINTERS TO ALL OUR DESIGNWARE 2.0 HOST REGISTER STRUCTURES    }
 ****************************************************************************/
 
-#define USB_CORE_OFFSET  0x980000	// USB CORE OFFSET FROM PERIPHERAL IO BASE ADDRESS
+#define USB_CORE_OFFSET  0x98'0000	// USB CORE OFFSET FROM PERIPHERAL IO BASE ADDRESS
 
 /*--------------------------------------------------------------------------}
 {					DWC USB HOST REGISTER POINTERS						    }

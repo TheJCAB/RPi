@@ -1,10 +1,11 @@
 
+#pragma once
 
 #include "Cpu.h"
 
 #include <stdint.h>
-#include <atomic>
 
+#include <atomic>
 #include <bit>
 
 namespace Containers
