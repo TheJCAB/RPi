@@ -6,8 +6,8 @@
  * 
  * Key Features:
  * - Real PCIe device enumeration scanning buses 0 and 1
- * - Hardware-aware register access simulation based on RPi4 specifications
- * - Support for common RPi4 PCIe devices (USB 3.0 controller, etc.)
+ * - Hardware-aware register access simulation based on Rpi4 specifications
+ * - Support for common Rpi4 PCIe devices (USB 3.0 controller, etc.)
  * - Memory-mapped I/O with proper ARM64 memory barriers
  * - Interrupt handling (MSI/MSI-X) support
  * - DMA buffer management
@@ -42,26 +42,26 @@
 namespace PCIe
 {
 
-// Hardware register access for RPi4 PCIe controller
+// Hardware register access for Rpi4 PCIe controller
 // These addresses are based on the BCM2711 datasheet
-PhysicalAddress RPi4_PCIE_REGS_BASE = 0x4'7D50'0000;
-constexpr std::size_t RPi4_PCIE_REGS_SIZE = 0x9310;
+PhysicalAddress Rpi4_PCIE_REGS_BASE = 0x4'7D50'0000;
+constexpr std::size_t Rpi4_PCIE_REGS_SIZE = 0x9310;
 
 namespace
 {
-    Mmio::RegisterProxy<RPi4_PCIE_REGS_BASE, uint32_t     , 0x043C>  RPI_PCIE_REG_ID;
-    Mmio::RegisterProxy<RPi4_PCIE_REGS_BASE, uint32_t     , 0x400C>  RPI_PCIE_REG_MEM_PCI_LO;
-    Mmio::RegisterProxy<RPi4_PCIE_REGS_BASE, uint32_t     , 0x4010>  RPI_PCIE_REG_MEM_PCI_HI;
-    Mmio::RegisterProxy<RPi4_PCIE_REGS_BASE, uint32_t     , 0x4068>  RPI_PCIE_REG_STATUS;
-    Mmio::RegisterProxy<RPi4_PCIE_REGS_BASE, uint32_t     , 0x406C>  RPI_PCIE_REG_REV;
-    Mmio::RegisterProxy<RPi4_PCIE_REGS_BASE, uint32_t     , 0x4070>  RPI_PCIE_REG_MEM_CPU_LO;
-    Mmio::RegisterProxy<RPi4_PCIE_REGS_BASE, uint32_t     , 0x4080>  RPI_PCIE_REG_MEM_CPU_HI_START;
-    Mmio::RegisterProxy<RPi4_PCIE_REGS_BASE, uint32_t     , 0x4084>  RPI_PCIE_REG_MEM_CPU_HI_END;
-    Mmio::RegisterProxy<RPi4_PCIE_REGS_BASE, uint32_t     , 0x4204>  RPI_PCIE_REG_DEBUG;
-    Mmio::RegisterProxy<RPi4_PCIE_REGS_BASE, uint32_t     , 0x4310>  RPI_PCIE_REG_INTMASK;
-    Mmio::RegisterProxy<RPi4_PCIE_REGS_BASE, uint32_t     , 0x4314>  RPI_PCIE_REG_INTCLR;
-    Mmio::RegisterProxy<RPi4_PCIE_REGS_BASE, DeviceAddress, 0x9000>  RPI_PCIE_REG_CFG_INDEX;
-    Mmio::RegisterProxy<RPi4_PCIE_REGS_BASE, uint32_t     , 0x9210>  RPI_PCIE_REG_INIT;
+    Mmio::RegisterProxy<Rpi4_PCIE_REGS_BASE, uint32_t     , 0x043C>  RPI_PCIE_REG_ID;
+    Mmio::RegisterProxy<Rpi4_PCIE_REGS_BASE, uint32_t     , 0x400C>  RPI_PCIE_REG_MEM_PCI_LO;
+    Mmio::RegisterProxy<Rpi4_PCIE_REGS_BASE, uint32_t     , 0x4010>  RPI_PCIE_REG_MEM_PCI_HI;
+    Mmio::RegisterProxy<Rpi4_PCIE_REGS_BASE, uint32_t     , 0x4068>  RPI_PCIE_REG_STATUS;
+    Mmio::RegisterProxy<Rpi4_PCIE_REGS_BASE, uint32_t     , 0x406C>  RPI_PCIE_REG_REV;
+    Mmio::RegisterProxy<Rpi4_PCIE_REGS_BASE, uint32_t     , 0x4070>  RPI_PCIE_REG_MEM_CPU_LO;
+    Mmio::RegisterProxy<Rpi4_PCIE_REGS_BASE, uint32_t     , 0x4080>  RPI_PCIE_REG_MEM_CPU_HI_START;
+    Mmio::RegisterProxy<Rpi4_PCIE_REGS_BASE, uint32_t     , 0x4084>  RPI_PCIE_REG_MEM_CPU_HI_END;
+    Mmio::RegisterProxy<Rpi4_PCIE_REGS_BASE, uint32_t     , 0x4204>  RPI_PCIE_REG_DEBUG;
+    Mmio::RegisterProxy<Rpi4_PCIE_REGS_BASE, uint32_t     , 0x4310>  RPI_PCIE_REG_INTMASK;
+    Mmio::RegisterProxy<Rpi4_PCIE_REGS_BASE, uint32_t     , 0x4314>  RPI_PCIE_REG_INTCLR;
+    Mmio::RegisterProxy<Rpi4_PCIE_REGS_BASE, DeviceAddress, 0x9000>  RPI_PCIE_REG_CFG_INDEX;
+    Mmio::RegisterProxy<Rpi4_PCIE_REGS_BASE, uint32_t     , 0x9210>  RPI_PCIE_REG_INIT;
 
     constexpr uint32_t RPI_PCIE_BRIDGE_OFFSET = 0;
     constexpr uint32_t RPI_PCIE_DEVICE_OFFSET = 0x8000;
@@ -138,7 +138,7 @@ namespace
         }
         
         // Check if address is within PCIe controller registers
-        if (address >= RPi4_PCIE_REGS_BASE && address < (RPi4_PCIE_REGS_BASE + RPi4_PCIE_REGS_SIZE)) {
+        if (address >= Rpi4_PCIE_REGS_BASE && address < (Rpi4_PCIE_REGS_BASE + Rpi4_PCIE_REGS_SIZE)) {
             // Direct memory access to PCIe controller registers
             volatile T* reg_ptr = reinterpret_cast<volatile T*>(address);
             T value = *reg_ptr;
@@ -178,7 +178,7 @@ namespace
         }
         
         // Check if address is within PCIe controller registers
-        if (address >= RPi4_PCIE_REGS_BASE && address < (RPi4_PCIE_REGS_BASE + RPi4_PCIE_REGS_SIZE)) {
+        if (address >= Rpi4_PCIE_REGS_BASE && address < (Rpi4_PCIE_REGS_BASE + Rpi4_PCIE_REGS_SIZE)) {
             // Direct memory access to PCIe controller registers
             volatile T* reg_ptr = reinterpret_cast<volatile T*>(address);
             *reg_ptr = value;
@@ -210,7 +210,7 @@ namespace
     }
     
     bool init_platform_stub() {
-        // Enhanced platform initialization for RPi4
+        // Enhanced platform initialization for Rpi4
         // In a real implementation, this would:
         // 1. Check if PCIe is enabled in device tree
         // 2. Initialize PCIe controller registers
@@ -292,15 +292,15 @@ namespace
         RPI_PCIE_REG_MEM_CPU_HI_END   = static_cast<uint32_t>(cpu_addr_end >> 32);
 
         // Device on 0:0:0 should be a bridge.
-        auto const vid = *(volatile uint16_t *)(RPi4_PCIE_REGS_BASE + RPI_PCIE_BRIDGE_OFFSET + 0x00);
+        auto const vid = *(volatile uint16_t *)(Rpi4_PCIE_REGS_BASE + RPI_PCIE_BRIDGE_OFFSET + 0x00);
         if (vid != 0x14e4) { // Broadcom vendor ID
             printf("PCIe bridge not found (VID=%x)\n", vid);
             return false;
         }
 
         // Configure secondary and subordinate device numbers.
-        *(volatile uint8_t *)(RPi4_PCIE_REGS_BASE + RPI_PCIE_BRIDGE_OFFSET + 0x18) = 1; // Secondary bus
-        *(volatile uint8_t *)(RPi4_PCIE_REGS_BASE + RPI_PCIE_BRIDGE_OFFSET + 0x19) = 1; // Subordinate bus
+        *(volatile uint8_t *)(Rpi4_PCIE_REGS_BASE + RPI_PCIE_BRIDGE_OFFSET + 0x18) = 1; // Secondary bus
+        *(volatile uint8_t *)(Rpi4_PCIE_REGS_BASE + RPI_PCIE_BRIDGE_OFFSET + 0x19) = 1; // Subordinate bus
 
         // For simulation, we'll assume success
         g_initialized = true;
@@ -370,7 +370,7 @@ Configuration::Configuration(DeviceAddress addr) noexcept
     if (addr == DeviceAddress{})
     {
         // The bridge is always at this address.
-        registersBase_ = RPi4_PCIE_REGS_BASE + RPI_PCIE_BRIDGE_OFFSET;
+        registersBase_ = Rpi4_PCIE_REGS_BASE + RPI_PCIE_BRIDGE_OFFSET;
 //        root_access_mutex_.lock();
         return;
     }
@@ -388,7 +388,7 @@ Configuration::Configuration(DeviceAddress addr) noexcept
         RPI_PCIE_REG_CFG_INDEX = addr;
     }
 
-    registersBase_ = RPi4_PCIE_REGS_BASE + RPI_PCIE_DEVICE_OFFSET;
+    registersBase_ = Rpi4_PCIE_REGS_BASE + RPI_PCIE_DEVICE_OFFSET;
 }
 
 Configuration::~Configuration()
@@ -694,7 +694,7 @@ PCIeError initialize() {
     }
 
     // Real PCIe device enumeration for Raspberry Pi 4
-    // The RPi4 PCIe controller is typically on bus 0, and devices appear on bus 1
+    // The Rpi4 PCIe controller is typically on bus 0, and devices appear on bus 1
     
     {
         // First, check if the PCIe root complex exists (bus 0, device 0, function 0)
@@ -713,10 +713,10 @@ PCIeError initialize() {
     }
 
     // Scan all possible device locations on the PCIe bus
-    // On RPi4, we typically see devices on bus 1 (downstream from the root complex)
-    for (BusNumber bus = 1; bus <= 1; ++bus) {  // RPi4 usually has buses 0 and 1
+    // On Rpi4, we typically see devices on bus 1 (downstream from the root complex)
+    for (BusNumber bus = 1; bus <= 1; ++bus) {  // Rpi4 usually has buses 0 and 1
         // Bus 0 has only one device (the root complex).
-        // Not using constants::MAX_DEVICES_PER_BUS because there's only one device per bus on RPi4
+        // Not using constants::MAX_DEVICES_PER_BUS because there's only one device per bus on Rpi4
         // Unless you're using a PCIe expansion board, which we're not.
         // Accessing the VID of devices that are not present can result in delays of seconds (timeout request in the bus).
         uint32_t deviceCount = (bus == 0) ? 1 : 1;

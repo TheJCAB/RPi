@@ -110,7 +110,7 @@ _start:
 //    cmp x6, #0xD08  // Cortex-A72 part number
 //    b.ne 1f
 //
-//    // This is RPi4, using high addresses
+//    // This is Rpi4, using high addresses
 //    ldr x20, =0x47E201000 // UART
 //    ldr x21, =0x47E200080 // GPIO
 //
@@ -121,7 +121,7 @@ _start:
 //    b 2f
 //1:
 
-    // This is RPi3
+    // This is Rpi3
     ldr x20, =0x3F201000 // UART
     ldr x21, =0x3F200080 // GPIO
 

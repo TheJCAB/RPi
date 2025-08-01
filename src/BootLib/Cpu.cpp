@@ -17,8 +17,8 @@ bool IsRpi4()
         uint32_t implementer = (midr >> 24) & 0xFF;
         uint32_t part_number = (midr >> 4) & 0xFFF;
         
-        // BCM2711 (RPi4) has Cortex-A72 cores (part number 0xD08)
-        // BCM2837 (RPi3) has Cortex-A53 cores (part number 0xD03)
+        // BCM2711 (Rpi4) has Cortex-A72 cores (part number 0xD08)
+        // BCM2837 (Rpi3) has Cortex-A53 cores (part number 0xD03)
         isRpi4  = (implementer == 0x41 && part_number == 0xD08);
         checked = true;
     }

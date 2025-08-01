@@ -578,7 +578,7 @@ static void InitPageTables()
     //               (1ULL << 32); // IPS = 64GB (36 bits) of physical address space
     asm volatile ("msr tcr_el1, %0" : : "r"(tcr));
 
-    if (Mmio::Base == 0x4'7E00'0000u || Mmio::Base == 0x7E00'0000u) // RPi4 MMIO base
+    if (Mmio::Base == 0x4'7E00'0000u || Mmio::Base == 0x7E00'0000u) // Rpi4 MMIO base
     {
         Mmio::Base    = 0x7E00'0000u; // Update MMIO base to the new aperture.
         Mmio::QA7Base = 0x8000'0000u; // Update ARM cores' MMIO base to the new aperture.

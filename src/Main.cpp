@@ -14,6 +14,7 @@
 #include "Framebuffer.h"
 #include "SdCard.h"
 #include "Exception.h"
+#include "Interrupts.h"
 #include "Processor.h"
 #include "Mmu.h"
 #include "Scheduler.h"
@@ -59,6 +60,7 @@ void InitCore()
     el2_to_el1_return();
     Mmu::Init();
     Exception::Init();
+    Interrupts::Init();
     Scheduler::Init();
 }
 
@@ -276,8 +278,8 @@ void Core0(void* dtb)
         // Any further I/O operations will be done once the MMU is active.
         if (Cpu::IsRpi4())
         {
-            Mmio::Base    = 0x4'7E00'0000u; // RPi4 MMIO base address
-            Mmio::QA7Base = 0x4'C000'0000u; // RPi4 QA7 base address
+            Mmio::Base    = 0x4'7E00'0000u; // Rpi4 MMIO base address
+            Mmio::QA7Base = 0x4'C000'0000u; // Rpi4 QA7 base address
         }
 
         // Initialize the MMU, and so all addresses will be virtual after this.
@@ -301,6 +303,7 @@ void Core0(void* dtb)
     Uart::Puts("\n\n\n");
 
     Exception::Init();
+    Interrupts::Init();
 
     InitGlobalHeap();
 

@@ -201,7 +201,7 @@ constexpr uint32_t Timer_RawIRQ    = 0xB410u;
 constexpr uint32_t Timer_MaskedIRQ = 0xB414u;
 constexpr uint32_t Timer_Reload    = 0xB418u;
 
-// This stuff is RPi4
+// This stuff is Rpi4
 //    // Enable the interrupt in the interrupt controller (GIC)
 //    // Raspberry Pi 3B: Virtual timer IRQ is IRQ 27 (in GIC distributor)
 //    constexpr uint32_t VIRTUAL_TIMER_IRQ = 27;

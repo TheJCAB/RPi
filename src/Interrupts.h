@@ -16,5 +16,7 @@ void EnableUsb(HandlerFunction);
 void EnableCoreVirtualTimerInterrupt(HandlerFunction handler);
 void DisableCoreVirtualTimerInterrupt();
 
+void Init();
+
 }
 // namespace Interrupts
