@@ -29,6 +29,7 @@
 #include "Mmio.h"
 #include "Uart.h"
 #include "Timer.h"
+#include "Mailbox.h"
 #include "emb-stdio.h"
 
 #include <cstring>
@@ -222,6 +223,7 @@ namespace
         printf("RPI_PCIE_REG_INIT=%x\n", init);
         init |= 0x3;
         RPI_PCIE_REG_INIT = init;
+
         init = RPI_PCIE_REG_INIT;
         printf("RPI_PCIE_REG_INIT after reset=%x\n", init);
 
@@ -285,9 +287,9 @@ namespace
         // Of course, this is all speculation in the absence of an official
         // datasheet.
         uint64_t cpu_addr_start = 0x6'0000'0000ull;
-        uint64_t cpu_addr_end   = cpu_addr_start + 0x7'0000'0000u; // 4 GB
+        uint64_t cpu_addr_end   = cpu_addr_start + 0x1'0000'0000ull; // 4 GB
 
-        RPI_PCIE_REG_MEM_CPU_LO       = static_cast<uint32_t>(((cpu_addr_start >> 16) & 0xffff) | (((cpu_addr_end >> 20) - 1) << 20));
+        RPI_PCIE_REG_MEM_CPU_LO       = static_cast<uint32_t>(((cpu_addr_start >> 16) & 0xfff0) | (((cpu_addr_end >> 20) - 1) << 20));
         RPI_PCIE_REG_MEM_CPU_HI_START = static_cast<uint32_t>(cpu_addr_start >> 32);
         RPI_PCIE_REG_MEM_CPU_HI_END   = static_cast<uint32_t>(cpu_addr_end >> 32);
 
@@ -551,7 +553,7 @@ BarInfo Configuration::get_bar(std::uint8_t bar_number) const
 
             write_register<uint32_t>(bar_high_offset, 0xFFFF'FFFFu);
             auto bar_high_mask = read_register<std::uint32_t>(bar_high_offset);
-            write_register<uint32_t>(bar_high_offset, bar_low); // Restore original value
+            write_register<uint32_t>(bar_high_offset, bar_high); // Restore original value
             printf("BAR%u high: high=0x%08X, mask=0x%08X\n", bar_number + 1, bar_high, bar_high_mask);
             bar_info.size = ~((static_cast<PhysicalAddress>(bar_high_mask) << 32) + (bar_mask & ~0xFu)) + 1;
         }
@@ -857,7 +859,7 @@ namespace examples {
         printf("Enumerating PCIe devices...\n");
 
         printf("Initializing PCIe driver...\n");
-        
+
         auto init_result = initialize();
         if (init_result != PCIeError::SUCCESS) {
             // Handle initialization error
@@ -865,6 +867,7 @@ namespace examples {
         }
 
         printf("PCIe driver initialized successfully.\n");
+
         printf("Enumerating devices...\n");
         
         printf("Found %zu PCIe devices:\n", devices_.size());
@@ -888,13 +891,16 @@ namespace examples {
             Configuration configuration{ info.Address };
             auto command = configuration.command();
             auto status = configuration.status();
-            if (command && status) {
-                printf("  Command:   0x%04x\n", command);
-                printf("  Status:    0x%04x\n", status);
-            }
+            printf("  Command:   0x%04x\n", command);
+            printf("  Status:    0x%04x\n", status);
 
             if (utils::is_bridge_device(class_code))
             {
+                configuration.write_register<uint16_t>(0x20, (0xF800'0000u >> 16) & 0xFFF0u);
+                configuration.write_register<uint16_t>(0x22, (0xFFF0'0000u >> 16) & 0xFFF0u);
+
+                configuration.set_command(command | 6); // Enable memory space (bit 1) and bus mastering (bit 2)
+
                 uint8_t  const primaryBus           = configuration.read_register<uint8_t >(0x18);
                 uint8_t  const secondaryBus         = configuration.read_register<uint8_t >(0x19);
                 uint8_t  const subordinateBus       = configuration.read_register<uint8_t >(0x1A);
@@ -943,14 +949,111 @@ namespace examples {
                             bar.is_prefetchable ? ", Prefetchable" : "");
                     }
                 }
-            }
 
-            // Display capabilities if any
-            auto caps_result = configuration.enumerate_capabilities();
-            if (caps_result && !caps_result.value().empty()) {
-                printf("  Capabilities:\n");
-                for (const auto& cap : caps_result.value()) {
-                    printf("    ID: 0x%02x\n", cap.id);
+                // Display capabilities if any
+                auto caps_result = configuration.enumerate_capabilities();
+                if (caps_result && !caps_result.value().empty()) {
+                    printf("  Capabilities:\n");
+                    for (const auto& cap : caps_result.value()) {
+                        printf("    ID: 0x%02x\n", cap.id);
+                    }
+                }
+
+                printf("Word0: %08X\n", *(uint32_t*)(0x6'0000'0000ull));
+        
+        // Enable USB controller power via mailbox
+        printf("    Enabling USB controller power...\n");
+        constexpr uint32_t USB_HCD = 3; // USB Host Controller Device ID
+        //Mailbox::TagMessage<Mailbox::Tag::SET_POWER_STATE, 2> powerStateTag{{ USB_HCD, 3 }};
+        Mailbox::TagMessage<Mailbox::Tag::RPI4_PCIE_XHCI_USB_RESET, 1> resetTag{{ 0x0010'0000 }};
+
+        if (!Mailbox::SendTags(resetTag)) {
+            printf("    ✗ Failed to enable USB controller power\n");
+        }
+        else
+        {
+            printf("    New state: %u\n", resetTag.args[0]);
+        }
+
+                // Enable BAR 0 at the beginning of PCIe aperture
+                auto bar0 = configuration.get_bar(0);
+                if (bar0.size > 0) {
+                    // The PCIe controller maps CPU address 0x600000000 to PCI address 0xF8000000
+                    // So we need to program the device's BAR to use the PCI address that corresponds
+                    // to where we want to access it in CPU memory space
+                    uint64_t cpu_address = 0x600000000;      // Where we'll access it from CPU
+                    uint32_t pci_address = 0xF8000000;       // PCI address space base
+                    
+                    // Write the PCI address to BAR 0 (this is what the device will see)
+                    configuration.write_register<uint32_t>(0x10, (pci_address & ~0xFu) | bar0.flags);
+                    if (bar0.is_64bit) {
+                        configuration.write_register<uint32_t>(0x14, static_cast<uint32_t>(pci_address >> 32));
+                    }
+                    
+                    // Enable memory space access and bus mastering
+                    auto cmd = configuration.command();
+                    cmd |= 0x06;  // Enable memory space (bit 1) and bus mastering (bit 2)
+                    configuration.set_command(cmd);
+                    
+                    printf("    Configured BAR 0: PCI=0x%08x, CPU=0x%016llx\n", pci_address, cpu_address);
+                    
+                    // Verify the BAR was written correctly
+                    auto written_bar = configuration.read_register<uint32_t>(0x10);
+                    printf("    BAR 0 readback: 0x%08x\n", written_bar);
+                    
+                    // Add a delay to ensure the configuration takes effect
+                    Cpu::DelayInMicroseconds(10000);
+
+                    asm volatile("dsb sy" : : : "memory");  // ARM64
+
+                    // Test memory access
+                    printf("    Testing memory access at 0x%016llx...\n", cpu_address);
+                    volatile uint32_t* test_ptr = reinterpret_cast<volatile uint32_t*>(cpu_address);
+                    uint32_t test_value = *test_ptr;
+                    printf("    First word: 0x%08x\n", test_value);
+                }
+                // Verify XHCI controller presence by reading its capability registers
+                if (vendor == 0x1106 && device_id == 0x3483) { // VIA VL805 USB 3.0 controller
+                    printf("    Detected VL805 USB 3.0 controller\n");
+                    
+                    // Wait for power stabilization
+                    Cpu::DelayInMicroseconds(10000); // 10ms delay
+                    
+                    // XHCI capability registers start at BAR 0
+                    volatile uint32_t* xhci_base = reinterpret_cast<volatile uint32_t*>(0x600000000ULL);
+                    
+                    // Read XHCI Capability Registers
+                    uint32_t caplength_hciversion = xhci_base[0x00 / 4]; // Capability Register Length and Interface Version
+                    uint32_t hcsparams1 = xhci_base[0x04 / 4];           // Structural Parameters 1
+                    uint32_t hcsparams2 = xhci_base[0x08 / 4];           // Structural Parameters 2
+                    uint32_t hcsparams3 = xhci_base[0x0C / 4];           // Structural Parameters 3
+                    uint32_t hccparams1 = xhci_base[0x10 / 4];           // Capability Parameters 1
+                    
+                    uint8_t cap_length = caplength_hciversion & 0xFF;
+                    uint16_t hci_version = (caplength_hciversion >> 16) & 0xFFFF;
+                    
+                    printf("    XHCI Capability Length: 0x%02x\n", cap_length);
+                    printf("    XHCI Interface Version: 0x%04x\n", hci_version);
+                    printf("    Max Device Slots: %u\n", hcsparams1 & 0xFF);
+                    printf("    Max Interrupters: %u\n", (hcsparams1 >> 8) & 0x7FF);
+                    printf("    Max Ports: %u\n", (hcsparams1 >> 24) & 0xFF);
+                    
+                    // Verify this looks like a valid XHCI controller
+                    if (cap_length >= 0x20 && cap_length <= 0x40 && 
+                        (hci_version == 0x0100 || hci_version == 0x0110 || hci_version == 0x0120)) {
+                        printf("    ✓ XHCI controller verification successful\n");
+                        
+                        // Read operational registers base
+                        volatile uint32_t* xhci_op_base = reinterpret_cast<volatile uint32_t*>(0x600000000ULL + cap_length);
+                        uint32_t usbcmd = xhci_op_base[0x00 / 4];  // USB Command register
+                        uint32_t usbsts = xhci_op_base[0x04 / 4];  // USB Status register
+                        
+                        printf("    USB Command: 0x%08x\n", usbcmd);
+                        printf("    USB Status: 0x%08x %s\n", usbsts, 
+                               (usbsts & 0x1) ? "(Controller Halted)" : "(Controller Running)");
+                    } else {
+                        printf("    ✗ XHCI controller verification failed - invalid capability registers\n");
+                    }
                 }
             }
 

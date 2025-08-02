@@ -199,6 +199,8 @@ enum class Tag : uint32_t
 
     GET_MEASURED_CLOCK_RATE     = 0x00030047,			// Get measured clock rate
 
+    RPI4_PCIE_XHCI_USB_RESET    = 0x00030058,			// Reset XHCI USB controller
+
     /* Framebuffer commands */
     ALLOCATE_FRAMEBUFFER		= 0x00040001,			// Allocate Framebuffer address
     BLANK_SCREEN				= 0x00040002,			// Blank screen
