@@ -35,7 +35,8 @@ using RegisterOffset  = std::uint32_t;
 using RegisterValue   = std::uint32_t;
 
 // PCIe-specific constants
-namespace constants {
+namespace constants
+{
     constexpr std::size_t CONFIG_SPACE_SIZE = 4096;
     constexpr std::size_t LEGACY_CONFIG_SPACE_SIZE = 256;
     constexpr std::uint16_t RESERVED_VENDOR_ID = 0;

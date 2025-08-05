@@ -896,8 +896,8 @@ namespace examples {
 
             if (utils::is_bridge_device(class_code))
             {
-                configuration.write_register<uint16_t>(0x20, (0xF800'0000u >> 16) & 0xFFF0u);
-                configuration.write_register<uint16_t>(0x22, (0xFFF0'0000u >> 16) & 0xFFF0u);
+//                configuration.write_register<uint16_t>(0x20, (0xF800'0000u >> 16) & 0xFFF0u);
+//                configuration.write_register<uint16_t>(0x22, (0xFFF0'0000u >> 16) & 0xFFF0u);
 
                 configuration.set_command(command | 6); // Enable memory space (bit 1) and bus mastering (bit 2)
 
@@ -960,20 +960,6 @@ namespace examples {
                 }
 
                 printf("Word0: %08X\n", *(uint32_t*)(0x6'0000'0000ull));
-        
-        // Enable USB controller power via mailbox
-        printf("    Enabling USB controller power...\n");
-        constexpr uint32_t USB_HCD = 3; // USB Host Controller Device ID
-        //Mailbox::TagMessage<Mailbox::Tag::SET_POWER_STATE, 2> powerStateTag{{ USB_HCD, 3 }};
-        Mailbox::TagMessage<Mailbox::Tag::RPI4_PCIE_XHCI_USB_RESET, 1> resetTag{{ 0x0010'0000 }};
-
-        if (!Mailbox::SendTags(resetTag)) {
-            printf("    ✗ Failed to enable USB controller power\n");
-        }
-        else
-        {
-            printf("    New state: %u\n", resetTag.args[0]);
-        }
 
                 // Enable BAR 0 at the beginning of PCIe aperture
                 auto bar0 = configuration.get_bar(0);
@@ -1011,6 +997,25 @@ namespace examples {
                     volatile uint32_t* test_ptr = reinterpret_cast<volatile uint32_t*>(cpu_address);
                     uint32_t test_value = *test_ptr;
                     printf("    First word: 0x%08x\n", test_value);
+                    printf("    Command: 0x%08x  Status: 0x%08x\n", *reinterpret_cast<volatile uint32_t*>(cpu_address + 0x20), *reinterpret_cast<volatile uint32_t*>(cpu_address + 0x24));
+        
+        //// Enable USB controller power via mailbox
+        //printf("    Enabling USB controller power...\n");
+        //constexpr uint32_t USB_HCD = 3; // USB Host Controller Device ID
+        ////Mailbox::TagMessage<Mailbox::Tag::SET_POWER_STATE, 2> powerStateTag{{ USB_HCD, 3 }};
+        //Mailbox::TagMessage<Mailbox::Tag::RPI4_PCIE_XHCI_USB_RESET, 1> resetTag{{ 0x0010'0000 }};
+
+        //if (!Mailbox::SendTags(resetTag)) {
+        //    printf("    ✗ Failed to enable USB controller power\n");
+        //}
+        //else
+        //{
+        //    printf("    New state: %u\n", resetTag.args[0]);
+        //}
+
+                    printf("    Testing memory access again at 0x%016llx...\n", cpu_address);
+                    printf("    First word: 0x%08x\n", *test_ptr);
+                    printf("    Command: 0x%08x  Status: 0x%08x\n", *reinterpret_cast<volatile uint32_t*>(cpu_address + 0x20), *reinterpret_cast<volatile uint32_t*>(cpu_address + 0x24));
                 }
                 // Verify XHCI controller presence by reading its capability registers
                 if (vendor == 0x1106 && device_id == 0x3483) { // VIA VL805 USB 3.0 controller

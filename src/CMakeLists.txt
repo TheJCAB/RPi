@@ -14,6 +14,7 @@ add_kernel_image(kernel8
     DeviceTree.cpp
 
     Syscall.cpp
+    UsbXhci.cpp
 
     Cpu.cpp             Cpu.h
     Gpio.cpp            Gpio.h
@@ -42,6 +43,7 @@ add_kernel_image(kernel8
     DesignWareUsbChannel.cpp DesignWareUsbChannel.h
     Interrupts.cpp      Interrupts.h
 
+    Usb.h
     Processor.h
     Task.h
 )

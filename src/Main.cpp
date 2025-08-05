@@ -24,6 +24,7 @@
 #include "Run.h"
 #include "UsbDevices.h"
 #include "PCIe.h"
+#include "Usb.h"
 #include "Async.h"
 
 #include "TimerExample.h"
@@ -518,6 +519,10 @@ void Core0(void* dtb)
     if (Cpu::IsRpi4())
     {
         PCIe::examples::demonstrate_enumeration();
+
+        auto xhci = Usb::CreateXhciController();
+        xhci->initialize();
+        
     }
     else
     {

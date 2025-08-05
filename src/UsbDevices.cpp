@@ -743,7 +743,7 @@ Async::task<RESULT> HubPortReset(struct UsbDevice *device, uint8_t port) {
  21Mar17 LdB
  --------------------------------------------------------------------------*/
 Async::task<RESULT> EnumerateDevice (struct UsbDevice *device, struct UsbDevice* ParentHub, uint8_t PortNum); // We need to forward declare
-Async::task<RESULT> HubPortConnectionChanged(struct UsbDevice *device, uint8_t port) {
+__attribute__((noinline)) Async::task<RESULT> HubPortConnectionChanged(struct UsbDevice *device, uint8_t port) {
     RESULT result;
     struct HubDevice *data;
     struct HubPortFullStatus portStatus;
