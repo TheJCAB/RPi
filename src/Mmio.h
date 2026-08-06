@@ -36,10 +36,10 @@ using BootLib::Mmio::Rpi4QA7Base;
 extern uintptr_t Base;
 extern uintptr_t QA7Base;
 
-// All registers are 32-bit wide.
-// We admit as a register any type that fits and is trivial to copy.
-template < typename T >
-concept RegisterType = (std::is_trivially_copyable_v<std::remove_const_t<T>>) && (sizeof(T) == sizeof(uint32_t));
+using BootLib::RegisterType;
+using BootLib::RawRegisterType;
+using BootLib::Register;
+using BootLib::RegisterArray;
 
 // The internal access proxy for a register defined as a constant offset from its MMIO base.
 template < uintptr_t const& Base, bool isConst, uint32_t Offset = static_cast<uint32_t>(-1) >

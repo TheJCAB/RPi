@@ -25,32 +25,34 @@ template < size_t Size > using RawRegisterType = typename RawRegisterTypeT<Size>
 /// @brief Proxy template for accessing memory-mapped I/O (MMIO) registers.
 ///
 /// This template provides a type-safe and convenient interface for reading and writing
-/// 32-bit hardware registers mapped into memory, such as those used on Raspberry Pi platforms.
-/// The base address of the MMIO region is provided as a reference, allowing for dynamic relocation
-/// (e.g., via the MMU). The template enforces that only trivially copyable types of 32 bits can be used,
+/// 8- to 32-bit hardware registers mapped into memory.
+/// The address of the Register class must be the address in memory of the register itself.
+/// The optional offset allows for multiple registers in a region to be grouped as a convenient union.
+/// The template enforces that only trivially copyable types of 8 to 32 bits can be used,
 /// ensuring safe and predictable register access.
 ///
 /// Usage:
-///   - Instantiate RegisterProxy with a reference to the MMIO base and a register type.
+///   - Instantiate Register at the MMIO location withthe appropriate register type and optional offset.
 ///   - Use assignment operators to write values or modify the register in-place.
 ///   - Use the conversion operator or dereference to read the current register value.
 ///
 /// Example:
 ///   uintptr_t Base = 0x3F00'0000u;         // Raspberry Pi 3 peripheral Mmio registers
-///   BaseRegisterProxy<Base, uint32_t> reg(0x10); // Access register at offset 0x10 from Base
+///   Register<uint32_t>& reg = *reinterpret_cast<Register<uint32_t>*>(Base + 0x10); // Access register at offset 0x10 from Base
+///   auto& reg2 = *reinterpret_cast<Register<uint32_t, 0x10>*>(Base); // The offset can be put in the type
 ///   reg = 0x12345678;                      // Write a whole value to the register
-///   uint32_t val = reg;                    // Read the register
+///   uint32_t val = reg;                    // Read the register. Note: `reg` is a proxy of sorts so `auto` won't do.
 ///   reg = [](auto& v) { v |= 0x1; };       // Read the register, modify the value then write it back
 ///
-/// @tparam Base Reference to the MMIO base address variable.
-/// @tparam T    Register type (must conform to the RegisterType concept).
+/// @tparam T      Register type (must conform to the RegisterType concept).
+/// @tparam Offset Optional offset from the register proxy's location.
 ///
 template < RegisterType T, uint32_t Offset = 0 >
 struct Register
 {
     using Raw = RawRegisterType<sizeof(T)>;
 
-    Register() = default;
+    Register() = delete;
 
     Register(Register&&) = delete;
     Register& operator=(Register&&) = delete;
@@ -117,7 +119,7 @@ struct RegisterArray
 {
     using Raw = RawRegisterType<sizeof(T)>;
 
-    RegisterArray() = default;
+    RegisterArray() = delete;
     RegisterArray(RegisterArray&&) = delete;
     RegisterArray& operator=(RegisterArray&&) = delete;
 

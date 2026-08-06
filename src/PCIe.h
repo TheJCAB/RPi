@@ -1,5 +1,7 @@
 #pragma once
 
+#include <BootLib/RegisterProxy.h>
+
 #include <cstdint>
 #include <memory>
 #include <vector>
@@ -17,11 +19,6 @@
 namespace PCIe
 {
 
-// Forward declarations
-class Configuration;
-class MemoryMappedRegion;
-class InterruptHandler;
-
 // Type aliases for clarity
 using BusNumber       = std::uint8_t;
 using DeviceNumber    = std::uint8_t;
@@ -29,10 +26,77 @@ using FunctionNumber  = std::uint8_t;
 using VendorID        = std::uint16_t;
 using DeviceID        = std::uint16_t;
 using ClassCode       = std::uint32_t;
+using PcieAddress     = std::uint64_t;
 using PhysicalAddress = std::uint64_t;
 using VirtualAddress  = void*;
 using RegisterOffset  = std::uint32_t;
 using RegisterValue   = std::uint32_t;
+
+// Standard configuration space offsets
+union CommonConfigHeader;
+union ConfigHeader0;
+union ConfigHeader1;
+union XhciConfig;
+
+enum class CapabilityId : uint8_t
+{
+    PowerManagement = 0x01,
+    Msi             = 0x05,
+    Pcie            = 0x10,
+};
+
+union CapabilityEntry
+{
+    BootLib::Register<CapabilityId     const, 0x00> Id;
+    BootLib::Register<uint8_t          const, 0x01> NextPtr;
+};
+
+union PowerManagementCapabilities
+{
+    BootLib::Register<CapabilityId     const, 0x00> Id;                 // 0x01
+    BootLib::Register<uint8_t          const, 0x01> NextPtr;
+    BootLib::Register<uint16_t         const, 0x02> Capabilities;
+    BootLib::Register<uint16_t              , 0x04> ControlStatus;
+    BootLib::Register<uint8_t          const, 0x07> Data;
+};
+
+union MsiCapabilities
+{
+    BootLib::Register<CapabilityId     const, 0x00> Id;                 // 0x05
+    BootLib::Register<uint8_t          const, 0x01> NextPtr;
+    BootLib::Register<uint16_t         const, 0x02> Capabilities;
+};
+
+union PcieCapabilities
+{
+    BootLib::Register<CapabilityId     const, 0x00> Id;                 // 0x10
+    BootLib::Register<uint8_t          const, 0x01> NextPtr;
+    BootLib::Register<uint16_t         const, 0x02> Capabilities;
+    BootLib::Register<uint32_t         const, 0x04> DeviceCapabilities;
+    BootLib::Register<uint16_t              , 0x08> DeviceControl;
+    BootLib::Register<uint16_t              , 0x0A> DeviceStatus;
+    BootLib::Register<uint32_t         const, 0x0C> LinkCapabilities;
+    BootLib::Register<uint16_t              , 0x10> LinkControl;
+    BootLib::Register<uint16_t              , 0x12> LinkStatus;
+    BootLib::Register<uint32_t         const, 0x14> SlotCapabilities;
+    BootLib::Register<uint16_t              , 0x18> SlotControl;
+    BootLib::Register<uint16_t              , 0x1A> SlotStatus;
+    BootLib::Register<uint16_t              , 0x1C> RootControl;
+    BootLib::Register<uint16_t         const, 0x1E> RootCapabilities;
+    BootLib::Register<uint32_t              , 0x20> RootStatus;
+};
+
+template < CapabilityId Id > struct CapabilityStructT { using type = CapabilityEntry; };
+template <> struct CapabilityStructT<CapabilityId::PowerManagement> { using type = PowerManagementCapabilities; };
+template <> struct CapabilityStructT<CapabilityId::Msi            > { using type = MsiCapabilities; };
+template <> struct CapabilityStructT<CapabilityId::Pcie           > { using type = PcieCapabilities; };
+
+template < CapabilityId Id > using CapabilityStruct = typename CapabilityStructT<Id>::type;
+
+// Forward declarations
+class Configuration;
+class MemoryMappedRegion;
+class InterruptHandler;
 
 // PCIe-specific constants
 namespace constants
@@ -44,15 +108,6 @@ namespace constants
     constexpr std::uint8_t MAX_BUSES = 255;
     constexpr std::uint8_t MAX_DEVICES_PER_BUS = 32;
     constexpr std::uint8_t MAX_FUNCTIONS_PER_DEVICE = 8;
-    
-    // Standard configuration space offsets
-    constexpr RegisterOffset VENDOR_ID_OFFSET = 0x00;
-    constexpr RegisterOffset DEVICE_ID_OFFSET = 0x02;
-    constexpr RegisterOffset COMMAND_OFFSET = 0x04;
-    constexpr RegisterOffset STATUS_OFFSET = 0x06;
-    constexpr RegisterOffset CLASS_CODE_OFFSET = 0x08;
-    constexpr RegisterOffset HEADER_TYPE_OFFSET = 0x0E;
-    constexpr RegisterOffset BAR0_OFFSET = 0x10;
 }
 
 // Error types for expected returns
@@ -109,89 +164,75 @@ enum class BarType : uint8_t {
 };
 
 // Base Address Register (BAR) information
-struct BarInfo {
-    std::uint8_t bar_number;
+struct BarInfo
+{
+    std::uint8_t    bar_number;
     PhysicalAddress physical_address;
-    std::size_t size;
-    uint8_t flags;
-    bool is_memory_space;  // true for memory, false for I/O
-    bool is_64bit;
-    bool is_prefetchable;
+    std::size_t     size;
+    uint8_t         flags;
+    bool            is_memory_space;  // true for memory, false for I/O
+    bool            is_64bit;
+    bool            is_prefetchable;
 };
 
 // PCIe capability structure
-struct Capability {
-    std::uint8_t id;
-    std::uint8_t next_offset;
-    std::span<const std::uint8_t> data;
+struct Capability
+{
+    CapabilityId Id;
+    uint8_t      Offset;
+
+    template < typename StructT >
+    auto& GetStruct(CommonConfigHeader& header) const { return *reinterpret_cast<StructT*>(reinterpret_cast<uintptr_t>(&header) + Offset); }
 };
 
 // Concepts for type safety
 template<typename T>
 concept PCIeRegisterType = std::integral<T> && (sizeof(T) <= 4);
 
+struct RootDevice;
+
 // Configuration space accessor
 class Configuration
 {
 public:
-    explicit Configuration(DeviceAddress addr) noexcept;
+    explicit Configuration(RootDevice& root, DeviceAddress addr) noexcept;
     ~Configuration();
     
-    Configuration(Configuration&& other)
-    {
-        address_ = other.address_;
-        registersBase_ = other.registersBase_;
-        other.address_ = InvalidDeviceAddress; // Invalidate the moved-from object
-        other.registersBase_ = 0;
-    }
-
-    Configuration& operator=(Configuration&& other)
-    {
-        if (this != &other) {
-            address_ = other.address_;
-            registersBase_ = other.registersBase_;
-            other.address_ = InvalidDeviceAddress; // Invalidate the moved-from object
-            other.registersBase_ = 0;
-        }
-        return *this;
-    }
+    Configuration(Configuration&& other) = delete;
+    Configuration& operator=(Configuration&& other) = delete;
 
     [[nodiscard]] DeviceAddress GetAddress() const noexcept { return address_; }
     [[nodiscard]] bool          IsValid   () const noexcept { return address_ != InvalidDeviceAddress; }
     [[nodiscard]] explicit   operator bool() const noexcept { return address_ != InvalidDeviceAddress; }
 
-    // Register access methods
-    template<PCIeRegisterType T>
-    [[nodiscard]] T read_register(RegisterOffset offset) const noexcept;
-
-    template<PCIeRegisterType T>
-    PCIeError write_register(RegisterOffset offset, T value) const noexcept;
-    
     // Convenience methods for standard registers
     [[nodiscard]] VendorID  vendor_id () const noexcept;
     [[nodiscard]] DeviceID  device_id () const noexcept;
     [[nodiscard]] ClassCode class_code() const noexcept;
-    [[nodiscard]] uint16_t  command   () const noexcept;
-    [[nodiscard]] uint16_t  status    () const noexcept;
 
-    [[nodiscard]] PCIeError set_command(std::uint16_t command) noexcept;
+    void set_command(std::uint16_t command) noexcept;
 
-    [[nodiscard]] PCIeError enable_device();
-    [[nodiscard]] PCIeError disable_device();
+    void enable_device();
+    void disable_device();
 
     // BAR access
+    [[nodiscard]] size_t MaxBars() const;
     [[nodiscard]] size_t enumerate_bars(std::span<BarInfo>) const;
     [[nodiscard]] BarInfo get_bar(std::uint8_t bar_number) const;
     [[nodiscard]] std::span<std::byte> map_bar(BarInfo& bar);
 
     // Capability iteration
-    [[nodiscard]] std::expected<std::vector<Capability>, PCIeError> enumerate_capabilities() const;
-    [[nodiscard]] std::expected<std::optional<Capability>, PCIeError> find_capability(std::uint8_t cap_id) const;
+    [[nodiscard]] std::vector<Capability> enumerate_capabilities() const;
+    [[nodiscard]] std::optional<Capability> find_capability(CapabilityId cap_id) const;
 
-   
+    CommonConfigHeader& Common () const { return header_; }
+    ConfigHeader0&      Header0() const { return *reinterpret_cast<ConfigHeader0*>(&header_); }
+    ConfigHeader1&      Header1() const { return *reinterpret_cast<ConfigHeader1*>(&header_); }
+    XhciConfig&         Xhci   () const { return *reinterpret_cast<XhciConfig*   >(&header_); }
+
 private:
     DeviceAddress address_ = InvalidDeviceAddress;
-    uintptr_t registersBase_ = 0; // Base address for configuration space registers
+    CommonConfigHeader& header_; // Base address for configuration space registers
 };
 
 // Main PCIe device information class

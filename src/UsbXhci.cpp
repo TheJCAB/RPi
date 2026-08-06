@@ -395,6 +395,21 @@ private:
     }
     
     bool reset_controller() {
+        auto start_time = Cpu::GetPerformanceCounter();
+        auto timeout_ticks = Cpu::GetPerformanceTicksForMs(5000);
+        
+        uint32_t status = 0;
+        while ((Cpu::GetPerformanceCounter() - start_time) < timeout_ticks) {
+            status = read_reg32(capability_length + XHCI_OP_USBSTS);
+            if (!(status & XHCI_STS_CNR)) {
+                break;
+            }
+        }
+
+        if (status & XHCI_STS_CNR) {
+            printf("Timed out waiting for ready state. Command: 0x%X, Status: 0x%X\n", read_reg32(capability_length + XHCI_OP_USBCMD), read_reg32(capability_length + XHCI_OP_USBSTS));
+        }
+
         printf("Command: 0x%X, Status: 0x%X\n", read_reg32(capability_length + XHCI_OP_USBCMD), read_reg32(capability_length + XHCI_OP_USBSTS));
 
         Uart::Puts("XHCI: Resetting controller...\n");
@@ -405,10 +420,10 @@ private:
         write_reg32(capability_length + XHCI_OP_USBCMD, cmd);
         
         // Wait for halt
-        auto start_time = Cpu::GetPerformanceCounter();
-        auto timeout_ticks = Cpu::GetPerformanceTicksForMs(5000);
+        start_time = Cpu::GetPerformanceCounter();
+        timeout_ticks = Cpu::GetPerformanceTicksForMs(5000);
         
-        uint32_t status = 0;
+        status = 0;
         while ((Cpu::GetPerformanceCounter() - start_time) < timeout_ticks) {
             status = read_reg32(capability_length + XHCI_OP_USBSTS);
             if (status & XHCI_STS_HCH) {

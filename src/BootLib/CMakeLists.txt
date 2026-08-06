@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
+# The BootLib library includes a number of low-level drivers and utilities for the Raspberry Pi platform.
+# It is designed to be usable in a minimal bootloader, with minimal dependencies.
 add_library(BootLib STATIC
     Cpu.cpp             inc/BootLib/Cpu.h
     Gpio.cpp            inc/BootLib/Gpio.h
