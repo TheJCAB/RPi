@@ -91,7 +91,8 @@ private:
         uint64_t TransmissionNumber = 0;
         void*    Address            = nullptr;
     };
-    std::atomic<WaitingCoroutine> m_waitingCoroutineHandle;
+    // Fails?? static_assert(std::is_default_constructible_v<WaitingCoroutine>);
+    std::atomic<WaitingCoroutine> m_waitingCoroutineHandle{WaitingCoroutine{}};
     uint32_t m_interruptStatus = 0;
 
     // Aligned buffer for DMA which need to also be multiple of 4 bytes

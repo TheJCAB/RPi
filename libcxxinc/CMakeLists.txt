@@ -1660,6 +1660,11 @@ add_library(cxx-headers INTERFACE)
 target_include_directories(cxx-headers INTERFACE .)
 #target_include_directories(cxx-headers SYSTEM INTERFACE $ENV{INCLUDE})
 
+target_compile_options(cxx-headers INTERFACE
+  -Wno-pragma-clang-attribute
+)
+
 target_compile_definitions(cxx-headers INTERFACE
   _LIBCPP_REMOVE_TRANSITIVE_INCLUDES
+  _LIBCPP_ASSERTION_SEMANTIC_DEFAULT=_LIBCPP_ASSERTION_SEMANTIC_IGNORE
 )
