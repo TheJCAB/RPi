@@ -40,12 +40,6 @@
 namespace PCIe
 {
 
-// Hardware register access for Rpi4 PCIe controller
-// These addresses are based on the BCM2711 datasheet
-PhysicalAddress Rpi4_PCIE_REGS_BASE_HI = 0x4'7D50'0000;
-PhysicalAddress Rpi4_PCIE_REGS_BASE = Rpi4_PCIE_REGS_BASE_HI;
-constexpr std::size_t Rpi4_PCIE_REGS_SIZE = 0x9310;
-
 union ClassAndRevision
 {
     struct
@@ -116,40 +110,68 @@ union XhciConfig
     Mmio::Register<uint8_t          const, 0x62> DBES_L_LD;
 };
 
-union Registers
+enum class BurstSize : uint32_t
+{
+    Size128 = 0,
+    Size256 = 1,
+    Size512 = 2,
+};
+
+union MiscControl
+{
+    struct
+    {
+        uint32_t  SCB2_SIZE        : 5; // @0
+        uint32_t                   : 5; // @5-9
+        uint32_t  RCB_MPSPMODE     : 2; // @10-11
+        uint32_t  SCB_ACCESS_EN    : 1; // @12
+        uint32_t  CFG_READ_UR_MODE : 1; // @13
+        uint32_t                   : 6; // @14-19
+        BurstSize MAX_BURST_SIZE   : 2; // @20-21
+        uint32_t  SCB1_SIZE        : 5; // @22-26
+        uint32_t  SCB0_SIZE        : 5; // @27-31
+    };
+    uint32_t Raw32;
+};
+
+union Bcm2711Driver::Registers
 {
     ConfigHeader1 BridgeConfig;
 
-    Mmio::Register<uint32_t     , 0x043C>  ID;
-    Mmio::Register<uint32_t     , 0x4008>  MISC_CTRL;
-    Mmio::Register<uint32_t     , 0x400C>  MEM_PCI_LO;
-    Mmio::Register<uint32_t     , 0x4010>  MEM_PCI_HI;
-    Mmio::Register<uint32_t     , 0x402C>  RC_BAR1_CONFIG_LO;
-    Mmio::Register<uint32_t     , 0x4030>  RC_BAR1_CONFIG_HI;
-    Mmio::Register<uint32_t     , 0x4034>  RC_BAR2_CONFIG_LO;
-    Mmio::Register<uint32_t     , 0x4038>  RC_BAR2_CONFIG_HI;
-    Mmio::Register<uint32_t     , 0x403C>  RC_BAR3_CONFIG_LO;
-    Mmio::Register<uint32_t     , 0x4044>  MSI_BAR_CONFIG_LO;
-    Mmio::Register<uint32_t     , 0x4048>  MSI_BAR_CONFIG_HI;
-    Mmio::Register<uint32_t     , 0x404C>  MSI_DATA_CONFIG;
-    Mmio::Register<uint32_t     , 0x4060>  EOI_CTRL;
-    Mmio::Register<uint32_t     , 0x4064>  PCIE_CTRL;
-    Mmio::Register<uint32_t     , 0x4068>  STATUS;
-    Mmio::Register<uint32_t     , 0x406C>  REV;
-    Mmio::Register<uint32_t     , 0x4070>  MEM_CPU_LO;
-    Mmio::Register<uint32_t     , 0x4080>  MEM_CPU_HI_START;
-    Mmio::Register<uint32_t     , 0x4084>  MEM_CPU_HI_END;
-    Mmio::Register<uint32_t     , 0x4204>  DEBUG;
-    Mmio::Register<uint32_t     , 0x4310>  INTMASK;
-    Mmio::Register<uint32_t     , 0x4314>  INTCLR;
+	Mmio::Register<uint32_t     , 0x0188> PCIE_RC_CFG_VENDOR_VENDOR_SPECIFIC_REG1;
+    Mmio::Register<uint32_t     , 0x043C> ID;
+
+    Mmio::Register<MiscControl  , 0x4008> MISC_CTRL;
+    Mmio::Register<uint32_t     , 0x400C> MEM_PCI_LO;
+    Mmio::Register<uint32_t     , 0x4010> MEM_PCI_HI;
+    Mmio::Register<uint32_t     , 0x402C> RC_BAR1_CONFIG_LO;
+    Mmio::Register<uint32_t     , 0x4030> RC_BAR1_CONFIG_HI;
+    Mmio::Register<uint32_t     , 0x4034> RC_BAR2_CONFIG_LO;
+    Mmio::Register<uint32_t     , 0x4038> RC_BAR2_CONFIG_HI;
+    Mmio::Register<uint32_t     , 0x403C> RC_BAR3_CONFIG_LO;
+    Mmio::Register<uint32_t     , 0x4044> MSI_BAR_CONFIG_LO;
+    Mmio::Register<uint32_t     , 0x4048> MSI_BAR_CONFIG_HI;
+    Mmio::Register<uint32_t     , 0x404C> MSI_DATA_CONFIG;
+    Mmio::Register<uint32_t     , 0x4060> EOI_CTRL;
+    Mmio::Register<uint32_t     , 0x4064> PCIE_CTRL;
+    Mmio::Register<uint32_t     , 0x4068> STATUS;
+    Mmio::Register<uint32_t     , 0x406C> REV;
+    Mmio::Register<uint32_t     , 0x4070> MEM_CPU_LO;
+    Mmio::Register<uint32_t     , 0x4080> MEM_CPU_HI_START;
+    Mmio::Register<uint32_t     , 0x4084> MEM_CPU_HI_END;
+    Mmio::Register<uint32_t     , 0x4204> DEBUG;
+    Mmio::Register<uint32_t     , 0x4300> INTR2_CPU_STATUS;
+    Mmio::Register<uint32_t     , 0x4304> INTR2_CPU_SET;
+    Mmio::Register<uint32_t     , 0x4308> INTR2_CPU_CLEAR;
+    Mmio::Register<uint32_t     , 0x430C> INTR2_CPU_MASK_STATUS;
+    Mmio::Register<uint32_t     , 0x4310> INTR2_CPU_MASK_SET;
+    Mmio::Register<uint32_t     , 0x4314> INTR2_CPU_MASK_CLEAR;
 
     ConfigHeader0& GetDeviceConfig() { return *reinterpret_cast<ConfigHeader0*>(reinterpret_cast<uintptr_t>(this) + 0x8000); }
 
     Mmio::Register<DeviceAddress, 0x9000>  CFG_INDEX;
     Mmio::Register<uint32_t     , 0x9210>  INIT;
 };
-
-Registers& GetRegisters() { return *reinterpret_cast<Registers*>(Rpi4_PCIE_REGS_BASE); }
 
 namespace
 {
@@ -173,151 +195,6 @@ namespace
     // Register offsets in PCIe controller
     constexpr std::uint32_t BRIDGE_ENABLE_REG = 0x9310;
     constexpr std::uint32_t BRIDGE_ENABLE_MASK = 0x1;
-
-    // Simulate reading from actual hardware addresses
-    template<typename T>
-    T read_hardware_register(PhysicalAddress address) {
-        //// Memory barrier for coherency
-        //#if defined(__aarch64__) || defined(_M_ARM64)
-        //    __asm__ volatile("dmb sy" ::: "memory");
-        //#endif
-        
-        // Check if address is within PCIe configuration space
-        if (address >= CONFIG_BASE && address < (CONFIG_BASE + CONFIG_SIZE)) {
-            // Direct memory access to PCIe configuration space
-            volatile T* reg_ptr = reinterpret_cast<volatile T*>(address);
-            T value = *reg_ptr;
-            
-            //// Memory barrier after read
-            //#if defined(__aarch64__) || defined(_M_ARM64)
-            //__asm__ volatile("dmb ld" ::: "memory");
-            //#endif
-            
-            return value;
-        }
-        
-        // Check if address is within PCIe controller registers
-        if (address >= Rpi4_PCIE_REGS_BASE && address < (Rpi4_PCIE_REGS_BASE + Rpi4_PCIE_REGS_SIZE)) {
-            // Direct memory access to PCIe controller registers
-            volatile T* reg_ptr = reinterpret_cast<volatile T*>(address);
-            T value = *reg_ptr;
-            
-            //// Memory barrier after read
-            //#if defined(__aarch64__) || defined(_M_ARM64)
-            //__asm__ volatile("dmb ld" ::: "memory");
-            //#endif
-            
-            return value;
-        }
-        
-        // For other addresses, return 0xFFFFFFFF to indicate no device
-        return static_cast<T>(0xFFFFFFFF);
-    }
-
-    bool init_platform_stub() {
-        // Enhanced platform initialization for Rpi4
-        // In a real implementation, this would:
-        // 1. Check if PCIe is enabled in device tree
-        // 2. Initialize PCIe controller registers
-        // 3. Enable PCIe clock and power
-        // 4. Wait for link training to complete
-
-        auto& registers = GetRegisters();
-
-        // Reset controller.
-        uint32_t init = registers.INIT;
-        printf("INIT=%x\n", init);
-        init |= 0x3;
-        registers.INIT = init;
-
-        init = registers.INIT;
-        printf("INIT after reset=%x\n", init);
-
-        Cpu::DelayInMicroseconds(1000);
-
-        init = registers.INIT;
-        printf("INIT=%x\n", init);
-        init &= ~0x2;
-        registers.INIT = init;
-        init = registers.INIT;
-        printf("INIT after reset=%x\n", init);
-
-        uint32_t rev = registers.REV;
-        printf("Rev=%x\n", rev);
-
-        // Clear and mask interrupts.
-        registers.INTCLR  = 0xFFFF'FFFFu;
-        registers.INTMASK = 0xFFFF'FFFFu;
-
-        // Take controller out of reset.
-        registers.INIT = registers.INIT & ~0x1;
-
-        // Wait for link to become active.
-        uint32_t status = registers.STATUS;
-        for (unsigned i = 0; i < 100; i++) {
-            if ((status & 0x30) == 0x30) { // Phy linkup & DL Active
-                break;
-            }
-            Cpu::DelayInMicroseconds(1000);
-            status = registers.STATUS;
-        }
-
-        if ((status & 0x30) != 0x30) {
-            printf("PCIe link not ready (status=%x)\n", status);
-            return false;
-        }
-
-        printf("PCIe link ready (status=%x)\n", status);
-
-        uint32_t ccode = registers.ID;
-        printf("Class code %x\n", ccode);
-        if ((ccode & 0xffffff) != 0x060400) {
-            ccode = (ccode & ~0xffffff) | 0x060400;
-            printf("Changing to %x\n", ccode);
-            registers.ID = ccode;
-        }
-
-        // Set PCIE_RCB_64B_MODE PCIE_RCB_MPS_MODE SCB_ACCESS_EN CFG_READ_UR_MODE
-        // Clear MAX_BURST_SIZE
-        registers.MISC_CTRL = (registers.MISC_CTRL & 0x30'3480u) | 0x3480u;
-
-        // Set up the PCI address, split into two 32-bit registers.
-        registers.MEM_PCI_LO = static_cast<std::uint32_t>(PCI_BASE);
-        registers.MEM_PCI_HI = static_cast<std::uint32_t>(PCI_BASE >> 32);
-
-        // Set up the CPU addresses.
-        // The low register holds the bottom part of the start and end addresses as
-        // two 12-bit values expressed in megabytes:
-        // | low_end |  0  | low_start | 0 |
-        // | 31    20|   16|          4|  0|
-        // Note that the end address gets truncated at the megabyte boundary, so
-        // 0x1000000 bytes will become 0xf megabytes.
-        // There are two high registers for holding the top 32-bits of the start and
-        // end addresses, respectively.
-        // Of course, this is all speculation in the absence of an official
-        // datasheet.
-        PhysicalAddress cpu_addr_start = MEM_BASE;
-        PhysicalAddress cpu_addr_end   = cpu_addr_start + MEM_SIZE; // 64 MB ?? 0x1'0000'0000ull; // 4 GB
-
-        registers.MEM_CPU_LO       = static_cast<uint32_t>(((cpu_addr_start >> 16) & 0xfff0) | (((cpu_addr_end >> 20) - 1) << 20));
-        registers.MEM_CPU_HI_START = static_cast<uint32_t>(cpu_addr_start >> 32);
-        registers.MEM_CPU_HI_END   = static_cast<uint32_t>(cpu_addr_end >> 32);
-
-        // Device on 0:0:0 should be a bridge.
-        auto const vid = *(volatile uint16_t *)(Rpi4_PCIE_REGS_BASE + RPI_PCIE_BRIDGE_OFFSET + 0x00);
-        if (vid != 0x14e4) { // Broadcom vendor ID
-            printf("PCIe bridge not found (VID=%x)\n", vid);
-            return false;
-        }
-
-        registers.RC_BAR2_CONFIG_LO = 15; // DMA?
-        registers.RC_BAR2_CONFIG_HI = 0;
-
-        // SCB
-        registers.MISC_CTRL = (registers.MISC_CTRL & 0xF8000000u) | 0x38000000u;
-
-        return true;
-    }
 
     // Simple malloc-based allocator for DMA (not real DMA!)
     void* simple_alloc(std::size_t size, std::size_t alignment) {
@@ -355,13 +232,8 @@ namespace
 // TODO: multicoreing?
 //static std::mutex access_mutex_;
 
-struct RootDevice
-{
-    Registers& registers;
-};
-
 // Configuration class implementation
-Configuration::Configuration(RootDevice& root, DeviceAddress addr) noexcept 
+Configuration::Configuration(Bcm2711Driver& root, DeviceAddress addr) noexcept 
     : address_(addr)
     , header_{ addr == DeviceAddress{} ? root.registers.BridgeConfig.Common : root.registers.GetDeviceConfig().Common }
 {
@@ -378,12 +250,11 @@ Configuration::Configuration(RootDevice& root, DeviceAddress addr) noexcept
     static constinit DeviceAddress lastAddress = DeviceAddress{};
 
     // Set up the configuration space, but only when the address changes.
-    // Multicore TODO: This and all other device access should be properly
-    // done in a real implementation.
+    // TODO: This and all other device access should be properly synchronized in a real implementation.
     if (lastAddress != addr)
     {
         lastAddress = addr;
-        GetRegisters().CFG_INDEX = addr;
+        root.registers.CFG_INDEX = addr;
     }
 }
 
@@ -576,32 +447,134 @@ void Configuration::disable_device()
     header_.Command &= ~0x07;
 }
 
-std::atomic<bool> initialized_{false};
-std::shared_mutex driver_mutex_;
-std::vector<DeviceInfo> devices_;
+// Hardware register access for Rpi4 PCIe controller
+// These addresses are based on the BCM2711 datasheet
+// TODO: Mapping the registers here (or wherever) via the MMU, even in low address mode.
+constexpr PhysicalAddress Rpi4_PCIE_REGS_BASE_HI = 0x4'7D50'0000;
 
-PCIeError initialize() {
+Bcm2711Driver::Bcm2711Driver()
+    : registers{ *reinterpret_cast<Bcm2711Driver::Registers*>(Rpi4_PCIE_REGS_BASE_HI + Mmio::Base - Mmio::Rpi4BaseHi) }
+{
     std::lock_guard<std::shared_mutex> lock(driver_mutex_);
 
-    RootDevice root{ GetRegisters() }; // TODO: formalize this device as a class.
-    
-    if (initialized_.load()) {
-        return PCIeError::SUCCESS;
+    printf("PCIe registers base is 0x%ll0X...\n", reinterpret_cast<std::uint64_t>(&registers));
+    printf("Initializing PCIe driver...\n");
+
+    // Enhanced platform initialization for Rpi4
+    // In a real implementation, this would:
+    // 1. Check if PCIe is enabled in device tree
+    // 2. Initialize PCIe controller registers
+    // 3. Enable PCIe clock and power
+    // 4. Wait for link training to complete
+
+    // Reset the controller.
+    registers.INIT |= 0x3u; // Assert INIT and PERST
+    Cpu::DelayInMicroseconds(1000);
+    registers.INIT &= ~0x2u; // Deassert INIT
+
+    registers.DEBUG &= ~0x0800'0000u; // SERDES_IDDQ -- Note: seen no explanation for this.
+    Cpu::DelayInMicroseconds(100);
+
+    std::uint32_t revision = registers.REV;
+    printf("Revision=%x\n", revision);
+
+    // Clear and mask interrupts.
+    registers.INTR2_CPU_CLEAR    = 0xFFFF'FFFFu;
+    registers.INTR2_CPU_MASK_SET = 0xFFFF'FFFFu;
+
+    // Take controller out of reset.
+    registers.INIT &= ~0x1u;
+    Cpu::DelayInMilliseconds(100);
+
+    // Wait for link to become active.
+    uint32_t status = registers.STATUS;
+    for (unsigned i = 0; i < 100; i++) {
+        if ((status & 0x30) == 0x30) { // Phy linkup & DL Active
+            break;
+        }
+        Cpu::DelayInMicroseconds(1000);
+        status = registers.STATUS;
     }
-    
-    // Initialize platform-specific resources
-    if (!init_platform_stub()) {
-        return PCIeError::HARDWARE_ERROR;
+
+    if ((status & 0x30) != 0x30) {
+        printf("PCIe link not ready (status=%x)\n", status);
+        initError_.store(PCIeError::HARDWARE_ERROR);
+        return;
     }
-    
+
+    printf("PCIe link ready (status=%x)\n", status);
+
+    uint32_t ccode = registers.ID;
+    printf("Class code %x\n", ccode);
+    if ((ccode & 0xffffff) != 0x060400) {
+        ccode = (ccode & ~0xffffff) | 0x060400;
+        printf("Changing to %x\n", ccode);
+        registers.ID = ccode;
+    }
+
+    registers.MISC_CTRL = [](auto& reg)
+        {
+            printf("MISC_CTRL before = 0x%08X\n", reg.Raw32);
+            
+            // reg.SCB0_SIZE        = ;
+            // reg.SCB1_SIZE        = ;
+            // reg.SCB2_SIZE        = ;
+            // reg.RCB_MPSPMODE     = ;
+
+            reg.SCB_ACCESS_EN    = 1;
+            reg.CFG_READ_UR_MODE = 1;
+            reg.MAX_BURST_SIZE   = BurstSize::Size128;
+            
+            printf("MISC_CTRL after = 0x%08X\n", reg.Raw32);
+            // (reg & 0x30'3480u) | 0x3480u;
+        };
+
+    // Set up the PCI address, split into two 32-bit registers.
+    registers.MEM_PCI_LO = static_cast<std::uint32_t>(PCI_BASE);
+    registers.MEM_PCI_HI = static_cast<std::uint32_t>(PCI_BASE >> 32);
+
+    // Set up the CPU addresses.
+    // The low register holds the bottom part of the start and end addresses as
+    // two 12-bit values expressed in megabytes:
+    // | low_end |  0  | low_start | 0 |
+    // | 31    20|   16|          4|  0|
+    // Note that the end address gets truncated at the megabyte boundary, so
+    // 0x1000000 bytes will become 0xf megabytes.
+    // There are two high registers for holding the top 32-bits of the start and
+    // end addresses, respectively.
+    // Of course, this is all speculation in the absence of an official
+    // datasheet.
+    PhysicalAddress cpu_addr_start = MEM_BASE;
+    PhysicalAddress cpu_addr_end   = cpu_addr_start + MEM_SIZE; // 64 MB ?? 0x1'0000'0000ull; // 4 GB
+
+    registers.MEM_CPU_LO       = static_cast<uint32_t>(((cpu_addr_start >> 16) & 0xfff0) | (((cpu_addr_end >> 20) - 1) << 20));
+    registers.MEM_CPU_HI_START = static_cast<uint32_t>(cpu_addr_start >> 32);
+    registers.MEM_CPU_HI_END   = static_cast<uint32_t>(cpu_addr_end >> 32);
+
+    // Device on 0:0:0 should be a bridge.
+    std::uint16_t const vid = registers.BridgeConfig.Common.VendorId;
+    if (vid != 0x14e4) // Broadcom vendor ID
+    {
+        printf("PCIe bridge not found (VID=%x)\n", vid);
+        initError_.store(PCIeError::DEVICE_NOT_FOUND);
+        return;
+    }
+
+    registers.RC_BAR2_CONFIG_LO = 15; // DMA?
+    registers.RC_BAR2_CONFIG_HI = 0;
+
+    // SCB
+    registers.MISC_CTRL = [](auto& reg){ reg.SCB0_SIZE = 7u; };
+
     // Verify we can access the root complex
     DeviceAddress root_addr{};
-    auto root_config = Configuration(root, root_addr);
+    auto root_config = Configuration(*this, root_addr);
     auto root_vendor = root_config.vendor_id();
 
     if (root_vendor == 0 || root_vendor == 0xFFFF)
     {
-        return PCIeError::DEVICE_NOT_FOUND;
+        initError_.store(PCIeError::DEVICE_NOT_FOUND);
+        return;
     }
 
     // Real PCIe device enumeration for Raspberry Pi 4
@@ -630,7 +603,7 @@ PCIeError initialize() {
         for (DeviceNumber device = 0; device < deviceCount; ++device) {
             for (FunctionNumber function = 0; function < constants::MAX_FUNCTIONS_PER_DEVICE; ++function) {
                 DeviceAddress const addr{ .Function = function, .Device = device, .Bus = bus };
-                Configuration config(root, addr);
+                Configuration config(*this, addr);
 
                 printf("Scanning device at %02u:%02u.%01u\n", bus, device, function);
                 
@@ -673,12 +646,8 @@ PCIeError initialize() {
         }
     }
 
-    initialized_.store(true);
-
-    return PCIeError::SUCCESS;
+    initError_.store(PCIeError::SUCCESS);
 }
-
-[[nodiscard]] bool is_initialized() noexcept { return initialized_.load(); }
 
 std::vector<DeviceInfo> find_devices(VendorID vendor, std::optional<DeviceID> device)
 {
@@ -760,21 +729,19 @@ namespace utils {
 namespace examples {
     
     // Example: Enumerate and display all PCIe devices
-    void demonstrate_enumeration() {
-        Rpi4_PCIE_REGS_BASE = Rpi4_PCIE_REGS_BASE_HI + Mmio::Base - Mmio::Rpi4BaseHi;
+    void demonstrate_enumeration()
+    {
+        Bcm2711Driver root{};
 
-        RootDevice root{ GetRegisters() }; // TODO: formalize this device as a class.
-
-        printf("PCIe registers base is 0x%ll0X...\n", Rpi4_PCIE_REGS_BASE);
-        printf("Enumerating PCIe devices...\n");
-
-        printf("Initializing PCIe driver...\n");
-
-        auto init_result = initialize();
+        
+        auto init_result = root.initError_.load();
         if (init_result != PCIeError::SUCCESS) {
-            // Handle initialization error
+            // Initialization error
+            printf("PCIe init error: %u\n", init_result);
             return;
         }
+
+        printf("Enumerating PCIe devices...\n");
 
         printf("PCIe driver initialized successfully.\n");
 
@@ -872,28 +839,28 @@ namespace examples {
                 {
                     printf("PCIe capabilities\n");
                     auto& capStruct = cap.GetStruct<PcieCapabilities>(configuration.Common());
-                    printf("      Capabilities: 0x%04X\n", capStruct.Capabilities.get());
-                    printf("      Device Capabilities: 0x%08X\n"    , capStruct.DeviceCapabilities.get());
-                    printf("      Device Control:          0x%04X\n", capStruct.DeviceControl     .get());
-                    printf("      Device Status:           0x%04X\n", capStruct.DeviceStatus      .get());
-                    printf("      Link Capabilities:   0x%08X\n"    , capStruct.LinkCapabilities  .get());
-                    printf("      Link Control:            0x%04X\n", capStruct.LinkControl       .get());
-                    printf("      Link Status:             0x%04X\n", capStruct.LinkStatus        .get());
-                    printf("      Slot Capabilities:   0x%08X\n"    , capStruct.SlotCapabilities  .get());
-                    printf("      Slot Control:            0x%04X\n", capStruct.SlotControl       .get());
-                    printf("      Slot Status:             0x%04X\n", capStruct.SlotStatus        .get());
-                    printf("      Root Control:            0x%04X\n", capStruct.RootControl       .get());
-                    printf("      Root Capabilities:       0x%04X\n", capStruct.RootCapabilities  .get());
-                    printf("      Root Status:         0x%08X\n"    , capStruct.RootStatus        .get());
-                    //printf("      Device Capabilities 2: 0x%08X\n", capStruct.DeviceCapabilities2.get());
-                    //printf("      Device Control 2: 0x%04X\n", capStruct.DeviceControl2.get());
-                    //printf("      Device Status 2: 0x%04X\n", capStruct.DeviceStatus2.get());
-                    //printf("      Link Capabilities 2: 0x%08X\n", capStruct.LinkCapabilities2.get());
-                    //printf("      Link Control 2: 0x%04X\n", capStruct.LinkControl2.get());
-                    //printf("      Link Status 2: 0x%04X\n", capStruct.LinkStatus2.get());
-                    //printf("      Slot Capabilities 2: 0x%08X\n", capStruct.SlotCapabilities2.get());
-                    //printf("      Slot Control 2: 0x%04X\n", capStruct.SlotControl2.get());
-                    //printf("      Slot Status 2: 0x%04X\n", capStruct.SlotStatus2.get());
+                    printf("      Capabilities:              0x%04X\n", capStruct.Capabilities       .get());
+                    printf("      Device Capabilities:   0x%08X\n"    , capStruct.DeviceCapabilities .get());
+                    printf("      Device Control:            0x%04X\n", capStruct.DeviceControl      .get());
+                    printf("      Device Status:             0x%04X\n", capStruct.DeviceStatus       .get());
+                    printf("      Link Capabilities:     0x%08X\n"    , capStruct.LinkCapabilities   .get());
+                    printf("      Link Control:              0x%04X\n", capStruct.LinkControl        .get());
+                    printf("      Link Status:               0x%04X\n", capStruct.LinkStatus         .get());
+                    printf("      Slot Capabilities:     0x%08X\n"    , capStruct.SlotCapabilities   .get());
+                    printf("      Slot Control:              0x%04X\n", capStruct.SlotControl        .get());
+                    printf("      Slot Status:               0x%04X\n", capStruct.SlotStatus         .get());
+                    printf("      Root Control:              0x%04X\n", capStruct.RootControl        .get());
+                    printf("      Root Capabilities:         0x%04X\n", capStruct.RootCapabilities   .get());
+                    printf("      Root Status:           0x%08X\n"    , capStruct.RootStatus         .get());
+                    printf("      Device Capabilities 2: 0x%08X\n"    , capStruct.DeviceCapabilities2.get());
+                    printf("      Device Control 2:          0x%04X\n", capStruct.DeviceControl2     .get());
+                    printf("      Device Status 2:           0x%04X\n", capStruct.DeviceStatus2      .get());
+                    printf("      Link Capabilities 2:   0x%08X\n"    , capStruct.LinkCapabilities2  .get());
+                    printf("      Link Control 2:            0x%04X\n", capStruct.LinkControl2       .get());
+                    printf("      Link Status 2:             0x%04X\n", capStruct.LinkStatus2        .get());
+                    printf("      Slot Capabilities 2:   0x%08X\n"    , capStruct.SlotCapabilities2  .get());
+                    printf("      Slot Control 2:            0x%04X\n", capStruct.SlotControl2       .get());
+                    printf("      Slot Status 2:             0x%04X\n", capStruct.SlotStatus2        .get());
                     break;
                 }
                 default:
@@ -980,6 +947,12 @@ namespace examples {
                     while ((*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24) & (1u << 11)) && Cpu::GetPerformanceCounter() < timeoutTime)
                     {
                         Cpu::Yield();
+                    }
+                    if (*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24) & (1u << 11))
+                    {
+                        printf("XHCI didn't become ready.\n");
+                        printf("    Command: 0x%08x  Status: 0x%08x\n", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
+                        Cpu::Halt();
                     }
                 }
 

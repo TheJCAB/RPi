@@ -15,6 +15,7 @@
 #include <atomic>
 #include <mutex>
 #include <expected>
+#include <generator>
 
 namespace PCIe
 {
@@ -84,6 +85,15 @@ union PcieCapabilities
     BootLib::Register<uint16_t              , 0x1C> RootControl;
     BootLib::Register<uint16_t         const, 0x1E> RootCapabilities;
     BootLib::Register<uint32_t              , 0x20> RootStatus;
+    BootLib::Register<uint32_t         const, 0x24> DeviceCapabilities2;
+    BootLib::Register<uint16_t              , 0x28> DeviceControl2;
+    BootLib::Register<uint16_t              , 0x2A> DeviceStatus2;
+    BootLib::Register<uint32_t         const, 0x2C> LinkCapabilities2;
+    BootLib::Register<uint16_t              , 0x30> LinkControl2;
+    BootLib::Register<uint16_t              , 0x32> LinkStatus2;
+    BootLib::Register<uint32_t         const, 0x34> SlotCapabilities2;
+    BootLib::Register<uint16_t              , 0x38> SlotControl2;
+    BootLib::Register<uint16_t              , 0x3A> SlotStatus2;
 };
 
 template < CapabilityId Id > struct CapabilityStructT { using type = CapabilityEntry; };
@@ -189,13 +199,13 @@ struct Capability
 template<typename T>
 concept PCIeRegisterType = std::integral<T> && (sizeof(T) <= 4);
 
-struct RootDevice;
+struct Bcm2711Driver;
 
 // Configuration space accessor
 class Configuration
 {
 public:
-    explicit Configuration(RootDevice& root, DeviceAddress addr) noexcept;
+    explicit Configuration(Bcm2711Driver& root, DeviceAddress addr) noexcept;
     ~Configuration();
     
     Configuration(Configuration&& other) = delete;
@@ -222,7 +232,7 @@ public:
     [[nodiscard]] std::span<std::byte> map_bar(BarInfo& bar);
 
     // Capability iteration
-    [[nodiscard]] std::vector<Capability> enumerate_capabilities() const;
+    [[nodiscard]] std::generator<Capability> enumerate_capabilities() const;
     [[nodiscard]] std::optional<Capability> find_capability(CapabilityId cap_id) const;
 
     CommonConfigHeader& Common () const { return header_; }
@@ -231,8 +241,8 @@ public:
     XhciConfig&         Xhci   () const { return *reinterpret_cast<XhciConfig*   >(&header_); }
 
 private:
-    DeviceAddress address_ = InvalidDeviceAddress;
-    CommonConfigHeader& header_; // Base address for configuration space registers
+    DeviceAddress                address_ = InvalidDeviceAddress;
+    CommonConfigHeader&          header_; // Base address for configuration space registers
 };
 
 // Main PCIe device information class
@@ -247,9 +257,23 @@ struct DeviceInfo
 
 // PCIe bus manager/driver
 
-// Initialization
-[[nodiscard]] PCIeError initialize();
-[[nodiscard]] bool is_initialized() noexcept;
+struct Bcm2711Driver
+{
+    Bcm2711Driver();
+
+    union Registers;
+
+    std::atomic<PCIeError> initError_ = PCIeError::DRIVER_NOT_INITIALIZED;
+
+    Registers& registers;
+
+    PcieCapabilities*            pcieCapabilities_ = nullptr; // Pointer to the root device's PCIe capabilities structure if present
+    PowerManagementCapabilities* pmCapabilities_   = nullptr; // Pointer to the root device's Power Management capabilities structure if present
+
+    std::shared_mutex       driver_mutex_;
+    std::vector<DeviceInfo> devices_;
+};
+
 
 // Device enumeration
 [[nodiscard]] std::vector<DeviceInfo> enumerate_devices();
