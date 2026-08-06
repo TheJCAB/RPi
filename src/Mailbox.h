@@ -2,6 +2,8 @@
 
 #include "Cpu.h"
 
+#include "emb-stdio.h"
+
 #include <stdint.h>
 #include <stddef.h>
 
@@ -79,10 +81,14 @@ struct MailboxMessage
 
         GpuBuffer()[Size++] = static_cast<uint32_t>(message.tag);
         GpuBuffer()[Size++] = message.ArgCount * 4;
-        GpuBuffer()[Size++] = 0;
+        GpuBuffer()[Size++] = message.ArgCount * 4;
+
+        //printf("AddTag: 0x%X, 0x%X, 0x%X\n", GpuBuffer()[Size - 3], GpuBuffer()[Size - 2], GpuBuffer()[Size - 1]);
+        
         for (auto arg : message.args)
         {
             GpuBuffer()[Size++] = arg;
+            //printf("AddTagArg: 0x%X\n", arg);
         }
     }
 
@@ -108,10 +114,13 @@ struct MailboxMessage
             Cpu::Panic("Mailbox buffer overflow");
         }
 
+        //printf("ReadTag: 0x%X, 0x%X, 0x%X\n", GpuBuffer()[ReadPos], GpuBuffer()[ReadPos + 1], GpuBuffer()[2 + ReadPos]);
+
         ReadPos += 3;
         for (auto& arg : message.args)
         {
             arg = GpuBuffer()[ReadPos++];
+            //printf("ReadTagArg: 0x%X\n", arg);
         }
     }
 };

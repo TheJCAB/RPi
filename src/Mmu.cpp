@@ -347,8 +347,8 @@ alignas(0x1000) static constinit L1PageTable Rpi3_l1_page_table
 alignas(0x1000) static constinit L1PageTable Rpi4_l1_page_table
 {{
     L1NormalMem(0),                 //   0x0000'0000 -   0x3FFF'FFFF: 1 GB RAM (normal memory)
-    L1DeviceMem(0x4'4000'0000ull),  //   0x4000'0000 -   0x7FFF'FFFF: 1 GB of MMIO (device)
-    L1DeviceMem(0x4'C000'0000ull),  //   0x8000'0000 -   0xBFFF'FFFF: (unused)
+    L1DeviceMem(0x0'4000'0000ull),  //   0x4000'0000 -   0x7FFF'FFFF: 1 GB of MMIO (device)
+    L1DeviceMem(0x0'C000'0000ull),  //   0x8000'0000 -   0xBFFF'FFFF: MMIO
     L1GpuMem(0),                    //   0xC000'0000 -   0xFFFF'FFFF: 1 GB RAM (transient, WT memory for GPU (and devices) data)
     {},                             // 0x1'0000'0000 - 0x1'3FFF'FFFF: (unused)
     {},                             // 0x1'4000'0000 - 0x1'7FFF'FFFF: (unused)
@@ -578,11 +578,15 @@ static void InitPageTables()
     //               (1ULL << 32); // IPS = 64GB (36 bits) of physical address space
     asm volatile ("msr tcr_el1, %0" : : "r"(tcr));
 
-    if (Mmio::Base == 0x4'7E00'0000u || Mmio::Base == 0x7E00'0000u) // Rpi4 MMIO base
+    if (Cpu::IsRpi4())
     {
-        Mmio::Base    = 0x7E00'0000u; // Update MMIO base to the new aperture.
-        Mmio::QA7Base = 0x8000'0000u; // Update ARM cores' MMIO base to the new aperture.
+        if (Mmio::Rpi4Base == Mmio::Rpi4BaseLo)
+        {
+            Mmio::Base    = 0xBE00'0000u; // Update MMIO base to the new aperture.
+            Mmio::QA7Base = 0xBF80'0000u; // Update ARM cores' MMIO base to the new aperture.
+        }
         GpuMemBase    = 0xC000'0000u; // Update the GPU memory base to the new aperture.
+
 
         // Set TTBR0_EL1 to point to our L1 table
         asm volatile ("msr ttbr0_el1, %0" : : "r"((uint64_t)&Rpi4_l1_page_table + 1)); // +1 == CnP

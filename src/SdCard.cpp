@@ -2,6 +2,7 @@
 
 #include "Cpu.h"
 #include "Gpio.h"
+#include "Mmio.h"
 #include "Uart.h"
 #include "Mailbox.h"
 
@@ -224,7 +225,7 @@ bool SdCard::Init()
 
         // We're using the legacy SDHCI device.
         // Note that this disables access to WiFi.
-        *(uint32_t volatile*)0x4'7e20'00d0 |= 2u;
+        *(uint32_t volatile*)(Mmio::Base + 0x20'00D0u) |= 2u;
 
         //registers.CONTROL0 |= C0_VDD1_BUS_POWER_3_3V; // Set voltage to 3.3V
     }
@@ -290,10 +291,22 @@ bool SdCard::Init()
     sd_err=0;
 
     sd_cmd(registers, CMD_GO_IDLE,0);
-    if (sd_err) return false;
+    if (sd_err)
+    {
+        Uart::Puts("Error: ");
+        Uart::PutHex(sd_err);
+        Uart::Puts("\n");
+        return false;
+    }
 
     sd_cmd(registers, CMD_SEND_IF_COND,0x000001AA);
-    if(sd_err) return false;
+    if (sd_err)
+    {
+        Uart::Puts("Error: ");
+        Uart::PutHex(sd_err);
+        Uart::Puts("\n");
+        return false;
+    }
 
     {
         cnt=6;

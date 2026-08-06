@@ -279,8 +279,8 @@ void Core0(void* dtb)
         // Any further I/O operations will be done once the MMU is active.
         if (Cpu::IsRpi4())
         {
-            Mmio::Base    = 0x4'7E00'0000u; // Rpi4 MMIO base address
-            Mmio::QA7Base = 0x4'C000'0000u; // Rpi4 QA7 base address
+            Mmio::Base    = Mmio::Rpi4Base;
+            Mmio::QA7Base = Mmio::Rpi4QA7Base;
         }
 
         // Initialize the MMU, and so all addresses will be virtual after this.

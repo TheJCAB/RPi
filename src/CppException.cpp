@@ -11,6 +11,7 @@
 #include <optional>
 #include <stdexcept>
 #include <exception>
+#include <expected>
 #include <typeinfo>
 
 extern "C"
@@ -163,6 +164,10 @@ const char* std::bad_alloc::what() const noexcept
 const char* std::exception::what() const noexcept
 {
     return "exception";
+}
+
+const char* std::bad_expected_access<void>::what() const noexcept {
+    return "bad_expected_access";
 }
 
 std::__libcpp_refstring::__libcpp_refstring(const char* __msg) : __imp_(__msg) {

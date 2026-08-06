@@ -26,7 +26,11 @@ target_compile_options(KernelRuntime INTERFACE
     -mno-outline-atomics
     #-flto
     #-H
-    -g
+
+    # Generate debug information
+    -g3
+    -gdwarf-4
+    #-fno-omit-frame-pointer
 )
 
 target_link_libraries(KernelRuntime INTERFACE cxx-headers)
@@ -46,7 +50,10 @@ function(add_kernel_image TargetName)
         -fdata-sections
         -fpie
         #-flto
-        -g
+
+        # Generate debug information
+        -g3
+        -gdwarf-4
     )
 
     target_link_libraries(${TargetName} PRIVATE KernelRuntime)

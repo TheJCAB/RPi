@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.24)
 
 add_subdirectory(BootLib)
 add_subdirectory(HelloBoot)
+add_subdirectory(Playground)
 add_subdirectory(KernelLoader)
 
 add_kernel_image(kernel8

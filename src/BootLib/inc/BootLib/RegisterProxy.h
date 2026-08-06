@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdint.h>
+#include <stddef.h>
 
 #include <type_traits>
 #include <concepts>
@@ -9,10 +10,17 @@
 namespace BootLib
 {
 
-// All registers are 32-bit wide.
+// All registers can be any size from 8 bits to 32 (only powers of 2).
+// TODO: Support 64 bits?
 // We admit as a register any type that fits and is trivial to copy.
 template < typename T >
-concept RegisterType = (std::is_trivially_copyable_v<std::remove_const_t<T>>) && (sizeof(T) == sizeof(uint32_t));
+concept RegisterType = (std::is_trivially_copyable_v<std::remove_const_t<T>>) && (sizeof(T) <= sizeof(uint32_t));
+
+template < size_t Size > struct RawRegisterTypeT;
+template <> struct RawRegisterTypeT<1> { using type =  uint8_t; };
+template <> struct RawRegisterTypeT<2> { using type = uint16_t; };
+template <> struct RawRegisterTypeT<4> { using type = uint32_t; };
+template < size_t Size > using RawRegisterType = typename RawRegisterTypeT<Size>::type;
 
 /// @brief Proxy template for accessing memory-mapped I/O (MMIO) registers.
 ///
@@ -40,40 +48,42 @@ concept RegisterType = (std::is_trivially_copyable_v<std::remove_const_t<T>>) &&
 template < RegisterType T, uint32_t Offset = 0 >
 struct Register
 {
+    using Raw = RawRegisterType<sizeof(T)>;
+
     Register() = default;
 
     Register(Register&&) = delete;
     Register& operator=(Register&&) = delete;
 
-    inline auto& RefUint32()       { return *(reinterpret_cast<uint32_t       volatile*>(this) + Offset / sizeof(uint32_t)); }
-    inline auto& RefUint32() const { return *(reinterpret_cast<uint32_t const volatile*>(this) + Offset / sizeof(uint32_t)); }
+    inline auto& RefRaw()       { return *(reinterpret_cast<Raw       volatile*>(this) + Offset / sizeof(Raw)); }
+    inline auto& RefRaw() const { return *(reinterpret_cast<Raw const volatile*>(this) + Offset / sizeof(Raw)); }
 
     inline T get() const
     {
-        uint32_t const result = RefUint32();
+        Raw const result = RefRaw();
         return reinterpret_cast<T const&>(result);
     }
 
-    inline T set(const T& value)
+    inline T set(const T& value) requires (!std::is_const_v<T>)
     {
-        RefUint32() = reinterpret_cast<uint32_t const&>(value);
+        RefRaw() = reinterpret_cast<Raw const&>(value);
         return value;
     }
 
-    inline T operator=(std::integral auto value) requires (sizeof(value) <= sizeof(uint32_t))
+    inline T operator=(std::integral auto value) requires (!std::is_const_v<T> && sizeof(value) <= sizeof(Raw))
     {
-        uint32_t v = static_cast<uint32_t>(value);
-        RefUint32() = v;
+        Raw v = static_cast<Raw>(value);
+        RefRaw() = v;
         return reinterpret_cast<T const&>(v);
     }
 
-    inline T operator=(const T& value)
+    inline T operator=(const T& value) requires (!std::is_const_v<T>)
     {
-        RefUint32() = reinterpret_cast<uint32_t const&>(value);
+        RefRaw() = reinterpret_cast<Raw const&>(value);
         return value;
     }
 
-    inline T operator=(std::invocable<T&> auto&& modify)
+    inline T operator=(std::invocable<T&> auto&& modify) requires (!std::is_const_v<T>)
     {
         T value = get();
         modify(value);
@@ -102,9 +112,11 @@ struct Register
     inline T operator-=(T const& value) requires (!std::is_const_v<T>) { return set(get() - value); }
 };
 
-template < RegisterType T, uint32_t Offset, uint32_t Count, uint32_t Stride = 4 >
+template < RegisterType T, uint32_t Offset, uint32_t Count, uint32_t Stride = sizeof(T) >
 struct RegisterArray
 {
+    using Raw = RawRegisterType<sizeof(T)>;
+
     RegisterArray() = default;
     RegisterArray(RegisterArray&&) = delete;
     RegisterArray& operator=(RegisterArray&&) = delete;
@@ -112,12 +124,12 @@ struct RegisterArray
     Register<T>& operator[](uint32_t index)
     {
         // assert(index >= Count)
-        return *reinterpret_cast<Register<T>*>(reinterpret_cast<uint32_t*>(this) + (Offset + index * Stride) / sizeof(uint32_t));
+        return *reinterpret_cast<Register<T>*>(reinterpret_cast<Raw*>(this) + (Offset + index * Stride) / sizeof(Raw));
     }
     Register<T> const& operator[](uint32_t index) const
     {
         // assert(index >= Count)
-        return *reinterpret_cast<Register<T> const*>(reinterpret_cast<uint32_t const*>(this) + (Offset + index * Stride) / sizeof(uint32_t));
+        return *reinterpret_cast<Register<T> const*>(reinterpret_cast<Raw const*>(this) + (Offset + index * Stride) / sizeof(Raw));
     }
 };
 

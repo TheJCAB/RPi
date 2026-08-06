@@ -40,5 +40,6 @@ SECTIONS
     _data_end = .;
     _end = .;
 
-    /DISCARD/ : { *(.debug*) *(.comment) *(.gnu*) *(.note*) }
+    /* *(.debug*)  */
+    /DISCARD/ : { *(.comment) *(.gnu*) *(.note*) }
 }

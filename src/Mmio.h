@@ -15,14 +15,33 @@ namespace Mmio
 
 // We handle the various MMIO bases dynamically so we can relocate them via the MMU.
 
-extern uintptr_t Base;      // 0x2000'0000u for Raspberry Pi 1, 0x3F00'0000u for Raspberry Pi 2/3, 0x7E00'0000u or 0x4'7E00'0000u for Raspberry Pi 4
-extern uintptr_t QA7Base;   // 0x4000'0000u for Raspberry Pi 1/2/3, 0xFF80'0000u or 0x4'C000'0000ull for Raspberry Pi 4
+using BootLib::Mmio::Rpi1Base;
+using BootLib::Mmio::Rpi1QA7Base;
+
+using BootLib::Mmio::Rpi2Base;
+using BootLib::Mmio::Rpi2QA7Base;
+
+using BootLib::Mmio::Rpi3Base;
+using BootLib::Mmio::Rpi3QA7Base;
+
+using BootLib::Mmio::Rpi4BaseLo;
+using BootLib::Mmio::Rpi4QA7BaseLo;
+
+using BootLib::Mmio::Rpi4BaseHi;
+using BootLib::Mmio::Rpi4QA7BaseHi;
+
+using BootLib::Mmio::Rpi4Base;
+using BootLib::Mmio::Rpi4QA7Base;
+
+extern uintptr_t Base;
+extern uintptr_t QA7Base;
 
 // All registers are 32-bit wide.
 // We admit as a register any type that fits and is trivial to copy.
 template < typename T >
 concept RegisterType = (std::is_trivially_copyable_v<std::remove_const_t<T>>) && (sizeof(T) == sizeof(uint32_t));
 
+// The internal access proxy for a register defined as a constant offset from its MMIO base.
 template < uintptr_t const& Base, bool isConst, uint32_t Offset = static_cast<uint32_t>(-1) >
 struct RegisterProxyBase
 {
@@ -41,6 +60,7 @@ struct RegisterProxyBase
     }
 };
 
+// The internal access proxy for a register defined as a runtime-provided offset from its MMIO base.
 template < uintptr_t const& Base, bool isConst >
 struct RegisterProxyBase<Base, isConst, static_cast<uint32_t>(-1)>
 {
@@ -80,7 +100,7 @@ struct RegisterProxyBase<Base, isConst, static_cast<uint32_t>(-1)>
 ///   uintptr_t Base = 0x3F00'0000u;         // Raspberry Pi 3 peripheral Mmio registers
 ///   BaseRegisterProxy<Base, uint32_t> reg(0x10); // Access register at offset 0x10 from Base
 ///   reg = 0x12345678;                      // Write a whole value to the register
-///   uint32_t val = reg;                    // Read the register
+///   uint32_t val = reg;                    // Read the register. Noet that `reg` is a proxy so `auto` won't do.
 ///   reg = [](auto& v) { v |= 0x1; };       // Read the register, modify the value then write it back
 ///
 /// @tparam Base Reference to the MMIO base address variable.
