@@ -6,6 +6,7 @@
 #include "Mailbox.h"
 #include "Mmio.h"
 #include "PCIe.h"
+#include "Processor.h"
 
 #include "emb-stdio.h"
 
@@ -14,6 +15,8 @@
 #include <cstring>
 #include <algorithm>
 #include <array>
+
+extern uintptr_t GpuMemBase;
 
 namespace Usb::Xhci
 {
@@ -128,16 +131,29 @@ constexpr uint32_t TRB_TYPE_NOOP_CMD      = 23;
 constexpr uint32_t TRB_TYPE_ENABLE_SLOT   = 9;
 constexpr uint32_t TRB_TYPE_DISABLE_SLOT  = 10;
 constexpr uint32_t TRB_TYPE_ADDRESS_DEV   = 11;
+constexpr uint32_t TRB_TYPE_TRANSFER_EVENT = 32;
+constexpr uint32_t TRB_TYPE_CMD_COMPLETION_EVENT = 33;
+
+constexpr uint32_t TRB_CTRL_CYCLE = (1u << 0);
+constexpr uint32_t TRB_CTRL_IOC   = (1u << 5);
+constexpr uint32_t TRB_CTRL_IDT   = (1u << 6);
+constexpr uint32_t TRB_CTRL_CHAIN = (1u << 4);
+constexpr uint32_t TRB_CTRL_DIR_IN = (1u << 16);
+constexpr uint32_t TRB_CTRL_TC    = (1u << 1);
 
 // TRB completion codes
 constexpr uint32_t TRB_CC_SUCCESS         = 1;
 constexpr uint32_t TRB_CC_SHORT_PACKET    = 13;
+
+constexpr uint32_t TRB_CC_ENDPOINT_NOT_ENABLED = 12;
 
 // Transfer Request Block structure (16 bytes, 64-byte aligned for rings)
 struct alignas(16) TRB {
     uint64_t parameter;
     uint32_t status;
     uint32_t control;
+
+    friend constexpr bool operator==(TRB const&, TRB const&) = default;
 };
 
 // Event Ring Segment Table Entry
@@ -145,6 +161,8 @@ struct alignas(16) EventRingSegment {
     uint64_t base_address;
     uint32_t size;
     uint32_t reserved;
+
+    friend constexpr bool operator==(EventRingSegment const&, EventRingSegment const&) = default;
 };
 
 // Basic USB request structure for control transfers
@@ -168,12 +186,19 @@ public:
     Controller(CapabilityRegisters& capabilityRegisters)
         : capabilityRegisters_ { capabilityRegisters }
         , operationalRegisters_{ *reinterpret_cast<OperationalRegisters*>(reinterpret_cast<uintptr_t>(&capabilityRegisters) + capabilityRegisters.CapLength) }
-        , runtimeRegisters_    { *reinterpret_cast<RuntimeRegisters*    >(reinterpret_cast<uintptr_t>(&capabilityRegisters) + capabilityRegisters.RuntimeOffset) }
-        , doorbellRegisters_   { *reinterpret_cast<DoorbellRegisters*   >(reinterpret_cast<uintptr_t>(&capabilityRegisters) + capabilityRegisters.DoorbellOffset) }
+        , runtimeRegisters_    { *reinterpret_cast<RuntimeRegisters*    >(reinterpret_cast<uintptr_t>(&capabilityRegisters) + (capabilityRegisters.RuntimeOffset.get() & ~0x1Fu)) }
+        , doorbellRegisters_   { *reinterpret_cast<DoorbellRegisters*   >(reinterpret_cast<uintptr_t>(&capabilityRegisters) + (capabilityRegisters.DoorbellOffset.get() & ~0x3u)) }
     {
     }
 
 private:
+    struct alignas(32) InputControlContext {
+        uint32_t drop_context_flags;
+        uint32_t add_context_flags;
+        uint32_t reserved[5];
+        uint32_t configuration_value;
+    };
+
     //PCIe::Bcm2711Driver& pcie_;
     //PCIe::DeviceAddress  devAddress_;
 
@@ -187,12 +212,15 @@ private:
     uint32_t max_device_slots = 0;
     uint32_t max_interrupters = 0;
     uint32_t max_ports = 0;
+    uint32_t max_scratchpad_buffers = 0;
     
     // DMA allocated memory regions
-    TRB* command_ring = nullptr;
-    TRB* event_ring = nullptr;
-    EventRingSegment* event_ring_segment_table = nullptr;
-    uint64_t* device_context_base_array = nullptr;
+    std::span<TRB> command_ring{};
+    std::span<TRB> event_ring  {};
+    std::span<EventRingSegment> event_ring_segment_table{};
+    std::span<uint64_t> device_context_base_array{};
+    std::span<uint64_t> scratchpad_buffer_array{};
+    std::array<void*, 32> scratchpad_buffers{};
     
     // Ring management
     std::atomic<uint32_t> command_ring_enqueue{0};
@@ -212,11 +240,18 @@ private:
     std::atomic<uint32_t> transfer_ring_enqueue{0};
     std::atomic<uint32_t> transfer_ring_dequeue{0};
     bool transfer_ring_cycle_state = true;
+    uint8_t* control_dma_buffer = nullptr;
+    size_t control_dma_buffer_size = 0;
+
+    // Slot selected for endpoint 0 control transfers.
+    std::atomic<uint32_t> default_control_slot_id{0};
     
     // Device slots
     struct DeviceSlot {
         uint32_t slot_id = 0;
         TRB* transfer_ring = nullptr;
+        void* input_context = nullptr;
+        void* device_context = nullptr;
         std::atomic<bool> in_use{false};
     };
     std::unique_ptr<DeviceSlot[]> device_slots;
@@ -224,71 +259,275 @@ private:
 private:
     // Get physical address for DMA (assuming identity mapping for now)
     uint64_t get_physical_address(void* virtual_addr) const {
-        return reinterpret_cast<uintptr_t>(virtual_addr);
+        return reinterpret_cast<uintptr_t>(virtual_addr) - GpuMemBase + 0x4'0000'0000ull;
+    }
+
+    void set_command_ring_control(uint64_t value) {
+        operationalRegisters_.CommandRingControl = value;
+    }
+
+    uint64_t get_command_ring_control() const {
+        return operationalRegisters_.CommandRingControl;
+    }
+
+    void set_dcbaap(uint64_t value) {
+       operationalRegisters_.DeviceContextBaseAddressArrayPointer = value;
+    }
+
+    void set_erstba(uint64_t value) {
+        runtimeRegisters_.EventRingSegmentTableBaseAddress = value;
+    }
+
+    uint64_t get_erstba() const {
+        return runtimeRegisters_.EventRingSegmentTableBaseAddress;
+    }
+
+    void set_erdp(uint64_t value) {
+        runtimeRegisters_.EventRingDequeuePointer = value;
+    }
+
+    uint64_t get_erdp() const {
+        return runtimeRegisters_.EventRingDequeuePointer;
     }
     
     // Ring buffer operations
     uint32_t advance_ring_pointer(uint32_t current, uint32_t ring_size) {
         return (current + 1) % ring_size;
     }
+
+    uint32_t advance_command_ring_pointer(uint32_t current) {
+        uint32_t const next = current + 1;
+        return (next >= (COMMAND_RING_SIZE - 1)) ? 0u : next;
+    }
+
+    uint32_t advance_transfer_ring_pointer(uint32_t current) {
+        uint32_t const next = current + 1;
+        return (next >= (TRANSFER_RING_SIZE - 1)) ? 0u : next;
+    }
     
     void ring_doorbell(uint32_t doorbell, uint32_t target = 0) {
         doorbellRegisters_[doorbell] = target;
+    }
+
+    static uint32_t context_size_bytes(uint32_t hccparams1) {
+        // HCCPARAMS1[2] = CSZ: 0 -> 32-byte contexts, 1 -> 64-byte contexts.
+        return ((hccparams1 >> 2) & 1u) ? 64u : 32u;
+    }
+
+    static uint32_t endpoint0_max_packet_size(uint32_t speed) {
+        // xHCI PSIV values commonly used on RPi4 VL805.
+        switch (speed) {
+            case 1: return 8;   // Full speed
+            case 2: return 8;   // Low speed
+            case 3: return 64;  // High speed
+            case 4: return 512; // SuperSpeed
+            case 5: return 512; // SuperSpeed+
+            default: return 64;
+        }
+    }
+
+    bool address_device(uint32_t slot_id, uint32_t port, uint32_t port_speed, uint32_t hccparams1) {
+        if (slot_id == 0 || slot_id > max_device_slots) {
+            return false;
+        }
+
+        if (!ensure_transfer_ring()) {
+            printf("XHCI: Transfer ring unavailable for Address Device (slot %u)\n", slot_id);
+            return false;
+        }
+
+        uint32_t const ctx_size = context_size_bytes(hccparams1);
+        uint32_t const page_count_for_two_context_pages = 2;
+
+        void* device_context = device_slots[slot_id].device_context;
+        if (!device_context) {
+            device_context = Mmu::AllocateGpuMemory(page_count_for_two_context_pages);
+            if (!device_context) {
+                printf("XHCI: Failed to allocate device context for slot %u\n", slot_id);
+                return false;
+            }
+            device_slots[slot_id].device_context = device_context;
+        }
+        std::memset(device_context, 0, page_count_for_two_context_pages * Mmu::PageSize);
+
+        void* input_context = device_slots[slot_id].input_context;
+        if (!input_context) {
+            input_context = Mmu::AllocateGpuMemory(page_count_for_two_context_pages);
+            if (!input_context) {
+                printf("XHCI: Failed to allocate input context for slot %u\n", slot_id);
+                return false;
+            }
+            device_slots[slot_id].input_context = input_context;
+        }
+        std::memset(input_context, 0, page_count_for_two_context_pages * Mmu::PageSize);
+
+        auto* icc = reinterpret_cast<InputControlContext*>(input_context);
+        icc->drop_context_flags = 0;
+        icc->add_context_flags = 0x3; // Slot context + EP0 context.
+
+        auto* input_ctx_dw = reinterpret_cast<uint32_t*>(input_context);
+        uint32_t const slot_ctx_index = 1;
+        uint32_t const ep0_ctx_index  = 2;
+        uint32_t* const slot_ctx = input_ctx_dw + (slot_ctx_index * (ctx_size / sizeof(uint32_t)));
+        uint32_t* const ep0_ctx  = input_ctx_dw + (ep0_ctx_index  * (ctx_size / sizeof(uint32_t)));
+
+        // Slot Context
+        // DW0: Speed[23:20], Context Entries[31:27]
+        slot_ctx[0] = ((port_speed & 0xF) << 20) | (1u << 27);
+        // DW1: Root Hub Port Number[23:16]
+        slot_ctx[1] = ((port & 0xFF) << 16);
+
+        // Endpoint 0 Context (DCI 1)
+        uint32_t const mps = endpoint0_max_packet_size(port_speed);
+        // DW1: EP Type[5:3]=4(Control), Max Packet Size[31:16], Max Burst Size[15:8]=0, Error Count[2:1]=3
+        ep0_ctx[1] = (4u << 3) | (3u << 1) | ((mps & 0xFFFF) << 16);
+        // Dequeue Pointer + DCS. Use current producer position rather than force-resetting
+        // ring state, so shared ring bookkeeping stays coherent.
+        uint32_t ep0_ring_index = transfer_ring_enqueue.load();
+        if (ep0_ring_index >= (TRANSFER_RING_SIZE - 1)) {
+            ep0_ring_index = 0;
+        }
+        uint64_t const tr_dequeue = get_physical_address(&transfer_ring[ep0_ring_index]) |
+                                    (transfer_ring_cycle_state ? 1u : 0u);
+        ep0_ctx[2] = static_cast<uint32_t>(tr_dequeue & 0xFFFF'FFFFu);
+        ep0_ctx[3] = static_cast<uint32_t>(tr_dequeue >> 32);
+        // Average TRB Length in DW4 lower 16 bits.
+        ep0_ctx[4] = 8;
+
+        uint64_t const device_context_phys = get_physical_address(device_context);
+        device_context_base_array[slot_id] = device_context_phys;
+
+        Processor::FlushDataCache(device_context, page_count_for_two_context_pages * Mmu::PageSize);
+        Processor::FlushDataCache(input_context, page_count_for_two_context_pages * Mmu::PageSize);
+        Processor::FlushDataCache(&device_context_base_array[slot_id], sizeof(device_context_base_array[slot_id]));
+
+        TRB address_device_cmd{};
+        address_device_cmd.parameter = get_physical_address(input_context);
+        address_device_cmd.status = 0;
+        address_device_cmd.control = (TRB_TYPE_ADDRESS_DEV << 10) | (slot_id << 24);
+
+        if (!send_command(address_device_cmd)) {
+            printf("XHCI: Failed to submit Address Device for slot %u\n", slot_id);
+            return false;
+        }
+
+        uint32_t completed_slot = 0;
+        if (!wait_for_command_completion(completed_slot) || completed_slot != slot_id) {
+            printf("XHCI: Address Device did not complete for slot %u (completed slot %u)\n", slot_id, completed_slot);
+            return false;
+        }
+
+        printf("XHCI: Address Device completed for slot %u (port %u speed %u MPS %u)\n", slot_id, port, port_speed, mps);
+        return true;
     }
     
     bool setup_rings() {
         printf("XHCI: Setting up rings...\n");
         
         // Allocate command ring (64-byte aligned)
-        command_ring = Mmu::AllocateGpuMemory<TRB>((COMMAND_RING_SIZE * sizeof(TRB) + Mmu::PageSize - 1) / Mmu::PageSize);
-        if (!command_ring) {
+        command_ring = { Mmu::AllocateGpuMemory<TRB>((COMMAND_RING_SIZE * sizeof(TRB) + Mmu::PageSize - 1) / Mmu::PageSize), COMMAND_RING_SIZE };
+        if (!command_ring.data()) {
+            command_ring = {};
             printf("XHCI: Failed to allocate command ring\n");
             return false;
         }
-        std::memset(command_ring, 0, COMMAND_RING_SIZE * sizeof(TRB));
+        std::fill(command_ring.begin(), command_ring.end(), TRB{});
+        // Command ring is a segmented ring and requires a terminal Link TRB.
+        command_ring[COMMAND_RING_SIZE - 1].parameter = get_physical_address(command_ring.data());
+        command_ring[COMMAND_RING_SIZE - 1].status = 0;
+        command_ring[COMMAND_RING_SIZE - 1].control =
+            (TRB_TYPE_LINK << 10) |
+            TRB_CTRL_CYCLE |
+            TRB_CTRL_TC;
+        Processor::FlushDataCache(command_ring.data(), command_ring.size_bytes());
         
         // Allocate event ring
-        event_ring = Mmu::AllocateGpuMemory<TRB>((EVENT_RING_SIZE * sizeof(TRB) + Mmu::PageSize - 1) / Mmu::PageSize);
-        if (!event_ring) {
+        event_ring = { Mmu::AllocateGpuMemory<TRB>((EVENT_RING_SIZE * sizeof(TRB) + Mmu::PageSize - 1) / Mmu::PageSize), EVENT_RING_SIZE };
+        if (!event_ring.data()) {
+            event_ring = {};
             printf("XHCI: Failed to allocate event ring\n");
             return false;
         }
-        std::memset(event_ring, 0, EVENT_RING_SIZE * sizeof(TRB));
+        std::fill(event_ring.begin(), event_ring.end(), TRB{});
+        Processor::FlushDataCache(event_ring.data(), event_ring.size_bytes());
         
         // Allocate event ring segment table
-        event_ring_segment_table = Mmu::AllocateGpuMemory<EventRingSegment>(1);
-        if (!event_ring_segment_table) {
+        event_ring_segment_table = { Mmu::AllocateGpuMemory<EventRingSegment>(1), 1 };
+        if (!event_ring_segment_table.data()) {
+            event_ring_segment_table = {};
             printf("XHCI: Failed to allocate event ring segment table\n");
             return false;
         }
         
         // Setup event ring segment table
-        event_ring_segment_table[0].base_address = get_physical_address(event_ring);
-        event_ring_segment_table[0].size = EVENT_RING_SIZE;
-        event_ring_segment_table[0].reserved = 0;
+        event_ring_segment_table[0].base_address = get_physical_address(event_ring.data());
+        event_ring_segment_table[0].size         = static_cast<uint32_t>(event_ring.size());
+        event_ring_segment_table[0].reserved     = 0;
+        Processor::FlushDataCache(event_ring_segment_table.data(), event_ring_segment_table.size_bytes());
         
         // Allocate device context base array
         uint32_t dcbaa_size = (max_device_slots + 1) * sizeof(uint64_t);
-        device_context_base_array = Mmu::AllocateGpuMemory<uint64_t>((dcbaa_size + Mmu::PageSize - 1) / Mmu::PageSize);
-        if (!device_context_base_array) {
+        device_context_base_array = { Mmu::AllocateGpuMemory<uint64_t>((dcbaa_size + Mmu::PageSize - 1) / Mmu::PageSize), max_device_slots + 1 };
+        if (!device_context_base_array.data()) {
+            device_context_base_array = {};
             printf("XHCI: Failed to allocate device context base array\n");
             return false;
         }
-        std::memset(device_context_base_array, 0, dcbaa_size);
+        std::fill(device_context_base_array.begin(), device_context_base_array.end(), 0);
+        Processor::FlushDataCache(device_context_base_array.data(), device_context_base_array.size_bytes());
+
+        if (max_scratchpad_buffers > 0) {
+            if (max_scratchpad_buffers > scratchpad_buffers.size()) {
+                printf("XHCI: Scratchpad count %u exceeds supported max %zu\n",
+                       max_scratchpad_buffers,
+                       scratchpad_buffers.size());
+                return false;
+            }
+
+            scratchpad_buffer_array = {
+                Mmu::AllocateGpuMemory<uint64_t>((max_scratchpad_buffers * sizeof(uint64_t) + Mmu::PageSize - 1) / Mmu::PageSize),
+                max_scratchpad_buffers
+            };
+            if (!scratchpad_buffer_array.data()) {
+                scratchpad_buffer_array = {};
+                printf("XHCI: Failed to allocate scratchpad buffer pointer array\n");
+                return false;
+            }
+
+            std::fill(scratchpad_buffer_array.begin(), scratchpad_buffer_array.end(), 0);
+            scratchpad_buffers.fill(nullptr);
+
+            for (uint32_t i = 0; i < max_scratchpad_buffers; ++i) {
+                void* const scratch = Mmu::AllocateGpuMemory(1);
+                if (!scratch) {
+                    printf("XHCI: Failed to allocate scratchpad buffer %u\n", i);
+                    return false;
+                }
+                scratchpad_buffers[i] = scratch;
+                std::memset(scratch, 0, Mmu::PageSize);
+                Processor::FlushDataCache(scratch, Mmu::PageSize);
+                scratchpad_buffer_array[i] = get_physical_address(scratch);
+            }
+
+            Processor::FlushDataCache(scratchpad_buffer_array.data(), scratchpad_buffer_array.size_bytes());
+            device_context_base_array[0] = get_physical_address(scratchpad_buffer_array.data());
+            Processor::FlushDataCache(&device_context_base_array[0], sizeof(device_context_base_array[0]));
+            printf("XHCI: Programmed %u scratchpad buffers\n", max_scratchpad_buffers);
+        }
         
         // Setup command ring control register
-        operationalRegisters_.CommandRingControl = get_physical_address(command_ring) | 1; // Set ring cycle state
+        set_command_ring_control(get_physical_address(command_ring.data()) | 1); // Set ring cycle state
         
         // Setup device context base address array pointer
-        operationalRegisters_.DeviceContextBaseAddressArrayPointer = get_physical_address(device_context_base_array);
+        set_dcbaap(get_physical_address(device_context_base_array.data()));
         
         // Setup event ring
         runtimeRegisters_.EventRingSegmentTableSize        = 1; // One segment
-        runtimeRegisters_.EventRingSegmentTableBaseAddress = get_physical_address(event_ring_segment_table);
-        runtimeRegisters_.EventRingDequeuePointer          = get_physical_address(event_ring);
+        set_erstba(get_physical_address(event_ring_segment_table.data()));
+        set_erdp(get_physical_address(event_ring.data()));
         
         // Enable interrupter
-        runtimeRegisters_.InterrupterManagement = 2; // Interrupt Enable
+        runtimeRegisters_.InterrupterManagement = 2; // Interrupt Enable (IE)
         runtimeRegisters_.InterrupterModeration = 0x00004000; // 1ms moderation
         
         printf("XHCI: Rings setup complete\n");
@@ -298,6 +537,7 @@ private:
     void process_events() {
         while (true) {
             TRB* event = &event_ring[event_ring_dequeue.load()];
+            Processor::InvalidateDataCache(event, sizeof(TRB));
             
             // Check if this TRB belongs to current cycle
             bool cycle_bit = (event->control & 1) != 0;
@@ -322,7 +562,7 @@ private:
         }
         
         // Update event ring dequeue pointer register
-        runtimeRegisters_.EventRingDequeuePointer = get_physical_address(&event_ring[event_ring_dequeue.load()]);
+        set_erdp(get_physical_address(&event_ring[event_ring_dequeue.load()]) | (1ull << 3));
     }
     
     static Exception::Spark xhci_interrupt_handler() {
@@ -345,45 +585,196 @@ private:
         }
 
         std::memset(transfer_ring, 0, TRANSFER_RING_SIZE * sizeof(TRB));
+        // Transfer ring is also segmented and must wrap through a Link TRB.
+        transfer_ring[TRANSFER_RING_SIZE - 1].parameter = get_physical_address(transfer_ring);
+        transfer_ring[TRANSFER_RING_SIZE - 1].status = 0;
+        transfer_ring[TRANSFER_RING_SIZE - 1].control =
+            (TRB_TYPE_LINK << 10) |
+            TRB_CTRL_CYCLE |
+            TRB_CTRL_TC;
+        Processor::FlushDataCache(transfer_ring, TRANSFER_RING_SIZE * sizeof(TRB));
         return true;
     }
 
-    bool ensure_event_ring() {
-        if (event_ring != nullptr) {
+    bool ensure_control_dma_buffer(size_t size) {
+        if (size == 0) {
             return true;
         }
 
-        event_ring = Mmu::AllocateGpuMemory<TRB>((EVENT_RING_SIZE * sizeof(TRB) + Mmu::PageSize - 1) / Mmu::PageSize);
-        if (!event_ring) {
-            printf("XHCI: Failed to allocate event ring\n");
+        if (control_dma_buffer && control_dma_buffer_size >= size) {
+            return true;
+        }
+
+        uint32_t const pages = static_cast<uint32_t>((size + Mmu::PageSize - 1) / Mmu::PageSize);
+        control_dma_buffer = static_cast<uint8_t*>(Mmu::AllocateGpuMemory(pages));
+        if (!control_dma_buffer) {
+            control_dma_buffer_size = 0;
+            printf("XHCI: Failed to allocate control DMA buffer (%zu bytes)\n", size);
             return false;
         }
 
-        std::memset(event_ring, 0, EVENT_RING_SIZE * sizeof(TRB));
+        control_dma_buffer_size = static_cast<size_t>(pages) * Mmu::PageSize;
+        std::memset(control_dma_buffer, 0, control_dma_buffer_size);
+        Processor::FlushDataCache(control_dma_buffer, control_dma_buffer_size);
         return true;
     }
 
-    void queue_completion_event(uint32_t trb_type, uint32_t completion_code) {
-        if (!ensure_event_ring()) {
-            return;
+    Status wait_for_transfer_event(uint32_t slot_id, uint32_t timeout_ms = 1000) {
+        if (event_ring.empty())
+        {
+            printf("XHCI: Event ring is not initialized\n");
+            return Status::Error;
         }
 
-        uint32_t event_pos = event_ring_enqueue.load();
-        TRB& event = event_ring[event_pos];
-        event.parameter = 0;
-        event.status = completion_code << 24;
-        event.control = (trb_type << 10) | (event_ring_cycle_state ? 1 : 0);
+        auto const start_time = Cpu::GetPerformanceCounter();
+        auto const timeout_ticks = Cpu::GetPerformanceTicksForMs(timeout_ms);
 
-        uint32_t next_pos = advance_ring_pointer(event_pos, EVENT_RING_SIZE);
-        event_ring_enqueue.store(next_pos);
+        while ((Cpu::GetPerformanceCounter() - start_time) < timeout_ticks) {
+            uint32_t const usbsts = operationalRegisters_.UsbStatus;
+            if (usbsts & XHCI_STS_HSE) {
+                printf("XHCI: Host system error while waiting for transfer event\n");
+                printf("XHCI: USBCMD=0x%08X USBSTS=0x%08X CRCR=0x%016llX ERSTBA=0x%016llX ERDP=0x%016llX\n",
+                       operationalRegisters_.UsbCommand.get(),
+                       usbsts,
+                       get_command_ring_control(),
+                       get_erstba(),
+                       get_erdp());
+                return Status::Error;
+            }
 
-        if (next_pos == 0) {
-            event_ring_cycle_state = !event_ring_cycle_state;
+            TRB* event = &event_ring[event_ring_dequeue.load()];
+            Processor::InvalidateDataCache(event, sizeof(TRB));
+            bool const cycle_bit = (event->control & TRB_CTRL_CYCLE) != 0;
+            if (cycle_bit != event_ring_cycle_state) {
+                Cpu::DelayInMicroseconds(50);
+                continue;
+            }
+
+            uint32_t const trb_type        = (event->control >> 10) & 0x3F;
+            uint32_t const completion_code = (event->status >> 24) & 0xFF;
+            uint32_t const event_slot_id   = (event->control >> 24) & 0xFF;
+
+            uint32_t const new_dequeue = advance_ring_pointer(event_ring_dequeue.load(), EVENT_RING_SIZE);
+            event_ring_dequeue.store(new_dequeue);
+            if (new_dequeue == 0) {
+                event_ring_cycle_state = !event_ring_cycle_state;
+            }
+
+            set_erdp(get_physical_address(&event_ring[event_ring_dequeue.load()]) | (1ull << 3));
+
+            if (event_slot_id != 0 && slot_id != 0 && event_slot_id != slot_id) {
+                continue;
+            }
+
+            if (trb_type == TRB_TYPE_TRANSFER_EVENT) {
+                if (completion_code == TRB_CC_SUCCESS || completion_code == TRB_CC_SHORT_PACKET) {
+                    return Status::Success;
+                }
+
+                if (completion_code == TRB_CC_ENDPOINT_NOT_ENABLED) {
+                    printf("XHCI: Transfer event failed, completion=%u (endpoint not enabled)\n", completion_code);
+                    return Status::Error;
+                }
+
+                printf("XHCI: Transfer event failed, completion=%u\n", completion_code);
+                return Status::Error;
+            }
+
+            if (trb_type == TRB_TYPE_CMD_COMPLETION_EVENT) {
+                if (completion_code != TRB_CC_SUCCESS) {
+                    printf("XHCI: Command completion failed, completion=%u\n", completion_code);
+                }
+                continue;
+            }
+
+            printf("XHCI: Ignoring event type=%u completion=%u\n", trb_type, completion_code);
         }
+
+        printf("XHCI: Timed out waiting for transfer completion event\n");
+        size_t i = 0;
+        for (auto& trb : event_ring) {
+            if (trb != TRB{}) {
+                printf("Event TRB[%zu]: parameter=0x%016llX status=0x%08X control=0x%08X\n", i, trb.parameter, trb.status, trb.control);
+            }
+            ++i;
+        }
+        return Status::Timeout;
+    }
+
+    bool wait_for_command_completion(uint32_t& slot_id, uint32_t timeout_ms = 1000) {
+        auto const start_time = Cpu::GetPerformanceCounter();
+        auto const timeout_ticks = Cpu::GetPerformanceTicksForMs(timeout_ms);
+
+        while ((Cpu::GetPerformanceCounter() - start_time) < timeout_ticks) {
+            uint32_t const usbsts = operationalRegisters_.UsbStatus;
+            if (usbsts & XHCI_STS_HSE) {
+                printf("XHCI: Host system error while waiting for command completion\n");
+                printf("XHCI: USBCMD=0x%08X USBSTS=0x%08X CRCR=0x%016llX ERSTBA=0x%016llX ERDP=0x%016llX\n",
+                       operationalRegisters_.UsbCommand.get(),
+                       usbsts,
+                       get_command_ring_control(),
+                       get_erstba(),
+                       get_erdp());
+                return false;
+            }
+
+            TRB* event = &event_ring[event_ring_dequeue.load()];
+            Processor::InvalidateDataCache(event, sizeof(TRB));
+
+            bool const cycle_bit = (event->control & TRB_CTRL_CYCLE) != 0;
+            if (cycle_bit != event_ring_cycle_state) {
+                Cpu::DelayInMicroseconds(50);
+                continue;
+            }
+
+            uint32_t const trb_type        = (event->control >> 10) & 0x3F;
+            uint32_t const completion_code = (event->status >> 24) & 0xFF;
+            uint32_t const event_slot_id   = (event->control >> 24) & 0xFF;
+
+            uint32_t const new_dequeue = advance_ring_pointer(event_ring_dequeue.load(), EVENT_RING_SIZE);
+            event_ring_dequeue.store(new_dequeue);
+            if (new_dequeue == 0) {
+                event_ring_cycle_state = !event_ring_cycle_state;
+            }
+            set_erdp(get_physical_address(&event_ring[event_ring_dequeue.load()]) | (1ull << 3));
+
+            if (trb_type != TRB_TYPE_CMD_COMPLETION_EVENT) {
+                continue;
+            }
+
+            if (completion_code != TRB_CC_SUCCESS) {
+                printf("XHCI: Command completion failed, completion=%u\n", completion_code);
+                return false;
+            }
+
+            slot_id = event_slot_id;
+            return true;
+        }
+
+        printf("XHCI: Timed out waiting for command completion event\n");
+         printf("XHCI: USBSTS=0x%08X IMAN=0x%08X ERDP=0x%016llX\n",
+             operationalRegisters_.UsbStatus.get(),
+             runtimeRegisters_.InterrupterManagement.get(),
+             get_erdp());
+        return false;
     }
     
     bool send_command(TRB command_trb) {
         std::lock_guard<std::mutex> lock(command_mutex);
+
+        uint32_t const usbsts_before = operationalRegisters_.UsbStatus;
+        uint32_t usbcmd_before = operationalRegisters_.UsbCommand;
+        if (usbsts_before & XHCI_STS_HSE) {
+            printf("XHCI: Refusing command submit while HSE is set (USBSTS=0x%08X)\n", usbsts_before);
+            return false;
+        }
+
+        if (usbsts_before & XHCI_STS_HCH) {
+            printf("XHCI: Controller halted before command submit, attempting restart\n");
+            operationalRegisters_.UsbCommand |= XHCI_CMD_RUN;
+            Cpu::DelayInMicroseconds(100);
+            usbcmd_before = operationalRegisters_.UsbCommand;
+        }
         
         uint32_t enqueue_pos = command_ring_enqueue.load();
         
@@ -392,9 +783,10 @@ private:
         
         // Copy command to ring
         command_ring[enqueue_pos] = command_trb;
+        Processor::FlushDataCache(&command_ring[enqueue_pos], sizeof(TRB));
         
         // Advance enqueue pointer
-        uint32_t new_enqueue = advance_ring_pointer(enqueue_pos, COMMAND_RING_SIZE);
+        uint32_t new_enqueue = advance_command_ring_pointer(enqueue_pos);
         command_ring_enqueue.store(new_enqueue);
         
         // Check for ring wrap
@@ -404,6 +796,11 @@ private:
         
         // Ring doorbell 0 (command ring)
         ring_doorbell(0, 0);
+
+         printf("XHCI: Command submitted (USBCMD=0x%08X USBSTS=0x%08X CRCR=0x%016llX)\n",
+             usbcmd_before,
+             usbsts_before,
+             get_command_ring_control());
         
         return true;
     }
@@ -437,6 +834,30 @@ private:
             }
         }
         return false;
+    }
+
+    bool wait_for_controller_running(uint32_t timeout_ms = 1000) {
+        auto start_time = Cpu::GetPerformanceCounter();
+        auto timeout_ticks = Cpu::GetPerformanceTicksForMs(timeout_ms);
+
+        while ((Cpu::GetPerformanceCounter() - start_time) < timeout_ticks) {
+            uint32_t const status = operationalRegisters_.UsbStatus;
+            bool const controller_not_ready = (status & XHCI_STS_CNR) != 0;
+            bool const halted = (status & XHCI_STS_HCH) != 0;
+            if (!controller_not_ready && !halted) {
+                return true;
+            }
+            Cpu::DelayInMicroseconds(50);
+        }
+        return false;
+    }
+
+    void clear_usb_status_bits() {
+        uint32_t const sticky = operationalRegisters_.UsbStatus.get() &
+                                (XHCI_STS_HSE | XHCI_STS_EINT | XHCI_STS_PCD | XHCI_STS_SSS | XHCI_STS_RSS | XHCI_STS_SRE | XHCI_STS_HCE);
+        if (sticky != 0) {
+            operationalRegisters_.UsbStatus = sticky;
+        }
     }
     
     bool reset_controller() {
@@ -531,7 +952,8 @@ public:
 
         printf("XHCI: Isochronous scheduling threshold: %u %s\n", hcsparams2.IsoSchedThreshold, hcsparams2.IsoSchedThresholdIsInFrames ? "frames" : "microframes");
         printf("XHCI: Event ring segment table max: %u\n", hcsparams2.EventRingSegmentTableMax);
-        printf("XHCI: Max scratchpad buffers: %u\n", (hcsparams2.MaxScratchpadBuffersHi << 5) + hcsparams2.MaxScratchpadBuffersLo);
+        max_scratchpad_buffers = (hcsparams2.MaxScratchpadBuffersHi << 5) + hcsparams2.MaxScratchpadBuffersLo;
+        printf("XHCI: Max scratchpad buffers: %u\n", max_scratchpad_buffers);
         printf("XHCI: Save/restore uses scratchpad: %u\n", hcsparams2.SaveRestoreUsesScratchpad);
         printf("XHCI: Doorbells offset: 0x%X\n", capabilityRegisters_.DoorbellOffset.get());
         printf("XHCI: Runtime offset: 0x%X\n", capabilityRegisters_.RuntimeOffset.get());
@@ -553,9 +975,14 @@ public:
             printf("XHCI: Ring setup failed\n");
             return Status::Error;
         }
+
+        uint32_t const controller_hccparams1 = hccparams1;
         
         // Set number of device slots
         operationalRegisters_.Configure = [&](auto& reg){ reg.MaxDeviceSlotsEnabled = max_device_slots; };
+
+        // Clear sticky status events before enabling run/interrupts.
+        clear_usb_status_bits();
         
         // Enable interrupts
         operationalRegisters_.UsbCommand |= XHCI_CMD_INTE;
@@ -566,16 +993,19 @@ public:
         // Start the controller
         operationalRegisters_.UsbCommand |= XHCI_CMD_RUN;
         
-        // Wait for controller to start
-        if (!wait_for_ready()) {
-            printf("XHCI: Controller not ready\n");
+        // Wait for controller to start and leave halted state.
+        if (!wait_for_controller_running()) {
+            printf("XHCI: Controller did not enter running state\n");
+            printf("XHCI: USBCMD=0x%08X USBSTS=0x%08X\n",
+                   operationalRegisters_.UsbCommand.get(),
+                   operationalRegisters_.UsbStatus.get());
             return Status::Error;
         }
         
         printf("XHCI: Controller initialized successfully\n");
         
         // Start device enumeration
-        enumerate_devices();
+        enumerate_devices(controller_hccparams1);
         
         return Status::Success;
     }
@@ -660,30 +1090,57 @@ public:
             return Status::Error;
         }
 
-        uint32_t slot_id = 1; // Use slot 1 for the default device slot.
-        ring_doorbell(0, slot_id);
+        if (!ensure_control_dma_buffer(data.size())) {
+            return Status::Error;
+        }
+
+        uint32_t slot_id = default_control_slot_id.load();
+        if (slot_id == 0) {
+            slot_id = 1;
+        }
         if (slot_id == 0 || slot_id > max_device_slots) {
             printf("XHCI: Invalid device slot\n");
             return Status::Error;
         }
 
-        UsbRequest setup_packet{};
-        setup_packet.bmRequestType = requestType;
-        setup_packet.bRequest = request;
-        setup_packet.wValue = value;
-        setup_packet.wIndex = index;
-        setup_packet.wLength = static_cast<uint16_t>(data.size());
+        uint16_t const transfer_length    = static_cast<uint16_t>(data.size());
+        bool     const data_stage_present = transfer_length != 0;
+        bool     const data_stage_in      = (requestType & 0x80) != 0;
+        uint8_t* const dma_data_ptr       = data_stage_present ? control_dma_buffer : nullptr;
+
+        if (data_stage_present && !data_stage_in) {
+            std::memcpy(dma_data_ptr, data.data(), data.size());
+            Processor::FlushDataCache(dma_data_ptr, data.size());
+        }
+
+        uint32_t trt = 0;
+        if (data_stage_present) {
+            trt = data_stage_in ? 3u : 2u;
+        }
+
+        uint64_t const setup_packet_data =
+            static_cast<uint64_t>(requestType) |
+            (static_cast<uint64_t>(request) << 8) |
+            (static_cast<uint64_t>(value) << 16) |
+            (static_cast<uint64_t>(index) << 32) |
+            (static_cast<uint64_t>(transfer_length) << 48);
 
         {
             std::lock_guard<std::mutex> lock(transfer_mutex);
 
             uint32_t setup_pos = transfer_ring_enqueue.load();
             TRB& setup_trb = transfer_ring[setup_pos];
-            setup_trb.parameter = reinterpret_cast<uint64_t>(&setup_packet);
-            setup_trb.status = 0;
-            setup_trb.control = (TRB_TYPE_SETUP << 10) | (transfer_ring_cycle_state ? 1 : 0);
+            setup_trb.parameter = setup_packet_data;
+            setup_trb.status = 8;
+            setup_trb.control =
+                (TRB_TYPE_SETUP << 10) |
+                (trt << 16) |
+                TRB_CTRL_CHAIN |
+                TRB_CTRL_IDT |
+                (transfer_ring_cycle_state ? TRB_CTRL_CYCLE : 0);
+            Processor::FlushDataCache(&setup_trb, sizeof(TRB));
 
-            uint32_t next_pos = advance_ring_pointer(setup_pos, TRANSFER_RING_SIZE);
+            uint32_t next_pos = advance_transfer_ring_pointer(setup_pos);
             transfer_ring_enqueue.store(next_pos);
             if (next_pos == 0) {
                 transfer_ring_cycle_state = !transfer_ring_cycle_state;
@@ -692,14 +1149,15 @@ public:
             if (!data.empty()) {
                 uint32_t data_pos = transfer_ring_enqueue.load();
                 TRB& data_trb = transfer_ring[data_pos];
-                data_trb.parameter = reinterpret_cast<uint64_t>(data.data());
-                data_trb.status = static_cast<uint32_t>(data.size()) << 16;
-                data_trb.control = (TRB_TYPE_DATA << 10) | (transfer_ring_cycle_state ? 1 : 0);
-                if ((requestType & 0x80) != 0) {
-                    data_trb.control |= (1u << 8); // Direction is IN
+                data_trb.parameter = get_physical_address(dma_data_ptr);
+                data_trb.status = static_cast<uint32_t>(data.size());
+                data_trb.control = (TRB_TYPE_DATA << 10) | TRB_CTRL_CHAIN | (transfer_ring_cycle_state ? TRB_CTRL_CYCLE : 0);
+                if (data_stage_in) {
+                    data_trb.control |= TRB_CTRL_DIR_IN;
                 }
+                Processor::FlushDataCache(&data_trb, sizeof(TRB));
 
-                next_pos = advance_ring_pointer(data_pos, TRANSFER_RING_SIZE);
+                next_pos = advance_transfer_ring_pointer(data_pos);
                 transfer_ring_enqueue.store(next_pos);
                 if (next_pos == 0) {
                     transfer_ring_cycle_state = !transfer_ring_cycle_state;
@@ -710,58 +1168,29 @@ public:
             TRB& status_trb = transfer_ring[status_pos];
             status_trb.parameter = 0;
             status_trb.status = 0;
-            status_trb.control = (TRB_TYPE_STATUS << 10) | (transfer_ring_cycle_state ? 1 : 0);
+            status_trb.control =
+                (TRB_TYPE_STATUS << 10) |
+                TRB_CTRL_IOC |
+                ((!data_stage_present || !data_stage_in) ? TRB_CTRL_DIR_IN : 0) |
+                (transfer_ring_cycle_state ? TRB_CTRL_CYCLE : 0);
+            Processor::FlushDataCache(&status_trb, sizeof(TRB));
 
-            next_pos = advance_ring_pointer(status_pos, TRANSFER_RING_SIZE);
+            next_pos = advance_transfer_ring_pointer(status_pos);
             transfer_ring_enqueue.store(next_pos);
             if (next_pos == 0) {
                 transfer_ring_cycle_state = !transfer_ring_cycle_state;
             }
         }
 
-        if (!data.empty()) {
-            std::memset(data.data(), 0, data.size());
+        // Doorbell 0 is the command ring; transfer rings use the slot's doorbell.
+        ring_doorbell(slot_id, 1);
+
+        Status const transfer_status = wait_for_transfer_event(slot_id);
+        if (transfer_status == Status::Success && data_stage_in && !data.empty()) {
+            Processor::InvalidateDataCache(dma_data_ptr, data.size());
+            std::memcpy(data.data(), dma_data_ptr, data.size());
         }
-
-        switch (request) {
-            case 0x06: // GET_DESCRIPTOR
-                printf("XHCI: GET_DESCRIPTOR request\n");
-                if (!data.empty()) {
-                    const size_t available = std::min<size_t>(data.size(), 18);
-                    data[0] = 18; // bLength
-                    if (available > 1) data[1] = 1; // bDescriptorType
-                    if (available > 2) data[2] = 0x00; // bcdUSB low
-                    if (available > 3) data[3] = 0x02; // bcdUSB high (USB 2.0)
-                    if (available > 8) {
-                        data[8] = 0x01; // Vendor ID low
-                    }
-                    if (available > 9) {
-                        data[9] = 0x00; // Vendor ID high
-                    }
-                    if (available > 10) {
-                        data[10] = 0x02; // Product ID low
-                    }
-                    if (available > 11) {
-                        data[11] = 0x00; // Product ID high
-                    }
-                }
-                break;
-
-            case 0x05: // SET_ADDRESS
-                printf("XHCI: SET_ADDRESS request, address=%u\n", value);
-                break;
-
-            case 0x09: // SET_CONFIGURATION
-                printf("XHCI: SET_CONFIGURATION request, config=%u\n", value);
-                break;
-
-            default:
-                printf("XHCI: Unknown control request\n");
-                break;
-        }
-
-        queue_completion_event(TRB_TYPE_NORMAL, TRB_CC_SUCCESS);
-        return Status::Success;
+        return transfer_status;
     }
     
     // Public method to manually process pending events (useful for testing)
@@ -788,40 +1217,162 @@ public:
         auto& portscReg = operationalRegisters_.PortStatusControl[port - 1];
 
         portscReg |= (1 << 4);
-        
-        // Wait for reset to complete (simplified)
-        for (int i = 0; i < 1000; ++i) {
-            if (!(portscReg & (1 << 4))) {
-                break; // Reset complete
+
+        // Wait for reset to complete and the device to become enabled.
+        for (int i = 0; i < 5000; ++i) {
+            uint32_t const portsc = portscReg;
+            bool const reset_in_progress = (portsc & (1u << 4)) != 0;
+            bool const enabled = (portsc & (1u << 1)) != 0;
+            if (!reset_in_progress && enabled) {
+                return;
             }
+            Cpu::DelayInMicroseconds(100);
         }
+
+        uint32_t const final_portsc = portscReg;
+        printf("XHCI: Port %u reset timeout, PORTSC=0x%08X\n", port, final_portsc);
     }
     
-    void enumerate_devices() {
+    static char const* describe_device_class(uint8_t device_class) {
+        switch (device_class) {
+            case 0x00: return "Interface-specific";
+            case 0x01: return "Audio";
+            case 0x02: return "Communications";
+            case 0x03: return "HID";
+            case 0x05: return "Physical";
+            case 0x06: return "Image";
+            case 0x07: return "Printer";
+            case 0x08: return "Mass Storage";
+            case 0x09: return "Hub";
+            case 0x0A: return "CDC Data";
+            case 0x0E: return "Video";
+            case 0x0F: return "Personal Healthcare";
+            case 0x10: return "Audio/Video";
+            case 0x11: return "Billboard";
+            case 0x12: return "USB Type-C Bridge";
+            default: return "Unknown";
+        }
+    }
+
+    void print_device_summary(uint32_t port, uint32_t slot_id, std::span<uint8_t const> descriptor, std::span<uint8_t const> config_descriptor) {
+        if (descriptor.size() < 18) {
+            printf("XHCI: Port %u slot %u: descriptor too small to parse\n", port, slot_id);
+            return;
+        }
+
+        uint8_t  const bLength            = descriptor[0];
+        uint8_t  const bDescriptorType    = descriptor[1];
+        uint8_t  const bDeviceClass       = descriptor[4];
+        uint8_t  const bDeviceSubClass    = descriptor[5];
+        uint8_t  const bDeviceProtocol    = descriptor[6];
+        uint8_t  const bMaxPacketSize0    = descriptor[7];
+        uint16_t const vendor_id          = static_cast<uint16_t>(descriptor[8] | (descriptor[9] << 8));
+        uint16_t const product_id         = static_cast<uint16_t>(descriptor[10] | (descriptor[11] << 8));
+        uint8_t  const bNumConfigurations = descriptor[17];
+
+        printf("XHCI: Port %u -> device slot %u identified\n", port, slot_id);
+        printf("XHCI:   Function: %s (class=0x%02X, subclass=0x%02X, protocol=0x%02X)\n",
+               describe_device_class(bDeviceClass), bDeviceClass, bDeviceSubClass, bDeviceProtocol);
+        printf("XHCI:   Vendor/Product: 0x%04X / 0x%04X\n", vendor_id, product_id);
+        printf("XHCI:   Capabilities: max-packet-size0=0x%02X, configurations=%u\n",
+               bMaxPacketSize0, bNumConfigurations);
+
+        printf("XHCI:   Descriptor length: %u, type: 0x%02X", bLength, bDescriptorType);
+        for (size_t i = 0; i < std::min<size_t>(descriptor.size(), 18); ++i) {
+            if (i % 16 == 0) {
+                printf("\nXHCI:   ");
+            }
+            printf(" %02X", descriptor[i]);
+        }
+        printf("\n");
+
+        if (config_descriptor.size() >= 9) {
+            uint8_t const config_length  = config_descriptor[0];
+            uint8_t const config_type    = config_descriptor[1];
+            uint8_t const num_interfaces = config_descriptor[4];
+            uint8_t const config_value   = config_descriptor[5];
+            uint8_t const max_power      = config_descriptor[8];
+            printf("XHCI:   Configuration: value=0x%02X, interfaces=%u, max-power=%umA, attrs=0x%02X\n",
+                   config_value, num_interfaces, max_power * 2u, config_descriptor[7]);
+            if (config_length < 9) {
+                printf("XHCI:   Interface data is incomplete\n");
+            }
+        }
+        else {
+            printf("XHCI:   Configuration descriptor unavailable\n");
+        }
+
+        if (bLength < 18) {
+            printf("XHCI:   Descriptor length is shorter than expected (%u)\n", bLength);
+        }
+    }
+
+    void enumerate_devices(uint32_t hccparams1) {
         printf("XHCI: Enumerating devices...\n");
-        
-        // Check all ports for connected devices
+
         for (uint32_t port = 1; port <= max_ports; ++port) {
             uint32_t portsc = get_port_status(port);
-            
-            printf("XHCI: Port %u status: 0x%08X\n", port, portsc);
-            
-            // Check if device is connected (Current Connect Status bit 0)
-            if (portsc & 1) {
-                printf("XHCI: Device connected on port %u\n", port);
-                
-                // Reset the port
-                reset_port(port);
-                
-                // Enable device slot
-                TRB enable_slot_cmd;
-                enable_slot_cmd.parameter = 0;
-                enable_slot_cmd.status = 0;
-                enable_slot_cmd.control = (TRB_TYPE_ENABLE_SLOT << 10) | 1; // Set cycle bit
-                
-                if (send_command(enable_slot_cmd)) {
-                    printf("XHCI: Enable slot command sent for port %u\n", port);
+            bool     const connected    = (portsc & 1u) != 0;
+            bool     const enabled      = (portsc & (1u << 1)) != 0;
+            bool     const over_current = (portsc & (1u << 3)) != 0;
+            uint32_t const speed        = (portsc >> 10) & 0x0F;
+
+            printf("XHCI: Port %u status: 0x%08X [connected=%u enabled=%u speed=%u over-current=%u]\n",
+                   port, portsc, connected ? 1u : 0u, enabled ? 1u : 0u, speed, over_current ? 1u : 0u);
+
+            if (!connected) {
+                printf("XHCI: Port %u has no device attached\n", port);
+                continue;
+            }
+
+            reset_port(port);
+
+            uint32_t slot_id = allocate_device_slot();
+            if (slot_id == 0) {
+                printf("XHCI: No free device slots available for port %u\n", port);
+                continue;
+            }
+
+            TRB enable_slot_cmd{};
+            enable_slot_cmd.parameter = 0;
+            enable_slot_cmd.status = 0;
+            enable_slot_cmd.control = (TRB_TYPE_ENABLE_SLOT << 10) | 1; // Set cycle bit
+
+            if (send_command(enable_slot_cmd)) {
+                printf("XHCI: Enable slot command sent for port %u\n", port);
+            }
+
+            uint32_t hw_slot_id = 0;
+            if (!wait_for_command_completion(hw_slot_id) || hw_slot_id == 0) {
+                printf("XHCI: Enable slot command for port %u did not complete successfully\n", port);
+                free_device_slot(slot_id);
+                continue;
+            }
+
+            printf("XHCI: Enable slot completion returned slot ID %u\n", hw_slot_id);
+
+            uint32_t const post_reset_portsc = get_port_status(port);
+            uint32_t const post_reset_speed = (post_reset_portsc >> 10) & 0x0F;
+            if (!address_device(hw_slot_id, port, post_reset_speed, hccparams1)) {
+                printf("XHCI: Failed to address device on port %u (slot %u)\n", port, hw_slot_id);
+                free_device_slot(slot_id);
+                continue;
+            }
+
+            default_control_slot_id.store(hw_slot_id);
+
+            std::array<uint8_t, 64> device_descriptor{};
+            if (controlTransfer(0x80, 0x06, 0x0100, 0, device_descriptor) == Status::Success) {
+                std::array<uint8_t, 64> config_descriptor{};
+                if (controlTransfer(0x80, 0x06, 0x0200, 0, config_descriptor) == Status::Success) {
+                    print_device_summary(port, slot_id, device_descriptor, config_descriptor);
                 }
+                else {
+                    print_device_summary(port, slot_id, device_descriptor, {});
+                }
+            }
+            else {
+                printf("XHCI: Port %u could not retrieve a device descriptor\n", port);
             }
         }
     }
@@ -926,7 +1477,7 @@ std::unique_ptr<Usb::Controller> CreateController(PCIe::Bcm2711Driver& pcie, PCI
 
     // Display capabilities if any
     //printf("  Capabilities:\n");
-    for (const auto& cap : config.enumerate_capabilities())
+    for (auto const& cap : config.enumerate_capabilities())
     {
         //PrintCapability(cap, config.Common());
     }

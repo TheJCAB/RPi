@@ -508,7 +508,7 @@ void* AllocateGpuMemory(uint32_t pageCount)
 {
     auto const gpuPhysicalAddress = (PhysicalMemoryAllocator.Allocate(pageCount) + PhysicalMemoryAllocatorPageOffset) << 12;
     //printf("Allocated GPU memory at physical address %zX\n", gpuPhysicalAddress);
-    return reinterpret_cast<void*>(gpuPhysicalAddress + 0xC000'0000u);
+    return reinterpret_cast<void*>(gpuPhysicalAddress + GpuMemBase);
 }
 
 //uint64_t GetMairEl1()

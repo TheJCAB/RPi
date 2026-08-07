@@ -57,32 +57,54 @@ struct Register
     Register(Register&&) = delete;
     Register& operator=(Register&&) = delete;
 
-    inline auto& RefRaw()       { return *(reinterpret_cast<Raw       volatile*>(this) + Offset / sizeof(Raw)); }
-    inline auto& RefRaw() const { return *(reinterpret_cast<Raw const volatile*>(this) + Offset / sizeof(Raw)); }
+    inline auto& RefRaw()       requires(sizeof(T) <= sizeof(uint32_t)) { return *(reinterpret_cast<Raw       volatile*>(reinterpret_cast<uintptr_t>(this) + Offset)); }
+    inline auto& RefRaw() const requires(sizeof(T) <= sizeof(uint32_t)) { return *(reinterpret_cast<Raw const volatile*>(reinterpret_cast<uintptr_t>(this) + Offset)); }
+
+    inline auto& RefRaw()       requires(sizeof(T) == sizeof(uint64_t)) { return *(reinterpret_cast<uint32_t       volatile (*)[2]>(reinterpret_cast<uintptr_t>(this) + Offset)); }
+    inline auto& RefRaw() const requires(sizeof(T) == sizeof(uint64_t)) { return *(reinterpret_cast<uint32_t const volatile (*)[2]>(reinterpret_cast<uintptr_t>(this) + Offset)); }
 
     inline T get() const
     {
-        Raw const result = RefRaw();
-        return reinterpret_cast<T const&>(result);
+        if constexpr (sizeof(T) > sizeof(uint32_t))
+        {
+            auto& ref = RefRaw();
+            uint32_t result[2];
+            result[0] = ref[0];
+            result[1] = ref[1];
+            return reinterpret_cast<T const&>(result);
+        }
+        else
+        {
+            Raw const result = RefRaw();
+            return reinterpret_cast<T const&>(result);
+        }
     }
 
-    inline T set(const T& value) requires (!std::is_const_v<T>)
+    inline T set(T const& value) requires (!std::is_const_v<T>)
     {
-        RefRaw() = reinterpret_cast<Raw const&>(value);
+        if constexpr (sizeof(T) > sizeof(uint32_t))
+        {
+            auto& ref = RefRaw();
+            auto const& raw_value = reinterpret_cast<uint32_t const (&)[2]>(value);
+            ref[0] = raw_value[0];
+            ref[1] = raw_value[1];
+        }
+        else
+        {
+            RefRaw() = reinterpret_cast<Raw const&>(value);
+        }
         return value;
     }
 
     inline T operator=(std::integral auto value) requires (!std::is_const_v<T> && sizeof(value) <= sizeof(Raw))
     {
         Raw v = static_cast<Raw>(value);
-        RefRaw() = v;
-        return reinterpret_cast<T const&>(v);
+        return set(reinterpret_cast<T const&>(v));
     }
 
-    inline T operator=(const T& value) requires (!std::is_const_v<T>)
+    inline T operator=(T const& value) requires (!std::is_const_v<T>)
     {
-        RefRaw() = reinterpret_cast<Raw const&>(value);
-        return value;
+        return set(value);
     }
 
     inline T operator=(std::invocable<T&> auto&& modify) requires (!std::is_const_v<T>)
@@ -94,7 +116,7 @@ struct Register
     }
 
     inline operator T() const { return get(); }
-    inline const T operator*() const { return get(); }
+    inline T const operator*() const { return get(); }
 
 
     inline auto operator->() const
