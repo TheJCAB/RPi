@@ -331,11 +331,19 @@ void Core0(void* dtb)
 
     Uart::Puts("\n\n\n");
 
+    Mailbox::TagMessage<Mailbox::Tag::GET_BOARD_MODEL, 1> modelTag{{ 0 }};
+    Mailbox::TagMessage<Mailbox::Tag::GET_BOARD_REVISION, 1> revisionTag{{ 0 }};
     Mailbox::TagMessage<Mailbox::Tag::GET_BOARD_MAC_ADDRESS, 2> macAddressTag{{ 0, 0 }};
-    Mailbox::TagMessage<Mailbox::Tag::GET_VC_MEMORY, 2> armMemoryTag{{ 0, 0 }};
-    Mailbox::TagMessage<Mailbox::Tag::GET_ARM_MEMORY, 2> vcMemoryTag{{ 0, 0 }};
-    if (Mailbox::SendTags(armMemoryTag, vcMemoryTag, macAddressTag))
+    Mailbox::TagMessage<Mailbox::Tag::GET_VC_MEMORY, 2> vcMemoryTag{{ 0, 0 }};
+    Mailbox::TagMessage<Mailbox::Tag::GET_ARM_MEMORY, 2> armMemoryTag{{ 0, 0 }};
+    if (Mailbox::SendTags(modelTag, revisionTag, armMemoryTag, vcMemoryTag, macAddressTag))
     {
+        Uart::Puts("Board model: ");
+        Uart::PutHex(modelTag.args[0]);
+        Uart::Puts("\n");
+        Uart::Puts("Board revision: ");
+        Uart::PutHex(revisionTag.args[0]);
+        Uart::Puts("\n");
         Uart::Puts("ARM Memory: ");
         Uart::PutHex(armMemoryTag.args[0]);
         Uart::Puts(" ");

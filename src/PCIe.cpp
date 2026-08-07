@@ -610,11 +610,11 @@ Bcm2711Driver::Bcm2711Driver()
         return;
     }
 
-    registers.RC_BAR2_CONFIG_LO = 15; // DMA?
-    registers.RC_BAR2_CONFIG_HI = 0;
+    registers.RC_BAR2_CONFIG_LO = 18; // 33 - 15 == 8 GB
+    registers.RC_BAR2_CONFIG_HI = 4; // Newer Pi4B boards with more than 4 GB use 4'0000'0000 as the base address.
 
     // SCB
-    registers.MISC_CTRL = [](auto& reg){ reg.SCB0_SIZE = 7u; };
+    registers.MISC_CTRL = [](auto& reg){ reg.SCB0_SIZE = 18u; };
 
     // Set the class code to PCI-to-PCI bridge (0x060400) if it's not already set.
     uint32_t ccode = registers.ID;
@@ -690,7 +690,7 @@ Bcm2711Driver::Bcm2711Driver()
         pcieCapabilities_->RootControl = 0x0010; // CRS Software Visibility Enable
     }
 
-    rootHeader_->Common.Command = 0x107; // IO, Memory, Master, SERR
+    rootHeader_->Common.Command = 0x146; // !IO, Memory, Master, SERR, Parity
 
     {
         uint8_t  const primaryBus           = rootHeader_->PrimaryBus;
@@ -884,7 +884,18 @@ namespace examples {
         printf("Enumerating devices...\n");
         
         printf("Found %zu PCIe devices:\n", root.devices_.size());
-        
+
+                printf("    Enabling USB controller power...\n");
+                Mailbox::TagMessage<Mailbox::Tag::RPI4_PCIE_XHCI_USB_RESET, 1> resetTag{{ 1u << 20 }};
+                if (!Mailbox::SendTags(resetTag)) {
+                    printf("    ✗ Failed to enable USB controller power\n");
+                }
+                else
+                {
+                    printf("    New state: %u\n", resetTag.args[0]);
+                }
+
+
         // Process each found device
         for (const auto& info : root.devices_) {
             // Read device information
@@ -909,15 +920,8 @@ namespace examples {
 
             auto& common = configuration.Common();
 
-            if (utils::is_bridge_device(class_code))
-            {
-            }
-            else
-            {
-                common.Command = 0x107; // IO, Memory, Master //, SERR
 
-                common.CacheLineSize  = 64 / 4; // ??
-            }
+            common.CacheLineSize = 64 / 4; // ??
 
             // Display BARs if any and find Bar0
             BarInfo bar0{};
@@ -938,186 +942,182 @@ namespace examples {
                 PrintCapability(cap, configuration.Common());
             }
 
-            if (utils::is_bridge_device(class_code))
+            // TODO: Don't hardcode. Use the BAR mapping.
+            printf("Word0: %08X\n", *(uint32_t*)CONFIG_BASE);
+            
+            // Enable BAR 0 at the beginning of PCIe aperture
+            printf("    Configuring BAR 0: CPU=0x%016llx Size = 0x%zX\n", bar0.physical_address, bar0.size);
+            if (bar0.size == 0)
             {
+                printf("    BAR 0 size is zero. Halting...\n");
+                Cpu::Halt();
             }
-            else
+            
+            auto bar0Memory = configuration.map_bar(bar0);
+
+            printf("    Configured BAR 0: CPU=0x%016llx Size = 0x%zX\n", bar0.physical_address, bar0.size);
+            
+            // Verify the BAR was written correctly
+            //auto const rebar0 = configuration.get_bar(0);
+
+            //printf("    BAR 0 readback: CPU=0x%016llx\n", rebar0.physical_address);
+
+            common.InterruptPin = 1; // INTA
+            common.Command = 0x146; // !IO, Memory, Master, SERR, PARITY
+
+            // Add a delay to ensure the configuration takes effect
+            Cpu::DelayInMicroseconds(100'000);
+
+            asm volatile("dsb sy" : : : "memory");  // ARM64
+
+
+            printf("    Command: 0x%08x  Status: 0x%08x\n", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
             {
-                // TODO: Don't hardcode. Use the BAR mapping.
-                printf("Word0: %08X\n", *(uint32_t*)CONFIG_BASE);
-                
-                // Enable BAR 0 at the beginning of PCIe aperture
-                printf("    Configuring BAR 0: CPU=0x%016llx Size = 0x%zX\n", bar0.physical_address, bar0.size);
-                if (bar0.size == 0)
+                auto const timeoutTime = Cpu::GetPerformanceCounter() + Cpu::GetPerformanceTicksForMs(10'000);
+                while ((*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24) & (1u << 11)) && Cpu::GetPerformanceCounter() < timeoutTime)
                 {
-                    printf("    BAR 0 size is zero. Halting...\n");
+                    Cpu::Yield();
+                }
+                if (*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24) & (1u << 11))
+                {
+                    printf("XHCI didn't become ready.\n");
+                    printf("    Command: 0x%08x  Status: 0x%08x\n", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
                     Cpu::Halt();
                 }
-                
-                auto bar0Memory = configuration.map_bar(bar0);
+            }
 
-                printf("    Configured BAR 0: CPU=0x%016llx Size = 0x%zX\n", bar0.physical_address, bar0.size);
-                
-                // Verify the BAR was written correctly
-                //auto const rebar0 = configuration.get_bar(0);
+            // Test memory access
+            printf("    Testing memory access at 0x%016llx...\n", bar0.physical_address);
+            volatile uint32_t* test_ptr = reinterpret_cast<volatile uint32_t*>(bar0.physical_address);
+            uint32_t test_value = *test_ptr;
+            printf("    First word: 0x%08x\n", test_value);
+            printf("    Command: 0x%08x  Status: 0x%08x\n", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
 
-                //printf("    BAR 0 readback: CPU=0x%016llx\n", rebar0.physical_address);
+            printf("    Testing memory access again at 0x%016llx...\n", bar0.physical_address);
+            printf("    First word: 0x%08x\n", *test_ptr);
+            printf("    Command: 0x%08x  Status: 0x%08x\n", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
 
-                // Add a delay to ensure the configuration takes effect
-                Cpu::DelayInMicroseconds(100'000);
+            for (int i = 0; i * 4 < 0xB4; ++i)
+            {
+                printf("    PCIe [0x%03X] 0x%08X\n", i * 4, reinterpret_cast<uint32_t const*>(&configuration.Header0())[i]);
+            }
 
-                asm volatile("dsb sy" : : : "memory");  // ARM64
+            for (int i = 0; i < 64 && i * 4 < bar0.size; ++i)
+            {
+                printf("    xHCI [0x%03X] 0x%08X\n", i * 4, test_ptr[i]);
+            }
+            for (int i = 0x420 / 4; i < 0x440 / 4; ++i)
+            {
+                printf("    xHCI [0x%03X] 0x%08X\n", i * 4, reinterpret_cast<uint32_t const volatile*>(bar0.physical_address)[i]);
+            }
 
-
-                printf("    Command: 0x%08x  Status: 0x%08x\n", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
+            printf("    Resetting...\n");
+            *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20) |= 1u << 1;
+            {
+                auto const timeoutTime = Cpu::GetPerformanceCounter() + Cpu::GetPerformanceTicksForMs(10'000);
+                while ((*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20) & (1u << 1)) && Cpu::GetPerformanceCounter() < timeoutTime)
                 {
-                    auto const timeoutTime = Cpu::GetPerformanceCounter() + Cpu::GetPerformanceTicksForMs(10'000);
-                    while ((*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24) & (1u << 11)) && Cpu::GetPerformanceCounter() < timeoutTime)
-                    {
-                        Cpu::Yield();
-                    }
-                    if (*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24) & (1u << 11))
-                    {
-                        printf("XHCI didn't become ready.\n");
-                        printf("    Command: 0x%08x  Status: 0x%08x\n", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
-                        Cpu::Halt();
-                    }
+                    Cpu::Yield();
                 }
+            }
 
-                // Test memory access
-                printf("    Testing memory access at 0x%016llx...\n", bar0.physical_address);
-                volatile uint32_t* test_ptr = reinterpret_cast<volatile uint32_t*>(bar0.physical_address);
-                uint32_t test_value = *test_ptr;
-                printf("    First word: 0x%08x\n", test_value);
-                printf("    Command: 0x%08x  Status: 0x%08x\n", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
+            for (int i = 0; i * 4 < 0xB4; ++i)
+            {
+                printf("    PCIe [0x%03X] 0x%08X\n", i * 4, reinterpret_cast<uint32_t const*>(&configuration.Header0())[i]);
+            }
 
-                printf("    Testing memory access again at 0x%016llx...\n", bar0.physical_address);
-                printf("    First word: 0x%08x\n", *test_ptr);
-                printf("    Command: 0x%08x  Status: 0x%08x\n", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
+            for (int i = 0; i < 64 && i * 4 < bar0.size; ++i)
+            {
+                printf("    xHCI [0x%03X] 0x%08X\n", i * 4, test_ptr[i]);
+            }
+            for (int i = 0x420 / 4; i < 0x440 / 4; ++i)
+            {
+                printf("    xHCI [0x%03X] 0x%08X\n", i * 4, reinterpret_cast<uint32_t const volatile*>(bar0.physical_address)[i]);
+            }
 
-                for (int i = 0; i * 4 < 0xB4; ++i)
-                {
-                    printf("    PCIe [0x%03X] 0x%08X\n", i * 4, reinterpret_cast<uint32_t const*>(&configuration.Header0())[i]);
-                }
-
-                for (int i = 0; i < 64 && i * 4 < bar0.size; ++i)
-                {
-                    printf("    xHCI [0x%03X] 0x%08X\n", i * 4, test_ptr[i]);
-                }
-                for (int i = 0x420 / 4; i < 0x440 / 4; ++i)
-                {
-                    printf("    xHCI [0x%03X] 0x%08X\n", i * 4, reinterpret_cast<uint32_t const volatile*>(bar0.physical_address)[i]);
-                }
-
-                printf("    Resetting...\n");
-                *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20) |= 1u << 1;
-                {
-                    auto const timeoutTime = Cpu::GetPerformanceCounter() + Cpu::GetPerformanceTicksForMs(10'000);
-                    while ((*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20) & (1u << 1)) && Cpu::GetPerformanceCounter() < timeoutTime)
-                    {
-                        Cpu::Yield();
-                    }
-                }
-
-                for (int i = 0; i * 4 < 0xB4; ++i)
-                {
-                    printf("    PCIe [0x%03X] 0x%08X\n", i * 4, reinterpret_cast<uint32_t const*>(&configuration.Header0())[i]);
-                }
-
-                for (int i = 0; i < 64 && i * 4 < bar0.size; ++i)
-                {
-                    printf("    xHCI [0x%03X] 0x%08X\n", i * 4, test_ptr[i]);
-                }
-                for (int i = 0x420 / 4; i < 0x440 / 4; ++i)
-                {
-                    printf("    xHCI [0x%03X] 0x%08X\n", i * 4, reinterpret_cast<uint32_t const volatile*>(bar0.physical_address)[i]);
-                }
-
-                //// Enable USB controller power via mailbox
-                while (*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24) & 0x800u)
-                {
-                    printf("    Status: 0x%08x\n", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
-
-                    printf("    Enabling USB controller power...\n");
-                    Mailbox::TagMessage<Mailbox::Tag::RPI4_PCIE_XHCI_USB_RESET, 1> resetTag{{ 1u << 20 }};
-                    if (!Mailbox::SendTags(resetTag)) {
-                        printf("    ✗ Failed to enable USB controller power\n");
-                    }
-                    else
-                    {
-                        printf("    New state: %u\n", resetTag.args[0]);
-                    }
-
-                    auto const timeoutTime = Cpu::GetPerformanceCounter() + Cpu::GetPerformanceTicksForMs(10'000);
-                    while ((*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24) & 0x800u) &&
-                           (Cpu::GetPerformanceCounter() < timeoutTime))
-                    {
-                        Cpu::Yield();
-                    }
-
-                    for (int i = 0; i * 4 < 0xB4; ++i)
-                    {
-                        printf("    PCIe [0x%03X] 0x%08X\n", i * 4, reinterpret_cast<uint32_t const*>(&configuration.Header0())[i]);
-                    }
-
-                    for (int i = 0; i < 64 && i * 4 < bar0.size; ++i)
-                    {
-                        printf("    xHCI [0x%03X] 0x%08X\n", i * 4, reinterpret_cast<uint32_t const volatile*>(bar0.physical_address)[i]);
-                    }
-                    for (int i = 0x420 / 4; i < 0x440 / 4; ++i)
-                    {
-                        printf("    xHCI [0x%03X] 0x%08X\n", i * 4, reinterpret_cast<uint32_t const volatile*>(bar0.physical_address)[i]);
-                    }
-
-                    Cpu::Halt();
-                }
-
+            //// Enable USB controller power via mailbox
+            while (*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24) & 0x800u)
+            {
                 printf("    Status: 0x%08x\n", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
 
-                // Verify XHCI controller presence by reading its capability registers
-                if (vendor == 0x1106 && device_id == 0x3483) { // VIA VL805 USB 3.0 controller
-                    printf("    Detected VL805 USB 3.0 controller\n");
-                    
-                    // Wait for power stabilization
-                    Cpu::DelayInMicroseconds(10000); // 10ms delay
-                    
-                    // XHCI capability registers start at BAR 0
-                    volatile uint32_t* xhci_base = reinterpret_cast<volatile uint32_t*>(0x600000000ULL);
-                    
-                    // Read XHCI Capability Registers
-                    uint32_t caplength_hciversion = xhci_base[0x00 / 4]; // Capability Register Length and Interface Version
-                    uint32_t hcsparams1 = xhci_base[0x04 / 4];           // Structural Parameters 1
-                    uint32_t hcsparams2 = xhci_base[0x08 / 4];           // Structural Parameters 2
-                    uint32_t hcsparams3 = xhci_base[0x0C / 4];           // Structural Parameters 3
-                    uint32_t hccparams1 = xhci_base[0x10 / 4];           // Capability Parameters 1
-                    
-                    uint8_t cap_length = caplength_hciversion & 0xFF;
-                    uint16_t hci_version = (caplength_hciversion >> 16) & 0xFFFF;
-                    
-                    printf("    XHCI Capability Length: 0x%02x\n", cap_length);
-                    printf("    XHCI Interface Version: 0x%04x\n", hci_version);
-                    printf("    Max Device Slots: %u\n", hcsparams1 & 0xFF);
-                    printf("    Max Interrupters: %u\n", (hcsparams1 >> 8) & 0x7FF);
-                    printf("    Max Ports: %u\n", (hcsparams1 >> 24) & 0xFF);
-                    
-                    // Verify this looks like a valid XHCI controller
-                    if (cap_length >= 0x20 && cap_length <= 0x40 && 
-                        (hci_version == 0x0100 || hci_version == 0x0110 || hci_version == 0x0120)) {
-                        printf("    ✓ XHCI controller verification successful\n");
-                        
-                        // Read operational registers base
-                        volatile uint32_t* xhci_op_base = reinterpret_cast<volatile uint32_t*>(0x600000000ULL + cap_length);
-                        uint32_t usbcmd = xhci_op_base[0x00 / 4];  // USB Command register
-                        uint32_t usbsts = xhci_op_base[0x04 / 4];  // USB Status register
-                        
-                        printf("    USB Command: 0x%08x\n", usbcmd);
-                        printf("    USB Status: 0x%08x %s\n", usbsts, 
-                               (usbsts & 0x1) ? "(Controller Halted)" : "(Controller Running)");
-                    } else {
-                        printf("    ✗ XHCI controller verification failed - invalid capability registers\n");
-                    }
+//                printf("    Enabling USB controller power...\n");
+//                Mailbox::TagMessage<Mailbox::Tag::RPI4_PCIE_XHCI_USB_RESET, 1> resetTag{{ 1u << 20 }};
+//                if (!Mailbox::SendTags(resetTag)) {
+//                    printf("    ✗ Failed to enable USB controller power\n");
+//                }
+//                else
+//                {
+//                    printf("    New state: %u\n", resetTag.args[0]);
+//                }
+
+                auto const timeoutTime = Cpu::GetPerformanceCounter() + Cpu::GetPerformanceTicksForMs(10'000);
+                while ((*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24) & 0x800u) &&
+                        (Cpu::GetPerformanceCounter() < timeoutTime))
+                {
+                    Cpu::Yield();
                 }
 
+                for (int i = 0; i * 4 < 0xB4; ++i)
+                {
+                    printf("    PCIe [0x%03X] 0x%08X\n", i * 4, reinterpret_cast<uint32_t const*>(&configuration.Header0())[i]);
+                }
+
+                for (int i = 0; i < 64 && i * 4 < bar0.size; ++i)
+                {
+                    printf("    xHCI [0x%03X] 0x%08X\n", i * 4, reinterpret_cast<uint32_t const volatile*>(bar0.physical_address)[i]);
+                }
+                for (int i = 0x420 / 4; i < 0x440 / 4; ++i)
+                {
+                    printf("    xHCI [0x%03X] 0x%08X\n", i * 4, reinterpret_cast<uint32_t const volatile*>(bar0.physical_address)[i]);
+                }
+
+                Cpu::Halt();
+            }
+
+            printf("    Status: 0x%08x\n", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
+
+            // Verify XHCI controller presence by reading its capability registers
+            if (vendor == 0x1106 && device_id == 0x3483) { // VIA VL805 USB 3.0 controller
+                printf("    Detected VL805 USB 3.0 controller\n");
+                
+                // Wait for power stabilization
+                Cpu::DelayInMicroseconds(10000); // 10ms delay
+                
+                // XHCI capability registers start at BAR 0
+                volatile uint32_t* xhci_base = reinterpret_cast<volatile uint32_t*>(0x600000000ULL);
+                
+                // Read XHCI Capability Registers
+                uint32_t caplength_hciversion = xhci_base[0x00 / 4]; // Capability Register Length and Interface Version
+                uint32_t hcsparams1 = xhci_base[0x04 / 4];           // Structural Parameters 1
+                uint32_t hcsparams2 = xhci_base[0x08 / 4];           // Structural Parameters 2
+                uint32_t hcsparams3 = xhci_base[0x0C / 4];           // Structural Parameters 3
+                uint32_t hccparams1 = xhci_base[0x10 / 4];           // Capability Parameters 1
+                
+                uint8_t cap_length = caplength_hciversion & 0xFF;
+                uint16_t hci_version = (caplength_hciversion >> 16) & 0xFFFF;
+                
+                printf("    XHCI Capability Length: 0x%02x\n", cap_length);
+                printf("    XHCI Interface Version: 0x%04x\n", hci_version);
+                printf("    Max Device Slots: %u\n", hcsparams1 & 0xFF);
+                printf("    Max Interrupters: %u\n", (hcsparams1 >> 8) & 0x7FF);
+                printf("    Max Ports: %u\n", (hcsparams1 >> 24) & 0xFF);
+                
+                // Verify this looks like a valid XHCI controller
+                if (cap_length >= 0x20 && cap_length <= 0x40 && 
+                    (hci_version == 0x0100 || hci_version == 0x0110 || hci_version == 0x0120)) {
+                    printf("    ✓ XHCI controller verification successful\n");
+                    
+                    // Read operational registers base
+                    volatile uint32_t* xhci_op_base = reinterpret_cast<volatile uint32_t*>(0x600000000ULL + cap_length);
+                    uint32_t usbcmd = xhci_op_base[0x00 / 4];  // USB Command register
+                    uint32_t usbsts = xhci_op_base[0x04 / 4];  // USB Status register
+                    
+                    printf("    USB Command: 0x%08x\n", usbcmd);
+                    printf("    USB Status: 0x%08x %s\n", usbsts, 
+                            (usbsts & 0x1) ? "(Controller Halted)" : "(Controller Running)");
+                } else {
+                    printf("    ✗ XHCI controller verification failed - invalid capability registers\n");
+                }
             }
 
             printf("\n");
