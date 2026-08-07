@@ -40,43 +40,6 @@
 namespace PCIe
 {
 
-union ClassAndRevision
-{
-    struct
-    {
-        uint32_t RevisionId :  8;
-        uint32_t ClassCode  : 24;
-    };
-    uint32_t Raw32;
-};
-
-union CommonConfigHeader
-{
-    Mmio::Register<uint16_t         const, 0x00> VendorId;
-    Mmio::Register<uint16_t         const, 0x02> DeviceId;
-    Mmio::Register<uint16_t              , 0x04> Command; 
-    Mmio::Register<uint16_t         const, 0x06> Status;
-    Mmio::Register<ClassAndRevision const, 0x08> Class;
-    Mmio::Register<uint8_t               , 0x0C> CacheLineSize;
-    Mmio::Register<uint8_t               , 0x0D> MasterLatencyTimer;
-    Mmio::Register<uint8_t               , 0x0E> HeaderType;
-    Mmio::Register<uint8_t               , 0x0F> BIST;
-    Mmio::Register<uint8_t          const, 0x34> CapabilitiesPtr;
-    Mmio::Register<uint8_t               , 0x3C> InterruptLine;
-    Mmio::Register<uint8_t               , 0x3D> InterruptPin;
-};
-
-union ConfigHeader0 // Endpoint device header
-{
-    CommonConfigHeader Common;
-
-    Mmio::RegisterArray<uint32_t         , 0x10, 6> BAR;
-    Mmio::Register     <uint16_t    const, 0x2C>    SystemVendorId;
-    Mmio::Register     <uint16_t    const, 0x2E>    SubsystemId;
-    Mmio::Register     <uint8_t          , 0x3E>    MinGnt;
-    Mmio::Register     <uint8_t          , 0x3F>    MaxLat;
-};
-
 union ConfigHeader1 // Bridge device header
 {
     CommonConfigHeader Common;
@@ -785,38 +748,6 @@ Bcm2711Driver::Bcm2711Driver()
     initError_.store(PCIeError::SUCCESS);
 }
 
-//std::vector<DeviceInfo> find_devices(VendorID vendor, std::optional<DeviceID> device)
-//{
-//    std::vector<DeviceInfo> matching_devices;
-//
-//    for (const auto& info : devices_)
-//    {
-//        if (info.VendorId != vendor) continue;
-//        
-//        if (device.has_value()) {
-//            if (info.DeviceId != device.value()) continue;
-//        }
-//
-//        matching_devices.push_back(info);
-//    }
-//    
-//    return matching_devices;
-//}
-
-//std::vector<DeviceInfo> find_devices_by_class(ClassCode class_code, std::uint32_t mask)
-//{
-//    std::vector<DeviceInfo> matching_devices;
-//
-//    for (const auto& info : devices_)
-//    {
-//        if ((info.ClassCode & mask) == (class_code & mask)) {
-//            matching_devices.push_back(info);
-//        }
-//    }
-//    
-//    return matching_devices;
-//}
-
 // Utility functions implementation
 namespace utils {
     constexpr std::string_view class_code_to_string(ClassCode class_code) noexcept {
@@ -869,7 +800,6 @@ namespace examples {
     {
         Bcm2711Driver root{};
 
-        
         auto init_result = root.initError_.load();
         if (init_result != PCIeError::SUCCESS) {
             // Initialization error

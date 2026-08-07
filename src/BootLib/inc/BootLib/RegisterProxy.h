@@ -10,25 +10,25 @@
 namespace BootLib
 {
 
-// All registers can be any size from 8 bits to 32 (only powers of 2).
-// TODO: Support 64 bits?
+// All registers can be any size from 8 bits to 64 (only powers of 2).
 // We admit as a register any type that fits and is trivial to copy.
 template < typename T >
-concept RegisterType = (std::is_trivially_copyable_v<std::remove_const_t<T>>) && (sizeof(T) <= sizeof(uint32_t));
+concept RegisterType = (std::is_trivially_copyable_v<std::remove_const_t<T>>) && (sizeof(T) <= sizeof(uint64_t));
 
 template < size_t Size > struct RawRegisterTypeT;
 template <> struct RawRegisterTypeT<1> { using type =  uint8_t; };
 template <> struct RawRegisterTypeT<2> { using type = uint16_t; };
 template <> struct RawRegisterTypeT<4> { using type = uint32_t; };
+template <> struct RawRegisterTypeT<8> { using type = uint64_t; };
 template < size_t Size > using RawRegisterType = typename RawRegisterTypeT<Size>::type;
 
 /// @brief Proxy template for accessing memory-mapped I/O (MMIO) registers.
 ///
 /// This template provides a type-safe and convenient interface for reading and writing
-/// 8- to 32-bit hardware registers mapped into memory.
+/// 8- to 64-bit hardware registers mapped into memory.
 /// The address of the Register class must be the address in memory of the register itself.
 /// The optional offset allows for multiple registers in a region to be grouped as a convenient union.
-/// The template enforces that only trivially copyable types of 8 to 32 bits can be used,
+/// The template enforces that only trivially copyable types of 8 to 64 bits can be used,
 /// ensuring safe and predictable register access.
 ///
 /// Usage:

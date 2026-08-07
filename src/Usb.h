@@ -6,7 +6,13 @@
 #include <memory>
 #include <span>
 
-namespace Usb {
+namespace PCIe {
+    struct Bcm2711Driver;
+    struct DeviceAddress;
+}
+
+namespace Usb
+{
 
 enum class Status {
     Success,
@@ -15,10 +21,10 @@ enum class Status {
     NotFound
 };
 
-class UsbController
+class Controller
 {
 public:
-    virtual ~UsbController() = default;
+    virtual ~Controller() = default;
     
     virtual Status initialize() = 0;
     virtual Status shutdown() = 0;
@@ -29,9 +35,18 @@ public:
     virtual Status controlTransfer(uint8_t requestType, uint8_t request, 
                                  uint16_t value, uint16_t index,
                                  std::span<uint8_t> data = {}) = 0;
+
+    virtual void process_pending_events() = 0;
+
+    virtual bool run_hello_world_test() { return true; }
 };
 
-std::unique_ptr<UsbController> CreateXhciController();
+namespace Xhci
+{
+    
+    std::unique_ptr<Controller> CreateController(PCIe::Bcm2711Driver&, PCIe::DeviceAddress const&);
+
+} // namespace Xhci
 
 /*
 class UsbDevice {

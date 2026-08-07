@@ -1,6 +1,6 @@
 #pragma once
 
-#include <BootLib/RegisterProxy.h>
+#include "Mmio.h"
 
 #include <cstdint>
 #include <memory>
@@ -195,6 +195,43 @@ struct Capability
     template < typename StructT > auto& GetStruct(CommonConfigHeader const& header) const { return *reinterpret_cast<StructT const*>(reinterpret_cast<uintptr_t>(&header) + Offset); }
 };
 
+union ClassAndRevision
+{
+    struct
+    {
+        uint32_t RevisionId :  8;
+        uint32_t ClassCode  : 24;
+    };
+    uint32_t Raw32;
+};
+
+union CommonConfigHeader
+{
+    Mmio::Register<uint16_t         const, 0x00> VendorId;
+    Mmio::Register<uint16_t         const, 0x02> DeviceId;
+    Mmio::Register<uint16_t              , 0x04> Command; 
+    Mmio::Register<uint16_t         const, 0x06> Status;
+    Mmio::Register<ClassAndRevision const, 0x08> Class;
+    Mmio::Register<uint8_t               , 0x0C> CacheLineSize;
+    Mmio::Register<uint8_t               , 0x0D> MasterLatencyTimer;
+    Mmio::Register<uint8_t               , 0x0E> HeaderType;
+    Mmio::Register<uint8_t               , 0x0F> BIST;
+    Mmio::Register<uint8_t          const, 0x34> CapabilitiesPtr;
+    Mmio::Register<uint8_t               , 0x3C> InterruptLine;
+    Mmio::Register<uint8_t               , 0x3D> InterruptPin;
+};
+
+union ConfigHeader0 // Endpoint device header
+{
+    CommonConfigHeader Common;
+
+    Mmio::RegisterArray<uint32_t         , 0x10, 6> BAR;
+    Mmio::Register     <uint16_t    const, 0x2C>    SystemVendorId;
+    Mmio::Register     <uint16_t    const, 0x2E>    SubsystemId;
+    Mmio::Register     <uint8_t          , 0x3E>    MinGnt;
+    Mmio::Register     <uint8_t          , 0x3F>    MaxLat;
+};
+
 // Concepts for type safety
 template<typename T>
 concept PCIeRegisterType = std::integral<T> && (sizeof(T) <= 4);
@@ -275,12 +312,6 @@ struct Bcm2711Driver
     DeviceInfo              rootDeviceInfo_{};
     std::vector<DeviceInfo> devices_;
 };
-
-
-// Device enumeration
-[[nodiscard]] std::vector<DeviceInfo> enumerate_devices();
-[[nodiscard]] std::vector<DeviceInfo> find_devices(VendorID vendor, std::optional<DeviceID> device = std::nullopt);
-[[nodiscard]] std::vector<DeviceInfo> find_devices_by_class(ClassCode class_code, std::uint32_t mask = 0xFFFFFF00);
 
 // Utility functions
 namespace utils {

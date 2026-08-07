@@ -526,11 +526,34 @@ void Core0(void* dtb)
 
     if (Cpu::IsRpi4())
     {
-        PCIe::examples::demonstrate_enumeration();
+        //PCIe::examples::demonstrate_enumeration();
+        PCIe::Bcm2711Driver pcie{};
 
-        auto xhci = Usb::CreateXhciController();
-        xhci->initialize();
-        
+        for (auto& device : pcie.devices_)
+        {
+            Uart::Puts("Device found: ");
+            Uart::PutHex(device.Address.Bus);
+            Uart::Puts(":");
+            Uart::PutHex(device.Address.Device);
+            Uart::Puts(".");
+            Uart::PutHex(device.Address.Function);
+            Uart::Puts("\n Vendor ID: ");
+            Uart::PutHex(device.VendorId);
+            Uart::Puts("\n Device ID: ");
+            Uart::PutHex(device.DeviceId);
+            Uart::Puts("\n Class Code: ");
+            Uart::PutHex(device.ClassCode);
+            Uart::Puts("\n");
+
+            if (device.ClassCode == 0x0c0330) // USB xHCI controller
+            {
+                auto xhci = Usb::Xhci::CreateController(pcie, device.Address);
+                xhci->initialize();
+                Cpu::DelayInMilliseconds(10);
+                xhci->process_pending_events();
+                xhci->run_hello_world_test();
+            }
+        }
     }
     else
     {
