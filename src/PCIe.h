@@ -177,12 +177,12 @@ enum class BarType : uint8_t {
 struct BarInfo
 {
     std::uint8_t    bar_number;
-    PhysicalAddress physical_address;
-    std::size_t     size;
     uint8_t         flags;
     bool            is_memory_space;  // true for memory, false for I/O
     bool            is_64bit;
     bool            is_prefetchable;
+    PhysicalAddress physical_address;
+    std::size_t     size;
 };
 
 // PCIe capability structure
@@ -191,8 +191,8 @@ struct Capability
     CapabilityId Id;
     uint8_t      Offset;
 
-    template < typename StructT >
-    auto& GetStruct(CommonConfigHeader& header) const { return *reinterpret_cast<StructT*>(reinterpret_cast<uintptr_t>(&header) + Offset); }
+    template < typename StructT > auto& GetStruct(CommonConfigHeader&       header) const { return *reinterpret_cast<StructT*      >(reinterpret_cast<uintptr_t>(&header) + Offset); }
+    template < typename StructT > auto& GetStruct(CommonConfigHeader const& header) const { return *reinterpret_cast<StructT const*>(reinterpret_cast<uintptr_t>(&header) + Offset); }
 };
 
 // Concepts for type safety
@@ -227,7 +227,7 @@ public:
 
     // BAR access
     [[nodiscard]] size_t MaxBars() const;
-    [[nodiscard]] size_t enumerate_bars(std::span<BarInfo>) const;
+    [[nodiscard]] std::generator<BarInfo> enumerate_bars() const;
     [[nodiscard]] BarInfo get_bar(std::uint8_t bar_number) const;
     [[nodiscard]] std::span<std::byte> map_bar(BarInfo& bar);
 
@@ -267,10 +267,12 @@ struct Bcm2711Driver
 
     Registers& registers;
 
+    ConfigHeader1*               rootHeader_       = nullptr; // Pointer to the root device's configuration header if present
     PcieCapabilities*            pcieCapabilities_ = nullptr; // Pointer to the root device's PCIe capabilities structure if present
     PowerManagementCapabilities* pmCapabilities_   = nullptr; // Pointer to the root device's Power Management capabilities structure if present
 
     std::shared_mutex       driver_mutex_;
+    DeviceInfo              rootDeviceInfo_{};
     std::vector<DeviceInfo> devices_;
 };
 

@@ -293,5 +293,11 @@ extern "C" void _Unwind_Resume(void* exception_object)
 // environments where exception handling is not supported or desired.
 extern "C" void* __gxx_personality_v0 = 0;
 
+extern "C" void __cxa_rethrow()
+{
+    Uart::Raw::Puts("__cxa_rethrow called - not implemented\n");
+    Processor::Halt();
+}
+
 }
 // namespace Exception
