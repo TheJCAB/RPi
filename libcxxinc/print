@@ -209,18 +209,25 @@ _LIBCPP_HIDE_FROM_ABI inline bool __is_terminal([[maybe_unused]] FILE* __stream)
 }
 #    endif // _WIN32
 
-[[noreturn]] _LIBCPP_HIDE_FROM_ABI inline void __handle_output_error(FILE* __stream) {
-  if (std::feof(__stream))
-    std::__throw_system_error(EIO, "EOF while writing the formatted output");
-  std::__throw_system_error(std::ferror(__stream), "failed to write formatted output");
-}
+//[[noreturn]] _LIBCPP_HIDE_FROM_ABI inline void __handle_output_error(FILE* __stream) {
+//  if (std::feof(__stream))
+//    std::__throw_system_error(EIO, "EOF while writing the formatted output");
+//  std::__throw_system_error(std::ferror(__stream), "failed to write formatted output");
+//}
+
+//template <class = void> // TODO PRINT template or availability markup fires too eagerly (http://llvm.org/PR61563).
+//_LIBCPP_HIDE_FROM_ABI inline void __output_nonunicode(FILE* __stream, string_view __text) {
+//  _LIBCPP_ASSERT_NON_NULL(__stream, "__stream must be a valid pointer to an output C stream");
+//  size_t __size = std::fwrite(__text.data(), 1, __text.size(), __stream);
+//  if (__size < __text.size())
+//    __print::__handle_output_error(__stream);
+//}
 
 template <class = void> // TODO PRINT template or availability markup fires too eagerly (http://llvm.org/PR61563).
 _LIBCPP_HIDE_FROM_ABI inline void __output_nonunicode(FILE* __stream, string_view __text) {
-  _LIBCPP_ASSERT_NON_NULL(__stream, "__stream must be a valid pointer to an output C stream");
-  size_t __size = std::fwrite(__text.data(), 1, __text.size(), __stream);
-  if (__size < __text.size())
-    __print::__handle_output_error(__stream);
+  size_t __size = printf("%*s", (int)__text.size(), __text.data());
+  //if (__size != __text.size())
+    //__print::__handle_output_error(__stream);
 }
 
 #    if _LIBCPP_HAS_UNICODE

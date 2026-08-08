@@ -8,6 +8,8 @@
 //#endif
 #include "emb-stdio.h"			// This units header
 
+#include <charconv>
+
 #include "Uart.h"
 
 /*--------------------------------------------------------------------------}
@@ -571,6 +573,15 @@ literal:
     return chars_written;
 }
 
+int _doprnt(int (*putc_func) (int, void*, uintptr_t), void* putc_arg, uintptr_t context, const char *fmt, ...)
+{
+    va_list args;
+    va_start(args, fmt);
+    auto chars_written = _doprnt(fmt, args, putc_func, putc_arg, context);
+    va_end(args);
+    return chars_written;
+}
+
 static constexpr char digits_lc[17] = "0123456789abcdef";
 static constexpr char digits_uc[17] = "0123456789ABCDEF";
 static constexpr unsigned char base_to_nbits[17] = {
@@ -832,3 +843,218 @@ int puts(const char* str)
 
     return 0; // Success
 }
+
+std::to_chars_result std::ABI::to_chars(char* __first, char* __last, float __value)
+{
+    char *s = __first;
+    _doprnt(prn_to_buf, (void*)&s, (uintptr_t)(__last - __first), "%f", __value);
+    if (s < __last)
+    {
+        return std::to_chars_result{ s, std::errc{} };
+    }
+    else
+    {
+        return std::to_chars_result{ __last, std::errc::value_too_large };
+    }
+}
+
+std::to_chars_result std::ABI::to_chars(char* __first, char* __last, double __value)
+{
+    char *s = __first;
+    _doprnt(prn_to_buf, (void*)&s, (uintptr_t)(__last - __first), "%f", __value);
+    if (s < __last)
+    {
+        return std::to_chars_result{ s, std::errc{} };
+    }
+    else
+    {
+        return std::to_chars_result{ __last, std::errc::value_too_large };
+    }
+}
+
+
+std::to_chars_result std::ABI::to_chars(char* __first, char* __last, long double __value)
+{
+    char *s = __first;
+    _doprnt(prn_to_buf, (void*)&s, (uintptr_t)(__last - __first), "%lf", __value);
+    if (s < __last)
+    {
+        return std::to_chars_result{ s, std::errc{} };
+    }
+    else
+    {
+        return std::to_chars_result{ __last, std::errc::value_too_large };
+    }
+}
+
+char const* ParseDoubleFormat(std::chars_format fmt)
+{
+    switch (fmt)
+    {
+        case std::chars_format::scientific: return "%e";
+        case std::chars_format::fixed     : return "%f";
+        // Hex float not supported: case std::chars_format::hex       : return "%a";
+        case std::chars_format::general   : return "%g";
+        default:
+            return nullptr;
+    }
+}
+
+char const* ParseLongDoubleFormat(std::chars_format fmt)
+{
+    switch (fmt)
+    {
+        case std::chars_format::scientific: return "%le";
+        case std::chars_format::fixed     : return "%lf";
+        // Hex float not supported: case std::chars_format::hex       : return "%la";
+        case std::chars_format::general   : return "%lg";
+        default:
+            return nullptr;
+    }
+}
+
+char const* ParseDoublePrecisionFormat(std::chars_format fmt)
+{
+    switch (fmt)
+    {
+        case std::chars_format::scientific: return "%.*e";
+        case std::chars_format::fixed     : return "%.*f";
+        // Hex float not supported: case std::chars_format::hex       : return "%.*a";
+        case std::chars_format::general   : return "%.*g";
+        default:
+            return nullptr;
+    }
+}
+
+char const* ParseLongDoublePrecisionFormat(std::chars_format fmt)
+{
+    switch (fmt)
+    {
+        case std::chars_format::scientific: return "%.*le";
+        case std::chars_format::fixed     : return "%.*lf";
+        // Hex float not supported: case std::chars_format::hex       : return "%.*la";
+        case std::chars_format::general   : return "%.*lg";
+        default:
+            return nullptr;
+    }
+}
+
+std::to_chars_result std::ABI::to_chars(char* __first, char* __last, float __value, std::chars_format __fmt)
+{
+    char const* fmt = ParseDoubleFormat(__fmt);
+    if (!fmt)
+    {
+        return std::to_chars_result{ __last, std::errc::not_supported };
+    }
+    char *s = __first;
+    _doprnt(prn_to_buf, (void*)&s, (uintptr_t)(__last - __first), fmt, __value);
+    if (s < __last)
+    {
+        return std::to_chars_result{ s, std::errc{} };
+    }
+    else
+    {
+        return std::to_chars_result{ __last, std::errc::value_too_large };
+    }
+}
+
+
+std::to_chars_result std::ABI::to_chars(char* __first, char* __last, double __value, chars_format __fmt)
+{
+    char const* fmt = ParseDoubleFormat(__fmt);
+    if (!fmt)
+    {
+        return std::to_chars_result{ __last, std::errc::not_supported };
+    }
+    char *s = __first;
+    _doprnt(prn_to_buf, (void*)&s, (uintptr_t)(__last - __first), fmt, __value);
+    if (s < __last)
+    {
+        return std::to_chars_result{ s, std::errc{} };
+    }
+    else
+    {
+        return std::to_chars_result{ __last, std::errc::value_too_large };
+    }
+}
+
+
+std::to_chars_result std::ABI::to_chars(char* __first, char* __last, long double __value, chars_format __fmt)
+{
+    char const* fmt = ParseLongDoubleFormat(__fmt);
+    if (!fmt)
+    {
+        return std::to_chars_result{ __last, std::errc::not_supported };
+    }
+    char *s = __first;
+    _doprnt(prn_to_buf, (void*)&s, (uintptr_t)(__last - __first), fmt, __value);
+    if (s < __last)
+    {
+        return std::to_chars_result{ s, std::errc{} };
+    }
+    else
+    {
+        return std::to_chars_result{ __last, std::errc::value_too_large };
+    }
+}
+
+
+std::to_chars_result std::ABI::to_chars(char* __first, char* __last, float __value, chars_format __fmt, int __precision)
+{
+    char const* fmt = ParseDoublePrecisionFormat(__fmt);
+    if (!fmt)
+    {
+        return std::to_chars_result{ __last, std::errc::not_supported };
+    }
+    char *s = __first;
+    _doprnt(prn_to_buf, (void*)&s, (uintptr_t)(__last - __first), fmt, __precision, __value);
+    if (s < __last)
+    {
+        return std::to_chars_result{ s, std::errc{} };
+    }
+    else
+    {
+        return std::to_chars_result{ __last, std::errc::value_too_large };
+    }
+}
+
+
+std::to_chars_result std::ABI::to_chars(char* __first, char* __last, double __value, chars_format __fmt, int __precision)
+{
+    char const* fmt = ParseDoublePrecisionFormat(__fmt);
+    if (!fmt)
+    {
+        return std::to_chars_result{ __last, std::errc::not_supported };
+    }
+    char *s = __first;
+    _doprnt(prn_to_buf, (void*)&s, (uintptr_t)(__last - __first), fmt, __precision, __value);
+    if (s < __last)
+    {
+        return std::to_chars_result{ s, std::errc{} };
+    }
+    else
+    {
+        return std::to_chars_result{ __last, std::errc::value_too_large };
+    }
+}
+
+
+std::to_chars_result std::ABI::to_chars(char* __first, char* __last, long double __value, chars_format __fmt, int __precision)
+{
+    char const* fmt = ParseLongDoublePrecisionFormat(__fmt);
+    if (!fmt)
+    {
+        return std::to_chars_result{ __last, std::errc::not_supported };
+    }
+    char *s = __first;
+    _doprnt(prn_to_buf, (void*)&s, (uintptr_t)(__last - __first), fmt, __precision, __value);
+    if (s < __last)
+    {
+        return std::to_chars_result{ s, std::errc{} };
+    }
+    else
+    {
+        return std::to_chars_result{ __last, std::errc::value_too_large };
+    }
+}
+

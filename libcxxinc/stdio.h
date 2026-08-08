@@ -27,9 +27,11 @@ Macros:
 //#define _IOFBF
 //#define _IOLBF
 //#define _IONBF
-//#define stderr
-//#define stdin
-//#define stdout
+#define stderr ((void*)2)
+#define stdin ((void*)3)
+#define stdout ((void*)1)
+
+typedef void FILE;
 
 /*
 

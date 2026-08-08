@@ -13,6 +13,7 @@
 #include <new>
 #include <memory>
 #include <atomic>
+#include <string>
 
 
 extern "C"
@@ -98,6 +99,50 @@ void* memmove(void* dest, void const* src, size_t n)
         }
         return dest;
     }
+}
+
+int memcmp(void const* restrict s1, void const* restrict s2, size_t n)
+{
+    uint8_t const* d = static_cast<uint8_t const*>(s1);
+    uint8_t const* s = static_cast<uint8_t const*>(s2);
+    size_t firstBytes = (uintptr_t)d & 7;
+    firstBytes = firstBytes > n ? n : firstBytes;
+    n -= firstBytes;
+    for (; firstBytes > 0; --firstBytes)
+    {
+        if (*d++ != *s++) return static_cast<uint8_t>(*(d - 1)) < static_cast<uint8_t>(*(s - 1)) ? -1 : 1;
+    }
+    size_t wholeQwords = n / 8;
+    if (wholeQwords > 0)
+    {
+        n -= wholeQwords * 8;
+        uint64_t const* qd = reinterpret_cast<uint64_t const*>(d);
+        uint64_t const* qs = reinterpret_cast<uint64_t const*>(s);
+        for (; wholeQwords > 0; --wholeQwords)
+        {
+            if (*qd++ != *qs++) return static_cast<uint8_t>(*(qd - 1)) < static_cast<uint8_t>(*(qs - 1)) ? -1 : 1;
+        }
+        d = reinterpret_cast<uint8_t const*>(qd);
+        s = reinterpret_cast<uint8_t const*>(qs);
+    }
+    for (; n > 0; --n)
+    {
+        if (*d++ != *s++) return static_cast<uint8_t>(*(d - 1)) < static_cast<uint8_t>(*(s - 1)) ? -1 : 1;
+    }
+    return 0;
+}
+
+void* memchr(void* s, int c, size_t n)
+{
+    uint8_t* p = static_cast<uint8_t*>(s);
+    for (size_t i = 0; i < n; ++i)
+    {
+        if (p[i] == static_cast<uint8_t>(c))
+        {
+            return static_cast<void*>(&p[i]);
+        }
+    }
+    return nullptr;
 }
 
 int wctob(wint_t c)
@@ -318,6 +363,8 @@ void const* ABI::__shared_weak_count::__get_deleter(std::type_info const&) const
     // TODO: Implement this
     return nullptr;
 }
+
+template class basic_string<char, std::char_traits<char>, std::allocator<char>>;
 
 }
 // namespace std

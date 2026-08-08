@@ -41,6 +41,7 @@
 
 #include <string.h>
 #include <wchar.h>
+#include <print>
 
 #include <span>
 
@@ -1997,6 +1998,7 @@ class DesignWareUsbDriver : public UsbDriver
 
 Async::task<std::shared_ptr<UsbDriver>> UsbInitializeDesignWare()
 {
+    std::println("Initializing DesignWare USB Driver (from C++{})", 23);
     auto result = std::make_unique<DesignWareUsbDriver>();
     co_await result->Initialize();
     co_return result;

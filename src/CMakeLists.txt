@@ -11,6 +11,7 @@ add_kernel_image(kernel8
     Crt.cpp
     CppException.cpp
     CppTypeInfo.cpp
+    ClangBuiltins.cpp
 
     DeviceTree.cpp
 
