@@ -19,16 +19,16 @@ uint32_t rand()
 
 //#include <random>
 
-void Flashing()
+void Flashing(UsbDriver& driver)
 {
-    Keyboard::Init();
+    Keyboard::Init(driver);
 
     Color565 background = Magenta;
     for (;;)
     {
         for (int i = 0; i < 2; ++i)
         {
-            if (Keyboard::IsKeyPressed(' '))
+            if (Keyboard::IsKeyPressed(driver, ' '))
             {
                 background = Blue;
             }
@@ -135,10 +135,10 @@ void FlashScreen(Color565 color)
     Cpu::DelayInMicroseconds(33'333); // Flash for 33.333 ms (30 FPS)
 }
 
-void Snake()
+void Snake(UsbDriver& driver)
 {
-    Keyboard::Init();
-    Gamepad::Init();
+    Keyboard::Init(driver);
+    Gamepad::Init(driver);
 
     using namespace Framebuffer;
 
@@ -147,19 +147,19 @@ void Snake()
     for (;;)
     {
         auto time0 = Cpu::GetPerformanceCounter();
-        if (Keyboard::IsKeyPressed('d') || Gamepad::IsButtonPressed(Gamepad::Button::AnyRight))
+        if (Keyboard::IsKeyPressed(driver, 'd') || Gamepad::IsButtonPressed(driver, Gamepad::Button::AnyRight))
         {
             direction = Right;
         }
-        if (Keyboard::IsKeyPressed('a') || Gamepad::IsButtonPressed(Gamepad::Button::AnyLeft))
+        if (Keyboard::IsKeyPressed(driver, 'a') || Gamepad::IsButtonPressed(driver, Gamepad::Button::AnyLeft))
         {
             direction = Left;
         }
-        if (Keyboard::IsKeyPressed('s') || Gamepad::IsButtonPressed(Gamepad::Button::AnyDown))
+        if (Keyboard::IsKeyPressed(driver, 's') || Gamepad::IsButtonPressed(driver, Gamepad::Button::AnyDown))
         {
             direction = Down;
         }
-        if (Keyboard::IsKeyPressed('w') || Gamepad::IsButtonPressed(Gamepad::Button::AnyUp))
+        if (Keyboard::IsKeyPressed(driver, 'w') || Gamepad::IsButtonPressed(driver, Gamepad::Button::AnyUp))
         {
             direction = Up;
         }
@@ -270,7 +270,7 @@ void Snake()
     }
 }
 
-void Run()
+void Run(UsbDriver& driver)
 {
-    Snake();
+    Snake(driver);
 }

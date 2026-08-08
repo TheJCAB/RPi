@@ -57,11 +57,11 @@ struct Report {
     int16_t axis4;
 };
 
-static Cpu::PerformanceTimeDiff RefreshState()
+static Cpu::PerformanceTimeDiff RefreshState(UsbDriver& driver)
 {
     uint16_t const USB_HID_REPORT_TYPE_INPUT = 1;
     Report report;
-    auto const status = Async::WaitOnTask(HIDReadInterruptReport(firstGamepad, 0, reinterpret_cast<std::byte*>(&report), sizeof(report), nullptr));
+    auto const status = Async::WaitOnTask(HIDReadInterruptReport(driver, firstGamepad, 0, reinterpret_cast<std::byte*>(&report), sizeof(report), nullptr));
     //auto const status = HIDReadReport(firstKbd, 0, USB_HID_REPORT_TYPE_INPUT << 8 | 1, &buf[0], 8);
     if (status == RESULT::Ok)
     {
@@ -145,12 +145,12 @@ typedef struct __attribute__((packed)) {
     uint8_t data[63];          // Vendor-defined output
 } HIDReport_0x01_t;
 
-static Cpu::PerformanceTimeDiff RefreshState()
+static Cpu::PerformanceTimeDiff RefreshState(UsbDriver& driver)
 {
     uint16_t const USB_HID_REPORT_TYPE_INPUT = 1;
     Report report;
     auto time = Cpu::GetPerformanceCounter();
-    auto const status = Async::WaitOnTask(HIDReadInterruptReport(firstGamepad, 0, reinterpret_cast<std::byte*>(&report), sizeof(report), nullptr));
+    auto const status = Async::WaitOnTask(HIDReadInterruptReport(driver, firstGamepad, 0, reinterpret_cast<std::byte*>(&report), sizeof(report), nullptr));
     //printf("Gamepad time: %lld us\n", GetUsForPerformanceTicks(Cpu::GetPerformanceCounter() - time));
     //auto const status = HIDReadReport(firstKbd, 0, USB_HID_REPORT_TYPE_INPUT << 8 | 1, &buf[0], 8);
     if (status == RESULT::Ok)
@@ -205,18 +205,18 @@ static Cpu::PerformanceTimeDiff RefreshState()
 }
 // namespace NintendoSwitchPro
 
-void Init()
+void Init(UsbDriver& driver)
 {
     DeviceDescriptor descriptor;
 
     // Detect the first keyboard on USB bus
     for (int i = 1; i <= MaximumDevices; i++)
     {
-        if (!IsHid(i))
+        if (!driver.IsHid(i))
         {
             continue;
         }
-        descriptor = GetDeviceDescriptor(i);
+        descriptor = driver.GetDeviceDescriptor(i);
         if (descriptor.bDeviceProtocol != 0) // Generic HID protocol (not a mouse or keyboard)
         {
             continue;
@@ -233,7 +233,7 @@ void Init()
             firstGamepadType = Device::NintendoSwitchPro;
 
             std::byte buf[2] = { std::byte{0x80}, std::byte{0x04} }; // Request to stay on USB instead of reverting to Bluetooth
-            auto const status = Async::WaitOnTask(HIDReadReport(firstGamepad, 0, USB_HID_REPORT_TYPE_FEATURE << 8 | 0x80, &buf[0], 8));
+            auto const status = Async::WaitOnTask(HIDReadReport(driver, firstGamepad, 0, USB_HID_REPORT_TYPE_FEATURE << 8 | 0x80, &buf[0], 8));
             if (status != RESULT::Ok)
             {
                 printf("HID Gamepad Feature Report Error: %d\n", status);
@@ -252,28 +252,28 @@ void Init()
         printf("Gamepad detected\r\n");
         printf("Vendor ID: %04X, Product ID: %04X\r\n", descriptor.idVendor, descriptor.idProduct);
         char buffer[256];
-        if (size_t length = GetDeviceProductString(firstGamepad, buffer))
+        if (size_t length = driver.GetDeviceProductString(firstGamepad, buffer))
         {
             printf("Product: %s\r\n", buffer);
         }
-        if (size_t length = GetDeviceManufacturerString(firstGamepad, buffer))
+        if (size_t length = driver.GetDeviceManufacturerString(firstGamepad, buffer))
         {
             printf("Manufacturer: %s\r\n", buffer);
         }
-        if (size_t length = GetDeviceSerialNumberString(firstGamepad, buffer))
+        if (size_t length = driver.GetDeviceSerialNumberString(firstGamepad, buffer))
         {
             printf("Serial Number: %s\r\n", buffer);
         }
-        if (size_t length = GetDeviceConfigStringString(firstGamepad, buffer))
+        if (size_t length = driver.GetDeviceConfigStringString(firstGamepad, buffer))
         {
             printf("Configuration: %s\r\n", buffer);
         }
-        Async::WaitOnTask(HIDEnableInterruptINSimple(firstGamepad, 0));
+        Async::WaitOnTask(HIDEnableInterruptINSimple(driver, firstGamepad, 0));
         printf("Gamepad configured\r\n");
     }
 }
 
-static void RefreshStateIfNeeded()
+static void RefreshStateIfNeeded(UsbDriver& driver)
 {
     if (firstGamepad == 0)
     {
@@ -286,8 +286,8 @@ static void RefreshStateIfNeeded()
     {
         switch (firstGamepadType)
         {
-            case Device::NintendoSwitchPro: { auto nextRefreshDelay = NintendoSwitchPro::RefreshState(); nextRefresh = Cpu::GetPerformanceCounter() + nextRefreshDelay; break; }
-            case Device::DragonRise       : { auto nextRefreshDelay = DragonRise       ::RefreshState(); nextRefresh = Cpu::GetPerformanceCounter() + nextRefreshDelay; break; }
+            case Device::NintendoSwitchPro: { auto nextRefreshDelay = NintendoSwitchPro::RefreshState(driver); nextRefresh = Cpu::GetPerformanceCounter() + nextRefreshDelay; break; }
+            case Device::DragonRise       : { auto nextRefreshDelay = DragonRise       ::RefreshState(driver); nextRefresh = Cpu::GetPerformanceCounter() + nextRefreshDelay; break; }
             default:
                 printf("Gamepad: Unknown device type %d\n", static_cast<int>(firstGamepadType));
                 nextRefresh = Cpu::PerformanceTime{0xFFFF'FFFF'FFFF'FFFF}; // Don't try again
@@ -296,15 +296,15 @@ static void RefreshStateIfNeeded()
     }
 }
 
-bool IsButtonPressed(Button button)
+bool IsButtonPressed(UsbDriver& driver, Button button)
 {
-    RefreshStateIfNeeded();
+    RefreshStateIfNeeded(driver);
     return ButtonStates[static_cast<size_t>(button)];
 }
 
-int16_t GetAxisState(Axis axis)
+int16_t GetAxisState(UsbDriver& driver, Axis axis)
 {
-    RefreshStateIfNeeded();
+    RefreshStateIfNeeded(driver);
     return AxisStates[static_cast<size_t>(axis)];
 }
 

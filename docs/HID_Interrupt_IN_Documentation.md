@@ -65,11 +65,11 @@ while (true) {
 
 The functions return standard `RESULT` error codes:
 - `OK` - Success
-- `ErrorArgument` - Invalid parameters
-- `ErrorDeviceNumber` - Invalid device number
-- `ErrorNotHID` - Device is not a HID device
-- `ErrorIndex` - Invalid HID index
-- `ErrorDevice` - No interrupt IN endpoint found
+- `RESULT::ErrorArgument` - Invalid parameters
+- `RESULT::ErrorDeviceNumber` - Invalid device number
+- `RESULT::ErrorNotHID` - Device is not a HID device
+- `RESULT::ErrorIndex` - Invalid HID index
+- `RESULT::ErrorDevice` - No interrupt IN endpoint found
 
 ## Troubleshooting
 

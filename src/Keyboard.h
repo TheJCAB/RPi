@@ -1,11 +1,13 @@
 #pragma once
 
+struct UsbDriver;
+
 namespace Keyboard
 {
 
-void Init();
+void Init(UsbDriver&);
 
-bool IsKeyPressed(char key);
+bool IsKeyPressed(UsbDriver&, char key);
 
 }
 // namespace Keyboard

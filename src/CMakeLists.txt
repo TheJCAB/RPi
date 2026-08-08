@@ -32,7 +32,7 @@ add_kernel_image(kernel8
     Debugger.cpp        Debugger.h
     TimerExample.cpp    TimerExample.h
     Timer.cpp           Timer.h
-    UsbDevices.cpp      UsbDevices.h
+                        UsbDriver.h
     HidUsbDevices.cpp   HidUsbDevices.h
     Keyboard.cpp        Keyboard.h
     Gamepad.cpp         Gamepad.h
@@ -43,6 +43,8 @@ add_kernel_image(kernel8
     DesignWareUsbHost.cpp
     DesignWareUsbChannel.cpp DesignWareUsbChannel.h
     Interrupts.cpp      Interrupts.h
+
+    DesignWareUsbDriver.cpp
 
     Usb.h
     Processor.h

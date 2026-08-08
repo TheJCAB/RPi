@@ -22,7 +22,7 @@
 #include "Syscall.h"
 #include "Timer.h"
 #include "Run.h"
-#include "UsbDevices.h"
+#include "UsbDriver.h"
 #include "PCIe.h"
 #include "Usb.h"
 #include "Async.h"
@@ -524,6 +524,8 @@ void Core0(void* dtb)
 
     Uart::Puts("\n\n\n");
 
+    std::shared_ptr<UsbDriver> usbDriver;
+
     if (Cpu::IsRpi4())
     {
         //PCIe::examples::demonstrate_enumeration();
@@ -557,15 +559,15 @@ void Core0(void* dtb)
     }
     else
     {
-        auto usbInitTask = UsbInitialize();
+        auto usbInitTask = UsbInitializeDesignWare();
 
-        (void)WaitOnTask(std::move(usbInitTask));
+        usbDriver = WaitOnTask(std::move(usbInitTask));
 
-        (void)WaitOnTask(UsbCheckForChange());
+        (void)WaitOnTask(usbDriver->UsbCheckForChange());
 
         /* Display the USB tree */
         printf("\n");
-        UsbShowTree(UsbGetRootHub(), 1, '+');
+        usbDriver->UsbShowTree(usbDriver->UsbGetRootHub(), 1, '+');
         printf("\n");
     }
 
@@ -586,7 +588,7 @@ void Core0(void* dtb)
     // USB              Done Pi3
     // Networking?
 
-    Run();
+    Run(*usbDriver);
 }
 
 }

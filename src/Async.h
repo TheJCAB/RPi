@@ -98,7 +98,7 @@ namespace Async
     // We designed our task to be co_awaitable only once, so that
     // it can contain a move-only type. Any transfer of T as an
     // object category must be done as an rvalue reference.
-    template<typename T>
+    template<typename T = void>
     struct task;
 
     template<typename T>

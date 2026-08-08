@@ -2,4 +2,6 @@
 
 #include <stdint.h>
 
-void Run();
+struct UsbDriver;
+
+void Run(UsbDriver&);

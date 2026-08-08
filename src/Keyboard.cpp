@@ -43,12 +43,12 @@ constexpr auto CharToKeyCode = [](char c) constexpr
     return keyCodes;
 };
 
-void Init()
+void Init(UsbDriver& driver)
 {
     // Detect the first keyboard on USB bus
     for (int i = 1; i <= MaximumDevices; i++)
     {
-        if (IsKeyboard(i)) {
+        if (driver.IsKeyboard(i)) {
             firstKbd = i;
             break;
         }
@@ -56,12 +56,12 @@ void Init()
     if (firstKbd)
     {
         printf("Keyboard detected\r\n");
-        Async::WaitOnTask(HIDEnableInterruptINSimple(firstKbd, 0));
+        Async::WaitOnTask(HIDEnableInterruptINSimple(driver, firstKbd, 0));
         printf("Keyboard configured\r\n");
     }
 }
 
-static void RefreshStateIfNeeded()
+static void RefreshStateIfNeeded(UsbDriver& driver)
 {
     if (firstKbd == 0)
     {
@@ -74,7 +74,7 @@ static void RefreshStateIfNeeded()
     {
         uint16_t const USB_HID_REPORT_TYPE_INPUT = 1;
         std::byte buf[8];
-        auto const status = Async::WaitOnTask(HIDReadInterruptReport(firstKbd, 0, buf, sizeof(buf), nullptr));
+        auto const status = Async::WaitOnTask(HIDReadInterruptReport(driver, firstKbd, 0, buf, sizeof(buf), nullptr));
         //auto const status = HIDReadReport(firstKbd, 0, USB_HID_REPORT_TYPE_INPUT << 8 | 1, &buf[0], 8);
         if (status == RESULT::Ok)
         {
@@ -115,9 +115,9 @@ static void RefreshStateIfNeeded()
     }
 }
 
-bool IsKeyPressed(char key)
+bool IsKeyPressed(UsbDriver& driver, char key)
 {
-    RefreshStateIfNeeded();
+    RefreshStateIfNeeded(driver);
     return KeyStates[CharToKeyCode(key)[static_cast<uint8_t>(key)]];
 }
 

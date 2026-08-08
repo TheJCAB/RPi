@@ -1,9 +1,11 @@
 #include "stdint.h"
 
+struct UsbDriver;
+
 namespace Gamepad
 {
 
-void Init();
+void Init(UsbDriver&);
 
 enum class Button : uint8_t
 {
@@ -47,8 +49,8 @@ enum class Axis : uint8_t
     Count
 };
 
-bool IsButtonPressed(Button);
-int16_t GetAxis(Axis);
+bool IsButtonPressed(UsbDriver&, Button);
+int16_t GetAxis(UsbDriver&, Axis);
 
 }
 // namespace Gamepad
