@@ -210,12 +210,13 @@ void Init(UsbDriver& driver)
     DeviceDescriptor descriptor;
 
     // Detect the first keyboard on USB bus
-    for (int i = 1; i <= MaximumDevices; i++)
+    for (auto& device : driver.EnumerateDevices())
     {
-        if (!driver.IsHid(i))
+        if (!driver.IsHid(device))
         {
             continue;
         }
+        auto i = driver.GetDeviceNumber(device);
         descriptor = driver.GetDeviceDescriptor(i);
         if (descriptor.bDeviceProtocol != 0) // Generic HID protocol (not a mouse or keyboard)
         {

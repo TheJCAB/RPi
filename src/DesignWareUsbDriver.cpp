@@ -42,6 +42,8 @@
 #include <string.h>
 #include <wchar.h>
 #include <print>
+#include <vector>
+#include <expected>
 
 #include <span>
 
@@ -70,19 +72,6 @@ enumeration it will call this procedure to enumerate connected HID devices.
 11Feb17 LdB
 --------------------------------------------------------------------------*/
 Async::task<RESULT> EnumerateHID (UsbDriver& driver, UsbDevice* device);
-
-    /**
-    \brief The maximum number of children a device could have, by implication, this is
-    the maximum number of ports a hub supports.
-
-    This is theoretically 255, as 8 bits are used to transfer the port count in
-    a hub descriptor. Practically, no hub has more than 10, so we instead allow
-    that many. Increasing this number will waste space, but will not have
-    adverse consequences up to 255. Decreasing this number will save a little
-    space in the HubDevice structure, at the risk of removing support for an
-    otherwise valid hub.
-    */
-#define MaxChildrenPerDevice 10
 
     /**
     \brief The maximum number of interfaces a device configuration could have.
@@ -155,7 +144,7 @@ struct UsbDevice {
 
     PayLoadType PayLoadId;						// Payload type being carried
     union {											// It can only be any of the different payloads
-        HubDevice* HubPayload;				// If this is a USB gateway node of a hub this pointer will be set to the hub data which is about the ports
+        std::shared_ptr<HubDevice> HubPayload;				// If this is a USB gateway node of a hub this pointer will be set to the hub data which is about the ports
         HidDevice* HidPayload;				// If this node has a HID function this pointer will be to the HID payload
         MassStorageDevice* MassPayload;		// If this node has a MASS STORAGE function this pointer will be to the Mass Storage payload
     };
@@ -165,8 +154,7 @@ struct UsbDevice {
 {	 USB hub structure which is just extra data attached to a USB node	    }
 {---------------------------------------------------------------------------}*/
 struct HubDevice {
-    uint32_t MaxChildren;
-    UsbDevice *Children[MaxChildrenPerDevice];
+    std::vector<std::shared_ptr<UsbDevice>> Children;
     HubDescriptor Descriptor ALIGN4;				// Hub descriptor it's accessed a bit so we have a copy to save USB bus ... align it for ARM7/8
 };
 
@@ -199,9 +187,20 @@ class DesignWareUsbDriver : public UsbDriver
     }
 
 
-    UsbDevice DeviceTable[MaximumDevices] = { 0 };				// Usb node device allocation table
-    #define MaximumHubs	16												// Maximum number of HUB payloads we will allow
-    HubDevice HubTable[MaximumHubs] = { 0 };						// Usb hub device allocation table
+    std::vector<std::shared_ptr<UsbDevice>> DeviceTable = {};				// Usb node device allocation table
+    std::vector<std::shared_ptr<HubDevice>> HubTable = {};						// Usb hub device allocation table
+
+    std::generator<UsbDevice&> EnumerateDevices() override
+    {
+        for (auto&& device : DeviceTable)
+        {
+            if (device)
+            {
+                co_yield *device;
+            }
+        }
+    }
+
 
     /*-HCDSubmitControlMessage --------------------------------------------------
     Sends a control message to a device. Handles all necessary channel creation
@@ -635,12 +634,11 @@ class DesignWareUsbDriver : public UsbDriver
     --------------------------------------------------------------------------*/
     void RemoveHubPayload(struct UsbDevice *device) {
         if (device && device->PayLoadId == HubPayload && device->HubPayload) {// Check device is valid, is assigned a hub payload and the hubpayload is valid
-            for (int i = 0; i < device->HubPayload->MaxChildren; i++) {	// Check each of the children (we would hope already done but check)
-                if (device->HubPayload->Children[i])					// If a child is valid
-                    UsbDeallocateDevice(device->HubPayload->Children[i]);// Any valid children need to be deallocated
+            for (auto&& pChild : device->HubPayload->Children) {	// Check each of the children (we would hope already done but check)
+                if (pChild)					// If a child is valid
+                    UsbDeallocateDevice(pChild.get());// Any valid children need to be deallocated
             }
-            memset(device->HubPayload, 0, sizeof(struct HubDevice));	// Clear all the hub payload data which will mark it unused
-            device->HubPayload = NULL;									// Payload removed from device
+            device->HubPayload = {};									// Payload removed from device
             device->PayLoadId = NoPayload;								// Clear payload ID its gone
         }
     }
@@ -653,23 +651,30 @@ class DesignWareUsbDriver : public UsbDriver
     Find first free device entry table and return that pointer as our device.
     11Feb17 LdB
     --------------------------------------------------------------------------*/
-    RESULT UsbAllocateDevice(struct UsbDevice **device) {
-        if (device) {
-            for (int number = 0; number < MaximumDevices; number++) {	// Search device table entries
-                if (DeviceTable[number].PayLoadId == 0) {				// Find first free entry (PayloadId goes to non zero when in use)
-                    *device = &DeviceTable[number];						// Return that entry area as device
-                    (*device)->Pipe0.Number = number + 1;				// Our device Id is the table entry we found
-                    (*device)->Config.Status = USB_STATUS_ATTACHED;		// Set status to attached
-                    (*device)->ParentHub.PortNumber = 0;				// Start on port 0
-                    (*device)->ParentHub.Number = 0xFF;					// At this stage we have no parent
-                    (*device)->PayLoadId = NoPayload;					// Set PayLoadId to no payload attached (PayloadId goes non zero indicating in use)
-                    (*device)->HubPayload = NULL;						// Make sure payload pointer is NULL
-                    return RESULT::Ok;											// Return success
-                }
+    std::expected<std::shared_ptr<UsbDevice>, RESULT> UsbAllocateDevice()
+    {
+        std::shared_ptr<UsbDevice> device = std::make_shared<UsbDevice>();
+        device->Config.Status = USB_STATUS_ATTACHED;		// Set status to attached
+        device->ParentHub.PortNumber = 0;				// Start on port 0
+        device->ParentHub.Number = 0xFF;					// At this stage we have no parent
+        device->PayLoadId = NoPayload;					// Set PayLoadId to no payload attached (PayloadId goes non zero indicating in use)
+        device->HubPayload = NULL;						// Make sure payload pointer is NULL
+
+        device->Pipe0.Number = number + 1;				// Our device Id is the table entry we found
+        for (uint8_t number = 0; number < DeviceTable.size(); ++number) {	// Search device table entries
+            if (!DeviceTable[number]) {				// Find first free entry (PayloadId goes to non zero when in use)
+                device->Pipe0.Number = number + 1;				// Our device Id is the table entry we found
+                DeviceTable[number] = device;
+                return std::move(device);
             }
+        }
+        if (DeviceTable.size() >= UINT8_MAX)
+        {
             return RESULT::ErrorMemory;											// All device table entries are in use .. no free table
         }
-        return RESULT::ErrorArgument;											// The device pointer was invalid .. serious programming error								
+        device->Pipe0.Number = static_cast<uint8_t>(DeviceTable.size() + 1);				// Our device Id is the table entry we found
+        DeviceTable.push_back(device);
+        return std::move(device);
     }
 
     /*-INTERNAL: UsbDeallocateDevice---------------------------------------------
@@ -1453,14 +1458,19 @@ class DesignWareUsbDriver : public UsbDriver
     payload via it's pointer.
     24Feb17 LdB
     --------------------------------------------------------------------------*/
-    bool IsHid (uint8_t devNumber) override
+    bool IsHid(UsbDevice& device) override
     {
-        if ((devNumber > 0) && (devNumber <= MaximumDevices)) {			// Check the address is valid not zero and max devices or less
-            struct UsbDevice* device = &DeviceTable[devNumber - 1];		// Shortcut to device pointer we are talking about					
-            if (device->PayLoadId == HidPayload && device->HidPayload)	// It has a HID payload ID and the HID payload pointer is valid
-                return true;											// Confirmed as a hid
-        }
+        if (device.PayLoadId == HidPayload && device.HidPayload)	// It has a HID payload ID and the HID payload pointer is valid
+            return true;											// Confirmed as a hid
         return false;													// Not a hid
+    }
+    bool IsHid(uint8_t devNumber) override
+    {
+        if (auto* device = UsbDeviceAtAddress(devNumber))
+        {
+            return IsHid(*device);
+        }
+        return false;
     }
 
     /*-IsMassStorage------------------------------------------------------------
@@ -1503,12 +1513,17 @@ class DesignWareUsbDriver : public UsbDriver
     and checking it is defined as a keyboard.
     24Feb17 LdB
     --------------------------------------------------------------------------*/
+    bool IsKeyboard (UsbDevice& device) override
+    {
+        if (device.PayLoadId == HidPayload && device.HidPayload   // Its a valid HID
+            && device.Interfaces[0].Protocol == 1) return true;	// Protocol 1 means a keyboard
+        return false;													// Not a mouse device
+    }
     bool IsKeyboard (uint8_t devNumber) override
     {
-        if ((devNumber > 0) && (devNumber <= MaximumDevices)) {			// Check the address is valid not zero and max devices or less
-            struct UsbDevice* device = &DeviceTable[devNumber - 1];		// Shortcut to device pointer we are talking about
-            if (device->PayLoadId == HidPayload && device->HidPayload   // Its a valid HID
-                && device->Interfaces[0].Protocol == 1) return true;	// Protocol 1 means a keyboard
+        if (auto* device = UsbDeviceAtAddress(devNumber))
+        {
+            return IsKeyboard(*device);
         }
         return false;													// Not a mouse device
     }
@@ -1549,22 +1564,22 @@ class DesignWareUsbDriver : public UsbDriver
         return device;
     }
 
-    uint32_t GetDeviceNumber(UsbDevice* device) override
+    uint8_t GetDeviceNumber(UsbDevice& device) override
     {
-        if (device == nullptr || device->PayLoadId == ErrorPayload)
+        if (device,PayLoadId == ErrorPayload)
         {
             return 0; // Invalid device
         }
-        return device->Pipe0.Number; // Return the unique USB address of the device
+        return device.Pipe0.Number; // Return the unique USB address of the device
     }
 
-    HidDevice* GetHidDevice(UsbDevice* device) override
+    HidDevice* GetHidDevice(UsbDevice& device) override
     {
-        if (device == nullptr || device->PayLoadId != HidPayload)
+        if (device.PayLoadId != HidPayload)
         {
             return nullptr;
         }
-        return device->HidPayload;
+        return device.HidPayload;
     }
 
     UsbInterfaceDescriptor GetInterfaceDescriptor(UsbDevice* device, uint8_t interfaceIndex) override

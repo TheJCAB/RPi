@@ -33,6 +33,7 @@
 #include "UsbSpec.h"
 #include "Async.h"
 
+#include <generator>
 #include <span>
 
 #include <stdint.h>
@@ -61,8 +62,6 @@ enum class RESULT : int
 struct UsbDevice;
 struct HidDevice;
 
-#define MaximumDevices 32											// Max number of devices with a USB node we will allow 
-
 #define ControlMessageTimeout 10
 
 class UsbDriver
@@ -71,6 +70,8 @@ public:
     virtual ~UsbDriver() = default;
 
     virtual RESULT GetError() = 0;
+
+    virtual std::generator<UsbDevice&> EnumerateDevices() = 0;
 
     virtual DeviceDescriptor GetDeviceDescriptor(uint8_t devNumber) = 0;
 
@@ -87,8 +88,8 @@ public:
     is safe to proceed and do things with the hub payload via it's pointer.
     24Feb17 LdB
     --------------------------------------------------------------------------*/
-    virtual bool IsHub(uint8_t devNumber) = 0;
     virtual bool IsHub(UsbDevice& device) = 0;
+    virtual bool IsHub(uint8_t devNumber) = 0;
 
     /*-IsHid---------------------------------------------------------------------
     Will return if the given usbdevice is infact a hid and thus has hid payload
@@ -99,6 +100,7 @@ public:
     payload via it's pointer.
     24Feb17 LdB
     --------------------------------------------------------------------------*/
+    virtual bool IsHid(UsbDevice&) = 0;
     virtual bool IsHid(uint8_t devNumber) = 0;
 
     /*-IsMassStorage------------------------------------------------------------
@@ -125,6 +127,7 @@ public:
     and checking it is defined as a keyboard.
     24Feb17 LdB
     --------------------------------------------------------------------------*/
+    virtual bool IsKeyboard(UsbDevice&) = 0;
     virtual bool IsKeyboard(uint8_t devNumber) = 0;
 
     /*-UsbGetRootHub ------------------------------------------------------------
@@ -145,8 +148,8 @@ public:
     --------------------------------------------------------------------------*/
     virtual UsbDevice* UsbDeviceAtAddress (uint8_t devNumber) = 0;
 
-    virtual uint32_t   GetDeviceNumber(UsbDevice*) = 0;
-    virtual HidDevice* GetHidDevice   (UsbDevice*) = 0;
+    virtual uint8_t    GetDeviceNumber(UsbDevice&) = 0;
+    virtual HidDevice* GetHidDevice   (UsbDevice&) = 0;
 
     virtual UsbInterfaceDescriptor GetInterfaceDescriptor(UsbDevice* device, uint8_t interfaceIndex) = 0;
     virtual UsbEndpointDescriptor  FindEndpoint(UsbDevice* device, uint8_t interfaceIndex, usb_transfer_type type, UsbDirection direction) = 0;

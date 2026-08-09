@@ -247,7 +247,7 @@ void describe_hid_descriptor(const uint8_t* data, size_t length)
  --------------------------------------------------------------------------*/
 Async::task<RESULT> EnumerateHID (UsbDriver& driver, UsbDevice* device)
 {
-    auto const hidDevice = driver.GetHidDevice(device);
+    auto const hidDevice = driver.GetHidDevice(*device);
 
     uint8_t Buf[1024];
     for (int i = 0; i < hidDevice->MaxHID; i++) {
@@ -261,7 +261,7 @@ Async::task<RESULT> EnumerateHID (UsbDriver& driver, UsbDevice* device)
             interface.Protocol,
             interface.Number);
 
-        if (co_await HIDReadDescriptor(driver, driver.GetDeviceNumber(device), i, &Buf[0], sizeof(Buf)) == RESULT::Ok) {
+        if (co_await HIDReadDescriptor(driver, driver.GetDeviceNumber(*device), i, &Buf[0], sizeof(Buf)) == RESULT::Ok) {
             LOG_DEBUG("HID REPORT> Page usage: 0x%02x%02x, Usage: 0x%02x%02x, Collection: 0x%02x%02x\n",
                 Buf[0], Buf[1], Buf[2], Buf[3], Buf[4], Buf[5]);
 
@@ -299,14 +299,12 @@ Async::task<RESULT> HIDReadDescriptor (UsbDriver& driver, uint8_t devNumber,				
     volatile uint8_t Lo;
 
     if ((Buffer == NULL) || (Length == 0))	co_return RESULT::ErrorArgument;	// Check buffer and length is valid
-    if ((devNumber == 0) || (devNumber > MaximumDevices))
-        co_return RESULT::ErrorDeviceNumber;									// Device number not valid
     auto const device = driver.UsbDeviceAtAddress(devNumber);				// Fetch pointer to device number requested
     if (device == nullptr)
     {
         co_return RESULT::ErrorDeviceNumber;
     }
-    auto const hidDevice = driver.GetHidDevice(device);			// Fetch pointer to device number requested
+    auto const hidDevice = driver.GetHidDevice(*device);			// Fetch pointer to device number requested
     if (hidDevice == nullptr)
     {
         co_return RESULT::ErrorNotHID;
@@ -322,7 +320,7 @@ Async::task<RESULT> HIDReadDescriptor (UsbDriver& driver, uint8_t devNumber,				
     if ((result != RESULT::Ok) || (transfer != sizeToRead)) {				// Read/transfer failed
         LOG("HCD: Fetch HID descriptor %u for device: %u failed.\n",
             hidDevice->HIDInterface[hidIndex], 
-            GetDeviceNumber(device));									// Log the error
+            driver.GetDeviceNumber(*device));									// Log the error
         co_return RESULT::ErrorDevice;											// No idea what problem is so bail
     }
 
@@ -352,7 +350,7 @@ Async::task<RESULT> HIDReadReport (UsbDriver& driver, uint8_t devNumber,							/
     {
         co_return RESULT::ErrorDeviceNumber;
     }
-    auto const hidDevice = driver.GetHidDevice(device);
+    auto const hidDevice = driver.GetHidDevice(*device);
     if (hidDevice == nullptr)
     {
         co_return RESULT::ErrorNotHID;
@@ -385,7 +383,7 @@ Async::task<RESULT> HIDSetIdle (UsbDriver& driver, uint8_t devNumber, uint8_t hi
     {
         co_return RESULT::ErrorDeviceNumber;
     }
-    auto const hidDevice = driver.GetHidDevice(device);
+    auto const hidDevice = driver.GetHidDevice(*device);
     if (hidDevice == nullptr)
     {
         co_return RESULT::ErrorNotHID;
@@ -431,7 +429,7 @@ Async::task<RESULT> HIDWriteReport (UsbDriver& driver, uint8_t devNumber,							
     {
         co_return RESULT::ErrorDeviceNumber;
     }
-    auto const hidDevice = driver.GetHidDevice(device);
+    auto const hidDevice = driver.GetHidDevice(*device);
     if (hidDevice == nullptr)
     {
         co_return RESULT::ErrorNotHID;
@@ -473,7 +471,7 @@ Async::task<RESULT> HIDWriteReport (UsbDriver& driver, uint8_t devNumber,							
 //    {
 //        return RESULT::ErrorDeviceNumber;
 //    }
-//    auto const hidDevice = GetHidDevice(device);
+//    auto const hidDevice = GetHidDevice(*device);
 //    if (hidDevice == nullptr)
 //    {
 //        return RESULT::ErrorNotHID;
@@ -514,7 +512,7 @@ Async::task<RESULT> HIDSetProtocol (UsbDriver& driver, uint8_t devNumber,							
     {
         co_return RESULT::ErrorDeviceNumber;
     }
-    auto const hidDevice = driver.GetHidDevice(device);
+    auto const hidDevice = driver.GetHidDevice(*device);
     if (hidDevice == nullptr)
     {
         co_return RESULT::ErrorNotHID;
@@ -598,7 +596,7 @@ Async::task<RESULT> HIDStartInterruptIN (UsbDriver& driver, uint8_t devNumber,  
     {
         co_return RESULT::ErrorDeviceNumber;
     }
-    auto const hidDevice = driver.GetHidDevice(device);
+    auto const hidDevice = driver.GetHidDevice(*device);
     if (hidDevice == nullptr)
     {
         co_return RESULT::ErrorNotHID;
@@ -652,7 +650,7 @@ Async::task<RESULT> HIDStopInterruptIN (UsbDriver& driver, uint8_t devNumber,   
     {
         co_return RESULT::ErrorDeviceNumber;
     }
-    auto const hidDevice = driver.GetHidDevice(device);
+    auto const hidDevice = driver.GetHidDevice(*device);
     if (hidDevice == nullptr)
     {
         co_return RESULT::ErrorNotHID;
@@ -718,7 +716,7 @@ RESULT HIDGetInterruptInterval (UsbDriver& driver, uint8_t devNumber,           
     {
         return RESULT::ErrorDeviceNumber;
     }
-    auto const hidDevice = driver.GetHidDevice(device);
+    auto const hidDevice = driver.GetHidDevice(*device);
     if (hidDevice == nullptr)
     {
         return RESULT::ErrorNotHID;
@@ -783,7 +781,7 @@ Async::task<RESULT> HIDEnableInterruptIN (UsbDriver& driver, uint8_t devNumber, 
     {
         co_return RESULT::ErrorDeviceNumber;
     }
-    auto const hidDevice = driver.GetHidDevice(device);
+    auto const hidDevice = driver.GetHidDevice(*device);
     if (hidDevice == nullptr)
     {
         co_return RESULT::ErrorNotHID;
