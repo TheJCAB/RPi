@@ -31,10 +31,18 @@
 #pragma once
 
 #include "UsbSpec.h"
+#include "UsbPipe.h"
 #include "Async.h"
 
+namespace PCIe {
+    struct Bcm2711Driver;
+    struct DeviceAddress;
+}
+
 #include <generator>
+#include <memory>
 #include <span>
+#include <vector>
 
 #include <stdint.h>
 
@@ -59,8 +67,73 @@ enum class RESULT : int
     ErrorStall          = -16,
 };
 
-struct UsbDevice;
+class UsbDriver;
+
+struct HubDevice;
 struct HidDevice;
+struct MassStorageDevice;
+
+enum PayLoadType {
+    ErrorPayload = 0,
+    NoPayload = 1,
+    HubPayload = 2,
+    HidPayload = 3,
+    MassStoragePayload = 4,
+};
+
+struct __attribute__((__packed__)) UsbParent {
+    unsigned Number : 8;
+    unsigned PortNumber : 8;
+    unsigned reserved : 16;
+};
+
+struct __attribute__((__packed__)) UsbConfigControl {
+    uint8_t ConfigIndex;
+    uint8_t ConfigStringIndex;
+    UsbDeviceStatus Status;
+    uint8_t reserved;
+};
+
+class UsbDevice
+{
+public:
+    explicit UsbDevice(std::shared_ptr<UsbDriver> driver = {})
+        : driver_(std::move(driver))
+    {
+    }
+
+    void SetDriver(std::shared_ptr<UsbDriver> driver)
+    {
+        driver_ = std::move(driver);
+    }
+
+    std::shared_ptr<UsbDriver> const& GetDriver() const
+    {
+        return driver_;
+    }
+
+    bool IsHid();
+    bool IsKeyboard();
+    uint8_t GetNumber();
+    DeviceDescriptor GetDescriptor();
+    UsbInterfaceDescriptor GetInterfaceDescriptor(uint8_t interfaceIndex);
+    UsbEndpointDescriptor FindEndpoint(uint8_t interfaceIndex, usb_transfer_type type, UsbDirection direction);
+
+    UsbParent ParentHub{};
+    UsbPipe Pipe0{};
+    UsbConfigControl Config{};
+    std::vector<UsbInterfaceDescriptor> Interfaces{};
+    std::vector<std::vector<UsbEndpointDescriptor>> Endpoints{};
+    alignas(4) DeviceDescriptor Descriptor{};
+
+    PayLoadType PayLoadId = ErrorPayload;
+    HubDevice* HubPayload = nullptr;
+    HidDevice* HidPayload = nullptr;
+    MassStorageDevice* MassPayload = nullptr;
+
+private:
+    std::shared_ptr<UsbDriver> driver_;
+};
 
 #define ControlMessageTimeout 10
 
@@ -151,8 +224,8 @@ public:
     virtual uint8_t    GetDeviceNumber(UsbDevice&) = 0;
     virtual HidDevice* GetHidDevice   (UsbDevice&) = 0;
 
-    virtual UsbInterfaceDescriptor GetInterfaceDescriptor(UsbDevice* device, uint8_t interfaceIndex) = 0;
-    virtual UsbEndpointDescriptor  FindEndpoint(UsbDevice* device, uint8_t interfaceIndex, usb_transfer_type type, UsbDirection direction) = 0;
+    virtual UsbInterfaceDescriptor GetInterfaceDescriptor(UsbDevice& device, uint8_t interfaceIndex) = 0;
+    virtual UsbEndpointDescriptor  FindEndpoint(UsbDevice& device, uint8_t interfaceIndex, usb_transfer_type type, UsbDirection direction) = 0;
 
 
     /*--------------------------------------------------------------------------}
@@ -241,4 +314,62 @@ public:
     virtual Async::task<RESULT> HCDEndpointTransfer(UsbDevice* device, UsbEndpointDescriptor endpoint, std::byte* buffer, uint32_t& bufferLength) = 0;
 };
 
+inline bool UsbDevice::IsHid()
+{
+    if (!driver_)
+    {
+        return false;
+    }
+    return driver_->IsHid(*this);
+}
+
+inline bool UsbDevice::IsKeyboard()
+{
+    if (!driver_)
+    {
+        return false;
+    }
+    return driver_->IsKeyboard(*this);
+}
+
+inline uint8_t UsbDevice::GetNumber()
+{
+    if (!driver_)
+    {
+        return 0;
+    }
+    return driver_->GetDeviceNumber(*this);
+}
+
+inline DeviceDescriptor UsbDevice::GetDescriptor()
+{
+    if (!driver_)
+    {
+        return {};
+    }
+    return driver_->GetDeviceDescriptor(GetNumber());
+}
+
+inline UsbInterfaceDescriptor UsbDevice::GetInterfaceDescriptor(uint8_t interfaceIndex)
+{
+    if (!driver_)
+    {
+        return {};
+    }
+    return driver_->GetInterfaceDescriptor(*this, interfaceIndex);
+}
+
+inline UsbEndpointDescriptor UsbDevice::FindEndpoint(uint8_t interfaceIndex, usb_transfer_type type, UsbDirection direction)
+{
+    if (!driver_)
+    {
+        return {};
+    }
+    return driver_->FindEndpoint(*this, interfaceIndex, type, direction);
+}
+
 Async::task<std::shared_ptr<UsbDriver>> UsbInitializeDesignWare();
+
+namespace Usb::Xhci {
+    Async::task<std::shared_ptr<UsbDriver>> UsbInitializeXhci(PCIe::Bcm2711Driver& pcie, PCIe::DeviceAddress const& deviceAddress);
+} // namespace Usb::Xhci

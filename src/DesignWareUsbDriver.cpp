@@ -41,9 +41,10 @@
 
 #include <string.h>
 #include <wchar.h>
-#include <print>
 #include <vector>
 #include <expected>
+#include <algorithm>
+#include <optional>
 
 #include <span>
 
@@ -65,6 +66,7 @@ void FreeHidPayload(HidDevice* device);
 uint8_t GetHidCount(HidDevice* device);
 bool SetHidDescriptor(HidDevice* hidDevice, uint8_t hidIndex, uint8_t interface, std::byte const* buffer, uint8_t size);
 void PrintHid(HidDevice* device, uint8_t hidIndex, char const* indent);
+void BindHidOwner(HidDevice* hidDevice, std::shared_ptr<UsbDevice> const& device);
 
 /*-INTERNAL: EnumerateHID------------------------------------------------------
 If normal device enumeration detects a hid device, after normal single node
@@ -73,88 +75,13 @@ enumeration it will call this procedure to enumerate connected HID devices.
 --------------------------------------------------------------------------*/
 Async::task<RESULT> EnumerateHID (UsbDriver& driver, UsbDevice* device);
 
-    /**
-    \brief The maximum number of interfaces a device configuration could have.
-
-    This is theoretically 255 as one byte is used to transfer the interface
-    count in a configuration descriptor. In practice this is unlikely, so we
-    allow an arbitrary 8. Increasing this number wastes (a lot) of space in
-    every device structure, but should not have other consequences up to 255.
-    Decreasing this number reduces the overheads of the UsbDevice structure, at
-    the cost of possibly rejecting support for an otherwise supportable device.
-    */
-#define MaxInterfacesPerDevice 8
-
-    /**
-    \brief The maximum number of endpoints a device could have (per interface).
-
-    This is theoretically 16, as four bits are used to transfer the endpoint
-    number in certain device requests. This is possible in practice, so we
-    allow that many. Decreasing this number reduces the space in each device
-    structure considerably, while possible removing support for otherwise valid
-    devices. This number should not be greater than 16.
-    */
-#define MaxEndpointsPerDevice 16
-
-
-
-/*--------------------------------------------------------------------------}
-{ 	USB parent used mainly by internal routines (details of parent hub)		}
-{---------------------------------------------------------------------------}*/
-struct __attribute__((__packed__)) UsbParent {
-    unsigned Number : 8;											// @0	Unique device number of our parent sometimes called address or id
-    unsigned PortNumber : 8;										// @8	This is the port we are connected to on our parent hub
-    unsigned reserved : 16;											// @16  Reserved 16 bits
-};
-
-/*--------------------------------------------------------------------------}
-{ 			USB config control used mainly by internal routines				}
-{---------------------------------------------------------------------------}*/
-struct __attribute__((__packed__)) UsbConfigControl {
-    uint8_t ConfigIndex;										// @0 Current set config index
-    uint8_t ConfigStringIndex;									// @8 Current config string index
-    UsbDeviceStatus Status;     								// @16 Device enumeration status .. USB_ATTACHED, USB_POWERED, USB_ADDRESSED, etc
-    uint8_t reserved;											// @24-31
-};
-
-/*--------------------------------------------------------------------------}
-{	  To a standard USB device we can add a payload this is the type id		}
-{---------------------------------------------------------------------------}*/
-enum PayLoadType {
-    ErrorPayload = 0,								// Device is not even active so can't have a payload							
-    NoPayload = 1,									// Device is active but no payload attached
-    HubPayload = 2,									// Device has hub payload attached
-    HidPayload = 3,									// Device has Hid payload attached
-    MassStoragePayload = 4,							// Device has Mass storage payload attached
-};
-
 #define ALIGN4 __attribute__((aligned(4)))			// Alignment attribute shortcut macro .. I hate the attribute text length nothing tricky
-
-/*--------------------------------------------------------------------------}
-{  Our structure that hold details about any USB device we have detected    }
-{---------------------------------------------------------------------------}*/
-struct UsbDevice {
-    UsbParent ParentHub;						// Details of our parent hub
-    UsbPipe Pipe0;							// Usb device pipe AKA pipe0	
-    UsbConfigControl Config;					// Usb config control
-    uint8_t MaxInterface ALIGN4;					// Maxiumum interface in array (varies with config and usually a lot less than the max array size) 
-    UsbInterfaceDescriptor Interfaces[MaxInterfacesPerDevice] ALIGN4; // These are available interfaces on this device
-    UsbEndpointDescriptor Endpoints[MaxInterfacesPerDevice][MaxEndpointsPerDevice] ALIGN4; // These are available endpoints on this device
-    DeviceDescriptor Descriptor ALIGN4;	// Device descriptor it's accessed a bit so we have a copy to save USB bus ... align it for ARM7/8
-
-    PayLoadType PayLoadId;						// Payload type being carried
-    union {											// It can only be any of the different payloads
-        std::shared_ptr<HubDevice> HubPayload;				// If this is a USB gateway node of a hub this pointer will be set to the hub data which is about the ports
-        HidDevice* HidPayload;				// If this node has a HID function this pointer will be to the HID payload
-        MassStorageDevice* MassPayload;		// If this node has a MASS STORAGE function this pointer will be to the Mass Storage payload
-    };
-};
 
 /*--------------------------------------------------------------------------}
 {	 USB hub structure which is just extra data attached to a USB node	    }
 {---------------------------------------------------------------------------}*/
 struct HubDevice {
-    std::vector<std::shared_ptr<UsbDevice>> Children;
+    std::vector<UsbDevice*> Children;
     HubDescriptor Descriptor ALIGN4;				// Hub descriptor it's accessed a bit so we have a copy to save USB bus ... align it for ARM7/8
 };
 
@@ -187,8 +114,25 @@ class DesignWareUsbDriver : public UsbDriver
     }
 
 
-    std::vector<std::shared_ptr<UsbDevice>> DeviceTable = {};				// Usb node device allocation table
-    std::vector<std::shared_ptr<HubDevice>> HubTable = {};						// Usb hub device allocation table
+    std::vector<std::shared_ptr<UsbDevice>> DeviceTable = {};
+    std::vector<std::shared_ptr<HubDevice>> HubTable = {};
+
+    std::shared_ptr<UsbDriver> DriverRef()
+    {
+        return std::shared_ptr<UsbDriver>(this, [](UsbDriver*) {});
+    }
+
+    std::shared_ptr<UsbDevice> SharedHandleFor(UsbDevice& device)
+    {
+        for (auto const& entry : DeviceTable)
+        {
+            if (entry && entry.get() == &device)
+            {
+                return entry;
+            }
+        }
+        return {};
+    }
 
     std::generator<UsbDevice&> EnumerateDevices() override
     {
@@ -342,14 +286,14 @@ class DesignWareUsbDriver : public UsbDriver
             device,														// Pipe which points to current device endpoint
             channel,
             USB_DIRECTION_OUT,
-            NULL,														// No data its a command
+            nullptr,													// No data its a command
             0,															// Zero size transfer as no data
             UsbDeviceRequest {
                 .Type = 0,
                 .Request = SetAddress,									// Set address request
                 .Value = address,										// Address to set
             },
-            ControlMessageTimeout, NULL);
+            ControlMessageTimeout, nullptr);
     }
 
     /*-INTERNAL: HCDSetConfiguration---------------------------------------------
@@ -362,7 +306,7 @@ class DesignWareUsbDriver : public UsbDriver
             device,
             channel,
             USB_DIRECTION_OUT,
-            NULL,
+            nullptr,
             0,
             UsbDeviceRequest {
                 .Type = 0,
@@ -370,7 +314,7 @@ class DesignWareUsbDriver : public UsbDriver
                 .Value = configuration,									// Config index
             },
             ControlMessageTimeout,
-            NULL);														// Read the requested configuration
+            nullptr);													// Read the requested configuration
     }
 
     /*==========================================================================}
@@ -391,7 +335,7 @@ class DesignWareUsbDriver : public UsbDriver
     {
         auto const channel = Host->GetChannel();
 
-        if (Status == NULL) co_return RESULT::ErrorArgument;
+        if (Status == nullptr) co_return RESULT::ErrorArgument;
 
         uint32_t transfer = 0;
         auto const result = co_await HCDSubmitControlMessage(
@@ -440,7 +384,7 @@ class DesignWareUsbDriver : public UsbDriver
             device,														// Pipe settings passed thru as is
             *channel,
             USB_DIRECTION_OUT,
-            NULL,														// No buffer as no data
+            nullptr,													// No buffer as no data
             0,															// Length zero as no data
             UsbDeviceRequest {
                 .Type = port ? bmREQ_PORT_FEATURE : bmREQ_HUB_FEATURE,	// Request bit mask is for hub if port = 0, hub port otherwise
@@ -449,7 +393,7 @@ class DesignWareUsbDriver : public UsbDriver
                 .Index = port,											// Port (index 1 so add one)
             },
             ControlMessageTimeout,										// Standard control message timeouts
-            NULL
+            nullptr
         );
         if (result != RESULT::Ok)
         {
@@ -487,7 +431,7 @@ class DesignWareUsbDriver : public UsbDriver
         uint16_t langIds[96] __attribute__((aligned(4))) = { 0 };		// aligned for DMA transfer a descriptors
         bool NoEnglishSupport = false;									// Preset no english support false
 
-        if (buffer == NULL || stringIndex == 0) co_return RESULT::ErrorArgument;	// Make sure values valid
+        if (buffer == nullptr || stringIndex == 0) co_return RESULT::ErrorArgument;
         result = co_await HCDGetDescriptor(device, USB_DESCRIPTOR_TYPE_STRING, 0, 0, &langIds, 2,
             bmREQ_GET_DEVICE_DESCRIPTOR, &transfer, true);				// Get language support header
         if ((result != RESULT::Ok) && (transfer < 2)) {							// Could not read language support data
@@ -560,170 +504,151 @@ class DesignWareUsbDriver : public UsbDriver
         co_return RESULT::Ok;														// Return success
     }
 
-    /*==========================================================================}
-    {      INTERNAL FUNCTIONS THAT ADD AND REMOCE HID PAYLOADS TO DEVICES	    }
-    {==========================================================================*/
-
-    /*-INTERNAL: AddHidPayload---------------------------------------------------
-    Makes sure the device has no other sorts of payload AKA it's simple node
-    and if so will find the first free hid storage area and attach it as a hid
-    payload.
-    11Feb17 LdB
-    --------------------------------------------------------------------------*/
-    RESULT AddHidPayload (UsbDevice *device)
+    RESULT AddHidPayload(UsbDevice& device)
     {
-        if (device == nullptr || device->PayLoadId != NoPayload)
+        if (device.PayLoadId != NoPayload)
         {
             return RESULT::ErrorArgument;
         }
 
-        device->HidPayload = AllocateHidPayload();
-        if (device->HidPayload == nullptr)
+        device.HidPayload = AllocateHidPayload();
+        if (device.HidPayload == nullptr)
         {
             return RESULT::ErrorMemory;
         }
 
-        device->PayLoadId = HidPayload;
+        if (auto shared = SharedHandleFor(device))
+        {
+            BindHidOwner(device.HidPayload, shared);
+        }
+
+        device.PayLoadId = HidPayload;
         return RESULT::Ok;
     }
 
-    /*-INTERNAL: RemoveHidPayload------------------------------------------------
-    Makes sure the hid payload is free from device will make it free again in the
-    hid table to be allocated again.
-    11Feb17 LdB
-    --------------------------------------------------------------------------*/
-    void RemoveHidPayload(UsbDevice *device)
+    void RemoveHidPayload(UsbDevice& device)
     {
-        if (device && device->PayLoadId == HidPayload && device->HidPayload != nullptr)
+        if (device.PayLoadId == HidPayload && device.HidPayload != nullptr)
         {
-            FreeHidPayload(device->HidPayload);
-            device->HidPayload = nullptr;
-            device->PayLoadId = NoPayload;
+            FreeHidPayload(device.HidPayload);
+            device.HidPayload = nullptr;
+            device.PayLoadId = NoPayload;
         }
     }
 
-    /*==========================================================================}
-    {      INTERNAL FUNCTIONS THAT ADD AND REMOCE HUB PAYLOADS TO DEVICES	    }
-    {==========================================================================*/
+    RESULT AddHubPayload(UsbDevice& device) {
+        if (device.PayLoadId == NoPayload) {
+            auto hub = std::make_shared<HubDevice>();
+            if (!hub) {
+                return RESULT::ErrorMemory;
+            }
+            device.HubPayload = hub.get();
+            device.PayLoadId = HubPayload;
+            HubTable.push_back(std::move(hub));
+            return RESULT::Ok;
+        }
+        return RESULT::ErrorArgument;
+    }
 
-    /*-INTERNAL: AddHubPayload---------------------------------------------------
-    Makes sure the device has no other sorts of payload AKA it's simple node
-    and if so will find the first free hub storage area and attach it as a hub
-    payload.
-    11Feb17 LdB
-    --------------------------------------------------------------------------*/
-    RESULT AddHubPayload(struct UsbDevice *device) {
-        if (device && device->PayLoadId == NoPayload) {					// Check device is valid and not already assigned a payload
-            for (int number = 0; number < MaximumHubs; number++) {		// Search each entry in hub data payload array
-                if (HubTable[number].MaxChildren == 0) {				// Find first free entry
-                    device->HubPayload = &HubTable[number];				// Place pointer to the device payload pointer
-                    device->PayLoadId = HubPayload;						// Set the payload id
-                    HubTable[number].MaxChildren = MaxChildrenPerDevice;// Max children starts out as set by us (hub may shorten up itself) .. non zero means entry in use
-                    return RESULT::Ok;											// Return success
+    void RemoveHubPayload(UsbDevice& device) {
+        if (device.PayLoadId == HubPayload && device.HubPayload) {
+            for (auto* pChild : device.HubPayload->Children) {
+                if (pChild) {
+                    UsbDeallocateDevice(pChild);
                 }
             }
-            return RESULT::ErrorMemory;											// Too many hubs ... no free hub table entries 
-        }
-        return RESULT::ErrorArgument;											// Passed an invalid device ... programming error 
-    }
 
-    /*-INTERNAL: RemoveHubPayload------------------------------------------------
-    Makes sure the hub payload is free of all children and then clears payload
-    which will make it free again in the hub table to be allocated again.
-    11Feb17 LdB
-    --------------------------------------------------------------------------*/
-    void RemoveHubPayload(struct UsbDevice *device) {
-        if (device && device->PayLoadId == HubPayload && device->HubPayload) {// Check device is valid, is assigned a hub payload and the hubpayload is valid
-            for (auto&& pChild : device->HubPayload->Children) {	// Check each of the children (we would hope already done but check)
-                if (pChild)					// If a child is valid
-                    UsbDeallocateDevice(pChild.get());// Any valid children need to be deallocated
-            }
-            device->HubPayload = {};									// Payload removed from device
-            device->PayLoadId = NoPayload;								// Clear payload ID its gone
+            auto const it = std::remove_if(HubTable.begin(), HubTable.end(), [&device](std::shared_ptr<HubDevice> const& hub) {
+                return hub.get() == device.HubPayload;
+            });
+            HubTable.erase(it, HubTable.end());
+
+            device.HubPayload = nullptr;
+            device.PayLoadId = NoPayload;
         }
     }
 
-    /*==========================================================================}
-    {       INTERNAL FUNCTIONS THAT ADD/DETACH AND DEALLOCATE DEVICES		    }
-    {==========================================================================*/
-
-    /*-INTERNAL: UsbAllocateDevice-----------------------------------------------
-    Find first free device entry table and return that pointer as our device.
-    11Feb17 LdB
-    --------------------------------------------------------------------------*/
     std::expected<std::shared_ptr<UsbDevice>, RESULT> UsbAllocateDevice()
     {
-        std::shared_ptr<UsbDevice> device = std::make_shared<UsbDevice>();
-        device->Config.Status = USB_STATUS_ATTACHED;		// Set status to attached
-        device->ParentHub.PortNumber = 0;				// Start on port 0
-        device->ParentHub.Number = 0xFF;					// At this stage we have no parent
-        device->PayLoadId = NoPayload;					// Set PayLoadId to no payload attached (PayloadId goes non zero indicating in use)
-        device->HubPayload = NULL;						// Make sure payload pointer is NULL
+        std::shared_ptr<UsbDevice> device = std::make_shared<UsbDevice>(DriverRef());
+        if (!device)
+        {
+            return std::unexpected(RESULT::ErrorMemory);
+        }
 
-        device->Pipe0.Number = number + 1;				// Our device Id is the table entry we found
+        device->Config.Status = USB_STATUS_ATTACHED;
+        device->ParentHub.PortNumber = 0;
+        device->ParentHub.Number = 0xFF;
+        device->PayLoadId = NoPayload;
+        device->HubPayload = nullptr;
+
         for (uint8_t number = 0; number < DeviceTable.size(); ++number) {	// Search device table entries
-            if (!DeviceTable[number]) {				// Find first free entry (PayloadId goes to non zero when in use)
-                device->Pipe0.Number = number + 1;				// Our device Id is the table entry we found
+            if (!DeviceTable[number]) {
+                device->Pipe0.Number = number + 1;
                 DeviceTable[number] = device;
-                return std::move(device);
+                return device;
             }
         }
         if (DeviceTable.size() >= UINT8_MAX)
         {
-            return RESULT::ErrorMemory;											// All device table entries are in use .. no free table
+			return std::unexpected(RESULT::ErrorMemory);
         }
-        device->Pipe0.Number = static_cast<uint8_t>(DeviceTable.size() + 1);				// Our device Id is the table entry we found
+        device->Pipe0.Number = static_cast<uint8_t>(DeviceTable.size() + 1);
         DeviceTable.push_back(device);
-        return std::move(device);
+        return device;
     }
 
-    /*-INTERNAL: UsbDeallocateDevice---------------------------------------------
-    Deallocate a device releasing all memory associated to the device
-    11Feb17 LdB
-    --------------------------------------------------------------------------*/
     void UsbDeallocateDevice (struct UsbDevice *device) {
+        if (device == nullptr) {
+            return;
+        }
+
         if (IsHub(*device)) {								// If this device is a hub we will need to deal with the children
-            /* A hub must deallocate all its children first */
-            for (int i = 0; i < device->HubPayload->MaxChildren; i++) {	// For each child
-                if (device->HubPayload->Children[i] != NULL)			// If that child is valid
-                    UsbDeallocateDevice(device->HubPayload->Children[i]);// Iterate deallocating each child
+            for (auto* child : device->HubPayload->Children) {
+                if (child != nullptr)
+                    UsbDeallocateDevice(child);
             }
-            RemoveHubPayload(device);									// Having disposed of the children we need to get rid of the hub payload	
+            RemoveHubPayload(*device);
         }
-        if (device->ParentHub.Number < MaximumDevices) {				// Check we have a valid parent
-            struct UsbDevice* parent;
-            parent = &DeviceTable[device->ParentHub.Number-1];			// Fetch the parent hub device
-            /* Now remove this device from any parent .. check everything to make sure it is a child */
-            if (parent->PayLoadId == HubPayload && parent->HubPayload &&// Check we have a valid parent and it is a hub
-                device->ParentHub.PortNumber < parent->HubPayload->MaxChildren && // Check we are on a valid port
-                parent->HubPayload->Children[device->ParentHub.PortNumber] == device)// Check we are the child pointer on that port
-                parent->HubPayload->Children[device->ParentHub.PortNumber] = NULL;// Yes we really are the child so clear our entry
+
+        if (auto* parent = UsbDeviceAtAddress(static_cast<uint8_t>(device->ParentHub.Number)); parent && parent->PayLoadId == HubPayload && parent->HubPayload)
+        {
+            auto const port = static_cast<size_t>(device->ParentHub.PortNumber);
+            if (port < parent->HubPayload->Children.size() && parent->HubPayload->Children[port] == device)
+            {
+                parent->HubPayload->Children[port] = nullptr;
+            }
         }
-        memset(device, 0, sizeof(struct UsbDevice));					// Clear the device entry area which will mark it unused
+
+        auto const deviceNumber = static_cast<size_t>(device->Pipe0.Number);
+        if (deviceNumber > 0 && deviceNumber <= DeviceTable.size())
+        {
+            DeviceTable[deviceNumber - 1].reset();
+        }
     }
 
     /*==========================================================================}
     {			    NON HCD INTERNAL HUB FUNCTIONS ON PORTS						}
     {==========================================================================*/
-    Async::task<RESULT> HubPortReset(struct UsbDevice *device, uint8_t port) {
+    Async::task<RESULT> HubPortReset(UsbDevice& device, uint8_t port) {
         RESULT result;
         struct HubPortFullStatus portStatus;
         uint32_t retry, timeout;
-        if (!IsHub(*device)) co_return RESULT::ErrorDevice;			// If device is not a hub then bail
-        LOG_DEBUG("HUB: Reseting device: %u Port: %u. source: %i\n", device->Pipe0.Number, port, 0/*source*/);
+        if (!IsHub(device)) co_return RESULT::ErrorDevice;
+        LOG_DEBUG("HUB: Reseting device: %u Port: %u. source: %i\n", device.Pipe0.Number, port, 0/*source*/);
         for (retry = 0; retry < 3; retry++) {
-            if ((result = co_await HCDChangeHubPortFeature(device,
+            if ((result = co_await HCDChangeHubPortFeature(&device,
                 FeatureReset, port + 1, true)) != RESULT::Ok) 					// Issue a setfeature of reset
             {
                 LOG("HUB: Device %i Failed to reset Port%d.\n",
-                    device->Pipe0.Number, port + 1);					// Log any failure
+					device.Pipe0.Number, port + 1);
                 co_return result;											// Return result that is causing failure
             }
             timeout = 0;
             do {
                 co_await Async::DelayInMicroseconds(20000);
-                if ((result = co_await HCDReadHubPortStatus(device, port + 1, (uint8_t*)&portStatus.Raw32)) != RESULT::Ok) {
-                    LOG("HUB: Hub failed to get status (4) for %s.Port%d.\n", UsbGetDescription(device), port + 1);
+                if ((result = co_await HCDReadHubPortStatus(&device, port + 1, (uint8_t*)&portStatus.Raw32)) != RESULT::Ok) {
+                    LOG("HUB: Hub failed to get status (4) for %s.Port%d.\n", UsbGetDescription(&device), port + 1);
                     co_return result;
                 }
                 timeout++;
@@ -731,7 +656,7 @@ class DesignWareUsbDriver : public UsbDriver
 
             if (timeout == 10) continue;
 
-            LOG_DEBUG("HUB: %s.Port%d Status %x:%x.\n", UsbGetDescription(device), port + 1, portStatus.RawStatus, portStatus.RawChange);
+            LOG_DEBUG("HUB: %s.Port%d Status %x:%x.\n", UsbGetDescription(&device), port + 1, portStatus.RawStatus, portStatus.RawChange);
 
             if (portStatus.Change.ConnectedChanged || !portStatus.Status.Connected)
                 co_return RESULT::ErrorDevice;
@@ -741,12 +666,12 @@ class DesignWareUsbDriver : public UsbDriver
         }
 
         if (retry == 3) {
-            LOG("HUB: Cannot enable %s.Port%d. Please verify the hardware is working.\n", UsbGetDescription(device), port + 1);
+            LOG("HUB: Cannot enable %s.Port%d. Please verify the hardware is working.\n", UsbGetDescription(&device), port + 1);
             co_return RESULT::ErrorDevice;
         }
 
-        if ((result = co_await HCDChangeHubPortFeature(device, FeatureResetChange, port + 1, false)) != RESULT::Ok) {
-            LOG("HUB: Failed to clear reset on %s.Port%d.\n", UsbGetDescription(device), port + 1);
+        if ((result = co_await HCDChangeHubPortFeature(&device, FeatureResetChange, port + 1, false)) != RESULT::Ok) {
+            LOG("HUB: Failed to clear reset on %s.Port%d.\n", UsbGetDescription(&device), port + 1);
         }
         co_return RESULT::Ok;
     }
@@ -757,47 +682,50 @@ class DesignWareUsbDriver : public UsbDriver
     deallocation of a removed or detached device.
     21Mar17 LdB
     --------------------------------------------------------------------------*/
-    __attribute__((noinline)) Async::task<RESULT> HubPortConnectionChanged(struct UsbDevice *device, uint8_t port) {
+    __attribute__((noinline)) Async::task<RESULT> HubPortConnectionChanged(UsbDevice& device, uint8_t port) {
         RESULT result;
         struct HubDevice *data;
         struct HubPortFullStatus portStatus;
-        if (!IsHub(*device)) co_return RESULT::ErrorDevice;
+        if (!IsHub(device)) co_return RESULT::ErrorDevice;
 
-        data = device->HubPayload;
+        data = device.HubPayload;
 
-        if ((result = co_await HCDReadHubPortStatus(device, port + 1, (uint8_t*)&portStatus.Raw32)) != RESULT::Ok) {
-            LOG("HUB: Hub failed to get status (2) for %s.Port%d.\n", UsbGetDescription(device), port + 1);
+        if ((result = co_await HCDReadHubPortStatus(&device, port + 1, (uint8_t*)&portStatus.Raw32)) != RESULT::Ok) {
+            LOG("HUB: Hub failed to get status (2) for %s.Port%d.\n", UsbGetDescription(&device), port + 1);
             co_return result;
         }
-        LOG_DEBUG("HUB: %s.Port%d Status %x:%x.\n", UsbGetDescription(device), port + 1, portStatus.RawStatus, portStatus.RawChange);
+        LOG_DEBUG("HUB: %s.Port%d Status %x:%x.\n", UsbGetDescription(&device), port + 1, portStatus.RawStatus, portStatus.RawChange);
 
-        if ((result = co_await HCDChangeHubPortFeature(device, FeatureConnectionChange, port + 1, false)) != RESULT::Ok) {
-            LOG("HUB: Failed to clear change on %s.Port%d.\n", UsbGetDescription(device), port + 1);
+        if ((result = co_await HCDChangeHubPortFeature(&device, FeatureConnectionChange, port + 1, false)) != RESULT::Ok) {
+            LOG("HUB: Failed to clear change on %s.Port%d.\n", UsbGetDescription(&device), port + 1);
         }
 
-        if ((!portStatus.Status.Connected && !portStatus.Status.Enabled) || data->Children[port] != NULL) {
-            LOG("HUB: Disconnected %s.Port%d - %s.\n", UsbGetDescription(device), port + 1, UsbGetDescription(data->Children[port]));
+        if ((!portStatus.Status.Connected && !portStatus.Status.Enabled) || data->Children[port] != nullptr) {
+            LOG("HUB: Disconnected %s.Port%d - %s.\n", UsbGetDescription(&device), port + 1, UsbGetDescription(data->Children[port]));
             UsbDeallocateDevice(data->Children[port]);
-            data->Children[port] = NULL;
+            data->Children[port] = nullptr;
             if (!portStatus.Status.Connected) co_return RESULT::Ok;
         }
 
         if ((result = co_await HubPortReset(device, port)) != RESULT::Ok) {
-            LOG("HUB: Could not reset %s.Port%d for new device.\n", UsbGetDescription(device), port + 1);
+            LOG("HUB: Could not reset %s.Port%d for new device.\n", UsbGetDescription(&device), port + 1);
             co_return result;
         }
 
-        if ((result = UsbAllocateDevice(&data->Children[port])) != RESULT::Ok) {
-            LOG("HUB: Could not allocate a new device entry for %s.Port%d.\n", UsbGetDescription(device), port + 1);
+        auto childEx = UsbAllocateDevice();
+        if (!childEx.has_value()) {
+            LOG("HUB: Could not allocate a new device entry for %s.Port%d.\n", UsbGetDescription(&device), port + 1);
+            co_return childEx.error();
+        }
+
+        data->Children[port] = childEx.value().get();
+
+        if ((result = co_await HCDReadHubPortStatus(&device, port + 1, (uint8_t*)&portStatus.Raw32)) != RESULT::Ok) {
+            LOG("HUB: Hub failed to get status (3) for %s.Port%d.\n", UsbGetDescription(&device), port + 1);
             co_return result;
         }
 
-        if ((result = co_await HCDReadHubPortStatus(device, port + 1, (uint8_t*)&portStatus.Raw32)) != RESULT::Ok) {
-            LOG("HUB: Hub failed to get status (3) for %s.Port%d.\n", UsbGetDescription(device), port + 1);
-            co_return result;
-        }
-
-        LOG("HUB: %s. Device:%i Port:%d Status %04x:%04x.\n", UsbGetDescription(device), device->Pipe0.Number, port, portStatus.RawStatus, portStatus.RawChange);
+        LOG("HUB: %s. Device:%i Port:%d Status %04x:%04x.\n", UsbGetDescription(&device), device.Pipe0.Number, port, portStatus.RawStatus, portStatus.RawChange);
 
         if (portStatus.Status.HighSpeedAttatched)
         {
@@ -806,23 +734,23 @@ class DesignWareUsbDriver : public UsbDriver
         else if (portStatus.Status.LowSpeedAttatched)
         {
             data->Children[port]->Pipe0.Speed = USB_SPEED_LOW;
-            data->Children[port]->Pipe0.splitNodePoint = device->Pipe0.Number;
+            data->Children[port]->Pipe0.splitNodePoint = device.Pipe0.Number;
             data->Children[port]->Pipe0.splitNodePort = port;
         }
         else
         {
             data->Children[port]->Pipe0.Speed = USB_SPEED_FULL;
-            data->Children[port]->Pipe0.splitNodePoint = device->Pipe0.Number;
+            data->Children[port]->Pipe0.splitNodePoint = device.Pipe0.Number;
             data->Children[port]->Pipe0.splitNodePort = port;
         }
-        data->Children[port]->ParentHub.Number = device->Pipe0.Number;
+        data->Children[port]->ParentHub.Number = device.Pipe0.Number;
         data->Children[port]->ParentHub.PortNumber = port;
-        if ((result = co_await EnumerateDevice(data->Children[port], device, port)) != RESULT::Ok) {
-            LOG("HUB: Could not connect to new device in %s.Port%d. Disabling.\n", UsbGetDescription(device), port + 1);
+        if ((result = co_await EnumerateDevice(data->Children[port], &device, port)) != RESULT::Ok) {
+            LOG("HUB: Could not connect to new device in %s.Port%d. Disabling.\n", UsbGetDescription(&device), port + 1);
             UsbDeallocateDevice(data->Children[port]);
-            data->Children[port] = NULL;
-            if (co_await HCDChangeHubPortFeature(device, FeatureEnable, port + 1, false) != RESULT::Ok) {
-                LOG("HUB: Failed to disable %s.Port%d.\n", UsbGetDescription(device), port + 1);
+            data->Children[port] = nullptr;
+            if (co_await HCDChangeHubPortFeature(&device, FeatureEnable, port + 1, false) != RESULT::Ok) {
+                LOG("HUB: Failed to disable %s.Port%d.\n", UsbGetDescription(&device), port + 1);
             }
             co_return result;
         }
@@ -836,59 +764,59 @@ class DesignWareUsbDriver : public UsbDriver
     enumerating of a new device or deallocating an old one.
     10Apr17 LdB
     --------------------------------------------------------------------------*/
-    Async::task<RESULT> HubCheckConnection(UsbDevice *device, uint8_t port)
+    Async::task<RESULT> HubCheckConnection(UsbDevice& device, uint8_t port)
     {
         RESULT result;
         HubPortFullStatus portStatus;
         HubDevice *data;
 
-        if (!IsHub(*device)) co_return RESULT::ErrorDevice;
-        data = device->HubPayload;
+        if (!IsHub(device)) co_return RESULT::ErrorDevice;
+        data = device.HubPayload;
 
-        LOG("HUB: Checking connection for device %i, Port: %i.\n", device->Pipe0.Number, port);
+        LOG("HUB: Checking connection for device %i, Port: %i.\n", device.Pipe0.Number, port);
 
-        if ((result = co_await HCDReadHubPortStatus(device, port + 1, (uint8_t*)&portStatus.Raw32)) != RESULT::Ok) {
+        if ((result = co_await HCDReadHubPortStatus(&device, port + 1, (uint8_t*)&portStatus.Raw32)) != RESULT::Ok) {
             if (result != RESULT::ErrorDisconnected)
-                LOG("HUB: Failed to get hub port status (1) for %s.Port%d.\n", UsbGetDescription(device), port + 1);
+                LOG("HUB: Failed to get hub port status (1) for %s.Port%d.\n", UsbGetDescription(&device), port + 1);
             co_return result;
         }
 
-        LOG("HUB: device %i, Port: %i, status: %04X:%04X.\n", device->Pipe0.Number, port, portStatus.RawStatus, portStatus.RawChange);
+        LOG("HUB: device %i, Port: %i, status: %04X:%04X.\n", device.Pipe0.Number, port, portStatus.RawStatus, portStatus.RawChange);
 
         if (portStatus.Change.ConnectedChanged) {
-            LOG_DEBUG("Device %i, Port: %i changed\n", device->Pipe0.Number, port);
+            LOG_DEBUG("Device %i, Port: %i changed\n", device.Pipe0.Number, port);
             co_await HubPortConnectionChanged(device, port);
         }
 
-        LOG_DEBUG("Device %i, Port: %i checking the rest\n", device->Pipe0.Number, port);
+        LOG_DEBUG("Device %i, Port: %i checking the rest\n", device.Pipe0.Number, port);
 
         if (portStatus.Change.EnabledChanged) {
-            if (co_await HCDChangeHubPortFeature(device, FeatureEnableChange, port + 1, false) != RESULT::Ok) {
-                LOG("HUB: Failed to clear enable change %s.Port%d.\n", UsbGetDescription(device), port + 1);
+            if (co_await HCDChangeHubPortFeature(&device, FeatureEnableChange, port + 1, false) != RESULT::Ok) {
+                LOG("HUB: Failed to clear enable change %s.Port%d.\n", UsbGetDescription(&device), port + 1);
             }
 
             // This may indicate EM interference.
-            if (!portStatus.Status.Enabled && portStatus.Status.Connected && data->Children[port] != NULL) {
-                LOG("HUB: %s.Port%d has been disabled, but is connected. This can be cause by interference. Reenabling!\n", UsbGetDescription(device), port + 1);
+            if (!portStatus.Status.Enabled && portStatus.Status.Connected && data->Children[port] != nullptr) {
+                LOG("HUB: %s.Port%d has been disabled, but is connected. This can be cause by interference. Reenabling!\n", UsbGetDescription(&device), port + 1);
                 co_await HubPortConnectionChanged(device, port);
             }
         }
 
         if (portStatus.Status.Suspended) {
-            if (co_await HCDChangeHubPortFeature(device, FeatureSuspend, port + 1, false) != RESULT::Ok) {
-                LOG("HUB: Failed to clear suspended port - %s.Port%d.\n", UsbGetDescription(device), port + 1);
+            if (co_await HCDChangeHubPortFeature(&device, FeatureSuspend, port + 1, false) != RESULT::Ok) {
+                LOG("HUB: Failed to clear suspended port - %s.Port%d.\n", UsbGetDescription(&device), port + 1);
             }
         }
 
         if (portStatus.Change.OverCurrentChanged) {
-            if (co_await HCDChangeHubPortFeature(device, FeatureOverCurrentChange, port + 1, false) != RESULT::Ok) {
-                LOG("HUB: Failed to clear over current port - %s.Port%d.\n", UsbGetDescription(device), port + 1);
+            if (co_await HCDChangeHubPortFeature(&device, FeatureOverCurrentChange, port + 1, false) != RESULT::Ok) {
+                LOG("HUB: Failed to clear over current port - %s.Port%d.\n", UsbGetDescription(&device), port + 1);
             }
         }
 
         if (portStatus.Change.ResetChanged) {
-            if (co_await HCDChangeHubPortFeature(device, FeatureResetChange, port + 1, false) != RESULT::Ok) {
-                LOG("HUB: Failed to clear reset port - %s.Port%d.\n", UsbGetDescription(device), port + 1);
+            if (co_await HCDChangeHubPortFeature(&device, FeatureResetChange, port + 1, false) != RESULT::Ok) {
+                LOG("HUB: Failed to clear reset port - %s.Port%d.\n", UsbGetDescription(&device), port + 1);
             }
         }
 
@@ -900,12 +828,12 @@ class DesignWareUsbDriver : public UsbDriver
     device has been added or removed.
     21Mar17 LdB
     --------------------------------------------------------------------------*/
-    Async::task<void> HubCheckForChange(struct UsbDevice *device) {
-        if (IsHub(*device)) {
-            for (int i = 0; i < device->HubPayload->MaxChildren; i++) {
-                if (co_await HubCheckConnection(device, i) != RESULT::Ok) continue;		// If port is not connected move to next port
-                if (device->HubPayload->Children[i] != NULL)			// If child device is valid
-                    co_await HubCheckForChange(device->HubPayload->Children[i]);	// Iterate this call
+    Async::task<void> HubCheckForChange(UsbDevice& device) {
+        if (IsHub(device)) {
+            for (size_t i = 0; i < device.HubPayload->Children.size(); i++) {
+                if (co_await HubCheckConnection(device, static_cast<uint8_t>(i)) != RESULT::Ok) continue;
+                if (device.HubPayload->Children[i] != nullptr)
+                    co_await HubCheckForChange(*device.HubPayload->Children[i]);
             }
         }
     }
@@ -918,59 +846,52 @@ class DesignWareUsbDriver : public UsbDriver
     Continues enumeration of each port if an enumerated detected device is a hub
     11Feb17 LdB
     --------------------------------------------------------------------------*/
-    Async::task<RESULT> EnumerateHub (struct UsbDevice *device) {
+    Async::task<RESULT> EnumerateHub(UsbDevice& device) {
         RESULT result;
         uint32_t transfer;
         HubDevice *data;
         HubFullStatus status;
 
-        if (auto const thisResult = AddHubPayload(device); thisResult != RESULT::Ok) {					// We are a hub so we need a hub payload
+        if (auto const thisResult = AddHubPayload(device); thisResult != RESULT::Ok) {
             LOG("Could not allocate hub payload, Error ID %i\n", thisResult);
-            co_return thisResult;												// We must have to fouled up device allocation code
+			co_return thisResult;
         }
 
-        data = device->HubPayload;										// Hub payload data added grab pointer to it we will be using it a fair bit
+        data = device.HubPayload;
 
-        for (int i = 0; i < MaxChildrenPerDevice; i++)
-            data->Children[i] = NULL;									// For safety make sure all children pointers are NULL
-
-        result = co_await HCDGetDescriptor(device, USB_DESCRIPTOR_TYPE_HUB,
+        result = co_await HCDGetDescriptor(&device, USB_DESCRIPTOR_TYPE_HUB,
             0, 0, &data->Descriptor, sizeof(HubDescriptor),
-            bmREQ_GET_HUB_DESCRIPTOR, &transfer, true);					// Fetch the HUB descriptor and hold in the hub payload, we use it a bit so saves USB bus
+            bmREQ_GET_HUB_DESCRIPTOR, &transfer, true);
         if ((result != RESULT::Ok) || (transfer != sizeof(HubDescriptor)))
         {
             LOG("HCD: Could not fetch hub descriptor for device: %i\n",
-                device->Pipe0.Number);									// Log the error
-            co_return RESULT::ErrorDevice;											// No idea what problem is so bail
+                device.Pipe0.Number);
+			co_return RESULT::ErrorDevice;
         }
-        LOG_DEBUG("Hub device %i has %i ports\n", device->Pipe0.Number, data->Descriptor.PortCount);
+        LOG_DEBUG("Hub device %i has %i ports\n", device.Pipe0.Number, data->Descriptor.PortCount);
         LOG_DEBUG("HUB: Hub power to good: %dms.\n", data->Descriptor.PowerGoodDelay * 2);
         LOG_DEBUG("HUB: Hub current required: %dmA.\n", data->Descriptor.MaximumHubPower * 2);
 
-        if (data->Descriptor.PortCount > MaxChildrenPerDevice) {		// Check number of ports on hub vs maxium number we allow on a hub payload
-            LOG("HUB device:%i is too big for this driver to handle. Only the first %d ports will be used.\n",
-                device->Pipe0.Number, MaxChildrenPerDevice);			// Log error			
-        }
-        else data->MaxChildren = data->Descriptor.PortCount;			// Reduce number of children down to same as hub supports
+        data->Children.assign(data->Descriptor.PortCount, nullptr);
 
-        if (auto const thisResult = co_await HCDReadHubPortStatus(device, 0, (uint8_t*)&status.Raw32); thisResult != RESULT::Ok) // Gateway node status
+        if (auto const thisResult = co_await HCDReadHubPortStatus(&device, 0, (uint8_t*)&status.Raw32); thisResult != RESULT::Ok)
         {
-            LOG("HUB device:%i failed to get hub status.\n", device->Pipe0.Number);
+            LOG("HUB device:%i failed to get hub status.\n", device.Pipe0.Number);
             co_return thisResult;
         }
 
         LOG("HUB: Hub powering ports on.\n");
-        for (int i = 0; i < data->MaxChildren; i++) {					// For each port
-            if (co_await HCDChangeHubPortFeature(device, FeaturePower, i + 1, true) != RESULT::Ok)										// Power the port							
-                LOG("HUB: device: %i could not power Port%d.\n", device->Pipe0.Number, i + 1);						// Log error
+        for (size_t i = 0; i < data->Children.size(); i++) {
+            if (co_await HCDChangeHubPortFeature(&device, FeaturePower, static_cast<uint8_t>(i + 1), true) != RESULT::Ok)
+                LOG("HUB: device: %i could not power Port%d.\n", device.Pipe0.Number, i + 1);
         }
-        co_await Async::DelayInMicroseconds(data->Descriptor.PowerGoodDelay * 2000);				// Every hub has a different power stability delay
-        co_await Async::DelayInMicroseconds(1'000);									// Wait 1 millisecond to allow power to stabilize
+        co_await Async::DelayInMicroseconds(data->Descriptor.PowerGoodDelay * 2000);
+        co_await Async::DelayInMicroseconds(1'000);
 
-        LOG("HUB: device: %i checking %u port connections.\n", device->Pipe0.Number, data->MaxChildren);
+        LOG("HUB: device: %i checking %u port connections.\n", device.Pipe0.Number, data->Children.size());
 
-        for (int port = 0; port < data->MaxChildren; port++) {			// Now check for new device to enumerate on each port
-            co_await HubCheckConnection(device, port);							// Run connection check on each port
+        for (size_t port = 0; port < data->Children.size(); port++) {
+            co_await HubCheckConnection(device, static_cast<uint8_t>(port));
         }
 
         co_return RESULT::Ok;														// Return success
@@ -1025,9 +946,9 @@ class DesignWareUsbDriver : public UsbDriver
         device->Config.Status = USB_STATUS_DEFAULT;						// Move device enumeration to default
 
         LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 2 = Reset Port (old device support)\n");
-        if (ParentHub != NULL) {										// Roothub is the only one who will have a NULL parent and you can't reset a FAKE hub
+        if (ParentHub != nullptr) {
             // Reset the port for what will be the second time.
-            if ((result = co_await HubPortReset(ParentHub, PortNum)) != RESULT::Ok) {
+            if ((result = co_await HubPortReset(*ParentHub, PortNum)) != RESULT::Ok) {
                 LOG("HCD: Failed to reset port again for new device %s.\n", UsbGetDescription(device));
                 device->Pipe0.Number = address;
                 co_return result;
@@ -1118,37 +1039,42 @@ class DesignWareUsbDriver : public UsbDriver
             co_return RESULT::ErrorDevice;											// Something went badly wrong .. bail
         }
 
-        // So now we need to search for interfaces and endpoints
-        uint8_t EndPtCnt = 0;											// Preset endpoint count to zero
-        uint8_t hidCount = 0;											// Preset hid count to zero
-        uint32_t i = 0;													// Start array search at zero
-        while (i < configDesc.wTotalLength - 1) {						// So while we havent reached end of config data
-            switch (static_cast<usb_descriptor_type>(configBuffer[i + 1])) {								// i will be on a descriptor header i+1 is decsriptor type 
-            case USB_DESCRIPTOR_TYPE_INTERFACE: {						// RESULT::Ok we have an interface descriptor we need to add it
-                memcpy((uint8_t*)&device->Interfaces[device->MaxInterface],
-                    &configBuffer[i], 
-                    sizeof(struct UsbInterfaceDescriptor));				// configBuffer[i] is descriptor size as well as first byte
-                device->MaxInterface++;									// One interface added
-                EndPtCnt = 0;											// Reset endpoint count to zero (we are on new interface now)
+        device->Interfaces.clear();
+        device->Endpoints.clear();
+
+        uint8_t hidCount = 0;
+        std::optional<uint8_t> currentInterfaceIndex;
+        uint32_t i = 0;
+        while (i < configDesc.wTotalLength - 1) {
+            switch (static_cast<usb_descriptor_type>(configBuffer[i + 1])) {
+            case USB_DESCRIPTOR_TYPE_INTERFACE: {
+                UsbInterfaceDescriptor interfaceDescriptor{};
+                memcpy(&interfaceDescriptor, &configBuffer[i], sizeof(interfaceDescriptor));
+                device->Interfaces.push_back(interfaceDescriptor);
+                device->Endpoints.emplace_back();
+                currentInterfaceIndex = static_cast<uint8_t>(device->Interfaces.size() - 1);
                 break;
             }
-            case USB_DESCRIPTOR_TYPE_ENDPOINT: {						// RESULT::Ok we have an endpoint descriptor we need to add it
-                memcpy((uint8_t*)&device->Endpoints[device->MaxInterface - 1][EndPtCnt], 
-                    &configBuffer[i],
-                    sizeof(struct UsbEndpointDescriptor));				// configBuffer[i] is descriptor size as well as first byte
-                EndPtCnt++;												// One endpoint added so move index
-                break;
-            }
-            case USB_DESCRIPTOR_TYPE_HID: {								// HID Interface found
-                if (hidCount == 0) {									// First HID descriptor found
-                    if ((result = AddHidPayload(device)) != RESULT::Ok) {		// RESULT::Ok so we need to add a hid payload to device
-                        LOG("Could not allocate hid payload, Error ID %i\n", result);
-                        co_return result;									// We must have to fouled up device allocation code
-                    };
+            case USB_DESCRIPTOR_TYPE_ENDPOINT: {
+                if (!currentInterfaceIndex.has_value()) {
+                    break;
                 }
-                // Set the HID descriptor in the payload
-                if (SetHidDescriptor(device->HidPayload, hidCount, device->MaxInterface - 1, &configBuffer[i], static_cast<uint8_t>(configBuffer[i])))
-                {
+                UsbEndpointDescriptor endpointDescriptor{};
+                memcpy(&endpointDescriptor, &configBuffer[i], sizeof(endpointDescriptor));
+                device->Endpoints[*currentInterfaceIndex].push_back(endpointDescriptor);
+                break;
+            }
+            case USB_DESCRIPTOR_TYPE_HID: {
+                if (!currentInterfaceIndex.has_value()) {
+                    break;
+                }
+                if (hidCount == 0) {
+                    if ((result = AddHidPayload(*device)) != RESULT::Ok) {
+                        LOG("Could not allocate hid payload, Error ID %i\n", result);
+                        co_return result;
+                    }
+                }
+                if (SetHidDescriptor(device->HidPayload, hidCount, *currentInterfaceIndex, &configBuffer[i], static_cast<uint8_t>(configBuffer[i]))) {
                     hidCount++;
                 }
                 break;
@@ -1156,7 +1082,7 @@ class DesignWareUsbDriver : public UsbDriver
             default:
                 break;
             }
-            i = i + static_cast<uint8_t>(configBuffer[i]);									// Add config descriptor size .. which moves us to next descriptor
+            i = i + static_cast<uint8_t>(configBuffer[i]);
         }
 
         LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 6 = Set Configuration to Device\n");
@@ -1170,7 +1096,7 @@ class DesignWareUsbDriver : public UsbDriver
 
         LOG("HCD: Attach Device %s. Address:%d Class:%d USB:%x.%x, %d configuration(s), %d interface(s).\n",
             UsbGetDescription(device), address, device->Descriptor.bDeviceClass, (device->Descriptor.bcdUSB >> 8) & 0xFF,
-            device->Descriptor.bcdUSB & 0xFF, device->Descriptor.bNumConfigurations, device->MaxInterface);
+            device->Descriptor.bcdUSB & 0xFF, device->Descriptor.bNumConfigurations, device->Interfaces.size());
         
         if (device->Descriptor.iProduct != 0) {
             size_t length = sizeof(buffer);
@@ -1208,7 +1134,7 @@ class DesignWareUsbDriver : public UsbDriver
         LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 7 = ENUMERATE SPECIAL DEVICES\n");
         if (device->Descriptor.bDeviceClass == DeviceClassHub) {		// If device is a hub then enumerate it
             LOG_DEBUG("Device is a hub, enumerating ports.\n");
-            if ((result = co_await EnumerateHub(device)) != RESULT::Ok) {				// Run hub enumeration
+            if ((result = co_await EnumerateHub(*device)) != RESULT::Ok) {
                 LOG("Could not enumerate HUB device %i, Error ID %i\n",
                     device->Pipe0.Number, result);						// Log error
                 co_return result;											// Return the error
@@ -1278,7 +1204,7 @@ class DesignWareUsbDriver : public UsbDriver
                     .Length = sizeof(header),							// Duplicate the length
                 },
                 ControlMessageTimeout,									// The standard timeout for any control message
-                NULL);													// Ignore bytes transferred
+                nullptr);													// Ignore bytes transferred
             if ((result == RESULT::Ok) && (header.DescriptorType != type))
             {
                 LOG("HCD: Descriptor type mismatch, expected %#x got %#x for device:%i.\n",
@@ -1342,17 +1268,23 @@ class DesignWareUsbDriver : public UsbDriver
         // Attach the root hub .. which will launch enumeration
         LOG_DEBUG("Allocating RootHub\n");
 
-        UsbDevice& rootHubDevice = DeviceTable[0];
-        rootHubDevice.Pipe0.Number = 1;
-        rootHubDevice.Pipe0.Speed = USB_SPEED_HIGH;
-        rootHubDevice.Config.Status = USB_STATUS_ATTACHED;
-        rootHubDevice.PayLoadId = NoPayload;
-        rootHubDevice.HubPayload = nullptr; // Assigned in enumeration.
+        auto rootHubDeviceEx = UsbAllocateDevice();
+        if (!rootHubDeviceEx.has_value())
+        {
+            error_ = rootHubDeviceEx.error();
+            co_return;
+        }
 
-        rootHubDevice.ParentHub.Number = 0xFF;
-        rootHubDevice.ParentHub.PortNumber = 0;
+        UsbDevice* rootHubDevice = rootHubDeviceEx.value().get();
+        rootHubDevice->Pipe0.Number = 1;
+        rootHubDevice->Pipe0.Speed = USB_SPEED_HIGH;
+        rootHubDevice->Config.Status = USB_STATUS_ATTACHED;
+        rootHubDevice->PayLoadId = NoPayload;
+        rootHubDevice->HubPayload = nullptr;
+        rootHubDevice->ParentHub.Number = 0xFF;
+        rootHubDevice->ParentHub.PortNumber = 0;
 
-        auto const result = co_await EnumerateDevice(&rootHubDevice, nullptr, 0);
+        auto const result = co_await EnumerateDevice(rootHubDevice, nullptr, 0);
         if (result != RESULT::Ok)
         {
             LOG("FATAL ERROR: Could not enumerate root HUB\n");
@@ -1443,8 +1375,8 @@ class DesignWareUsbDriver : public UsbDriver
 
     bool IsHub (uint8_t devNumber) override
     {
-        if ((devNumber > 0) && (devNumber <= MaximumDevices)) {			// Check the address is valid not zero and max devices or less
-            return IsHub(DeviceTable[devNumber - 1]);
+        if (auto* device = UsbDeviceAtAddress(devNumber)) {
+            return IsHub(*device);
         }
         return false;													// Not a hub
     }
@@ -1483,10 +1415,8 @@ class DesignWareUsbDriver : public UsbDriver
     --------------------------------------------------------------------------*/
     bool IsMassStorage (uint8_t devNumber) override
     {
-        if ((devNumber > 0) && (devNumber <= MaximumDevices)) {			// Check the address is valid not zero and max devices or less
-            struct UsbDevice* device = &DeviceTable[devNumber - 1];		// Shortcut to device pointer we are talking about
-            if (device->PayLoadId == MassStoragePayload &&				// Device pointer is valid and we have a payload id of mass storage
-                device->MassPayload != NULL) return true;				// Confirmed as a mass storage device
+        if (auto* device = UsbDeviceAtAddress(devNumber)) {
+            if (device->PayLoadId == MassStoragePayload && device->MassPayload != nullptr) return true;
         }
         return false;													// Not a mass storage device
     }
@@ -1499,10 +1429,10 @@ class DesignWareUsbDriver : public UsbDriver
     --------------------------------------------------------------------------*/
     bool IsMouse (uint8_t devNumber) override
     {
-        if ((devNumber > 0) && (devNumber <= MaximumDevices)) {			// Check the address is valid not zero and max devices or less
-            struct UsbDevice* device = &DeviceTable[devNumber - 1];		// Shortcut to device pointer we are talking about
-            if (device->PayLoadId == HidPayload && device->HidPayload   // Its a valid HID
-            && device->Interfaces[0].Protocol == 2) return true;		// Protocol 2 means a mouse
+        if (auto* device = UsbDeviceAtAddress(devNumber)) {
+            if (device->PayLoadId == HidPayload && device->HidPayload
+            && !device->Interfaces.empty()
+            && device->Interfaces[0].Protocol == 2) return true;
         }
         return false;													// Not a mouse device
     }
@@ -1516,6 +1446,7 @@ class DesignWareUsbDriver : public UsbDriver
     bool IsKeyboard (UsbDevice& device) override
     {
         if (device.PayLoadId == HidPayload && device.HidPayload   // Its a valid HID
+            && !device.Interfaces.empty()
             && device.Interfaces[0].Protocol == 1) return true;	// Protocol 1 means a keyboard
         return false;													// Not a mouse device
     }
@@ -1539,9 +1470,9 @@ class DesignWareUsbDriver : public UsbDriver
     --------------------------------------------------------------------------*/
     struct UsbDevice * UsbGetRootHub() override
     { 
-        if (DeviceTable[0].PayLoadId != 0)								// Check the root hub is in use AKA Usbinitialize was called
-            return &DeviceTable[0];										// Return the rootHub AKA DeviceList[0]
-        return NULL;													// Return NULL as no valid rootHub
+		if (!DeviceTable.empty() && DeviceTable[0])
+			return DeviceTable[0].get();
+                return nullptr;
     }
 
     /*-UsbDeviceAtAddress -------------------------------------------------------
@@ -1551,22 +1482,21 @@ class DesignWareUsbDriver : public UsbDriver
     --------------------------------------------------------------------------*/
     UsbDevice* UsbDeviceAtAddress (uint8_t devNumber) override
     {
-        if  (devNumber == 0 || devNumber > MaximumDevices)
+		if  (devNumber == 0 || devNumber > DeviceTable.size())
         {
             return nullptr;
         }
-        auto const device = &DeviceTable[devNumber-1];
-        if (device->PayLoadId == 0)
+		auto const& device = DeviceTable[devNumber - 1];
+		if (!device || device->PayLoadId == ErrorPayload)
         {
-            // It's not in use.
             return nullptr;
         }
-        return device;
+        return device.get();
     }
 
     uint8_t GetDeviceNumber(UsbDevice& device) override
     {
-        if (device,PayLoadId == ErrorPayload)
+		if (device.PayLoadId == ErrorPayload)
         {
             return 0; // Invalid device
         }
@@ -1582,33 +1512,24 @@ class DesignWareUsbDriver : public UsbDriver
         return device.HidPayload;
     }
 
-    UsbInterfaceDescriptor GetInterfaceDescriptor(UsbDevice* device, uint8_t interfaceIndex) override
+    UsbInterfaceDescriptor GetInterfaceDescriptor(UsbDevice& device, uint8_t interfaceIndex) override
     {
-        if (device == nullptr || interfaceIndex >= device->MaxInterface)
+        if (interfaceIndex >= device.Interfaces.size())
         {
-            return {}; // Return an empty descriptor if the device is invalid or index is out of bounds
+            return {};
         }
-        return device->Interfaces[interfaceIndex]; // Return the interface descriptor at the specified index
+        return device.Interfaces[interfaceIndex];
     }
 
-    UsbEndpointDescriptor FindEndpoint(UsbDevice* device, uint8_t interfaceIndex, usb_transfer_type type, UsbDirection direction) override
+    UsbEndpointDescriptor FindEndpoint(UsbDevice& device, uint8_t interfaceIndex, usb_transfer_type type, UsbDirection direction) override
     {
-        if (interfaceIndex >= device->MaxInterface)
+        if (interfaceIndex >= device.Endpoints.size())
         {
             return {};
         }
 
-        // Search through endpoints for this interface to find the requested endpoint
-        for (int i = 0; i < MaxEndpointsPerDevice; i++)
+        for (auto const& ep : device.Endpoints[interfaceIndex])
         {
-            UsbEndpointDescriptor const& ep = device->Endpoints[interfaceIndex][i];
-            if (ep.Header.DescriptorLength == 0)
-            {
-                // No more endpoints
-                return {};
-            }
-            
-            // Check if this is an interrupt IN endpoint
             if (ep.Attributes.Type == type && ep.EndpointAddress.Direction == direction)
             {
                 return ep;
@@ -1630,9 +1551,9 @@ class DesignWareUsbDriver : public UsbDriver
     --------------------------------------------------------------------------*/
     Async::task<void> UsbCheckForChange() override
     {
-        if (DeviceTable[0].PayLoadId != 0)
+        if (!DeviceTable.empty() && DeviceTable[0])
         {
-            return HubCheckForChange(&DeviceTable[0]);
+            return HubCheckForChange(*DeviceTable[0]);
         }
         else
         {
@@ -1656,7 +1577,7 @@ class DesignWareUsbDriver : public UsbDriver
             return "New Device (Not Ready)\0";
         else if (device->Config.Status == USB_STATUS_POWERED)
             return "Unknown Device (Not Ready)\0";
-        else if (device == &DeviceTable[0])
+        else if (!DeviceTable.empty() && DeviceTable[0] && device == DeviceTable[0].get())
             return "USB Root Hub\0";
 
         switch (device->Descriptor.bDeviceClass) {
@@ -1777,7 +1698,7 @@ class DesignWareUsbDriver : public UsbDriver
             if (IsHub(root->Pipe0.Number))
             {
                 bool drawLine = false;
-                uint32_t lastChild = root->HubPayload->MaxChildren;
+                uint32_t lastChild = root->HubPayload->Children.size();
                 for (uint32_t i = 0; i < lastChild; i++)
                 {
                     if (root->HubPayload->Children[i])
@@ -1825,7 +1746,7 @@ class DesignWareUsbDriver : public UsbDriver
                 root->Config.ConfigIndex,
                 root->Config.ConfigStringIndex,
                 root->Config.Status,
-                root->MaxInterface,
+                root->Interfaces.size(),
                 root->Descriptor.bDescriptorType,										// +0x1 Descriptor type
                 root->Descriptor.bcdUSB 												// +0x2 (in BCD 0x210 = USB2.10)
             );
@@ -1849,7 +1770,7 @@ class DesignWareUsbDriver : public UsbDriver
                 root->Descriptor.iSerialNumber,											// +0x10 Index of String Descriptor with the device's serial number
                 root->Descriptor.bNumConfigurations 									// +0x11 Number of possible configurations
             );
-            for (uint32_t i = 0; i < root->MaxInterface; i++)
+            for (size_t i = 0; i < root->Interfaces.size(); i++)
             {
                 printf("%s  - Interface %u Length %u Type %u Num %u Class %u SubClass %u\n",
                     indent,
@@ -1867,7 +1788,7 @@ class DesignWareUsbDriver : public UsbDriver
                     root->Interfaces[i].EndpointCount,
                     root->Interfaces[i].StringIndex
                 );
-                for (uint32_t j = 0; j < root->Interfaces[i].EndpointCount; j++) { // For each endpoint on the interface
+                for (size_t j = 0; j < root->Endpoints[i].size(); j++) {
                     printf("%s    - Endpoint %u Address %u %s Type %u Sync %u Usage %u\n",
                         indent,
                         j,
@@ -1895,7 +1816,7 @@ class DesignWareUsbDriver : public UsbDriver
         }
         if (IsHub(root->Pipe0.Number))
         {
-            uint32_t lastChild = root->HubPayload->MaxChildren;
+            uint32_t lastChild = root->HubPayload->Children.size();
             for (uint32_t i = 0; i < lastChild; i++) {						// For each child of hub
                 char nodetee = '\xC0';									// Preset nodetee to end node ... "L"
                 for (uint32_t j = i; j < lastChild - 1; j++) {				// Check if any following child node is valid
@@ -1942,16 +1863,13 @@ class DesignWareUsbDriver : public UsbDriver
         
         if (endpoint.Attributes.Type == USB_TRANSFER_TYPE_INTERRUPT) {
             // Find the interface this endpoint belongs to and get the data toggle state
-            uint8_t interfaceIndex = 0;
-            uint8_t endpointIndex = 0;
+            size_t interfaceIndex = 0;
+            size_t endpointIndex = 0;
             bool foundEndpoint = false;
             
-            // Search for this endpoint in the device's endpoint array
-            for (uint8_t i = 0; i < device->MaxInterface && !foundEndpoint; i++) {
-                for (uint8_t j = 0; j < MaxEndpointsPerDevice; j++) {
+            for (size_t i = 0; i < device->Endpoints.size() && !foundEndpoint; i++) {
+                for (size_t j = 0; j < device->Endpoints[i].size(); j++) {
                     auto const& ep = device->Endpoints[i][j];
-                    if (ep.Header.DescriptorLength == 0) break; // No more endpoints
-                    
                     if (ep.EndpointAddress.Number == endpoint.EndpointAddress.Number &&
                         ep.EndpointAddress.Direction == endpoint.EndpointAddress.Direction &&
                         ep.Attributes.Type == endpoint.Attributes.Type) {
@@ -1985,12 +1903,10 @@ class DesignWareUsbDriver : public UsbDriver
         // Update data toggle on successful transfer for interrupt endpoints
         if (transferred > 0 && endpoint.Attributes.Type == USB_TRANSFER_TYPE_INTERRUPT)
         {
-            // Find the endpoint again and toggle the data toggle bit
-            for (uint8_t i = 0; i < device->MaxInterface; i++) {
-                for (uint8_t j = 0; j < MaxEndpointsPerDevice; j++) {
+            for (size_t i = 0; i < device->Endpoints.size(); i++) {
+                for (size_t j = 0; j < device->Endpoints[i].size(); j++) {
                     auto& ep = device->Endpoints[i][j];
-                    if (ep.Header.DescriptorLength == 0) break;
-                    
+
                     if (ep.EndpointAddress.Number == endpoint.EndpointAddress.Number &&
                         ep.EndpointAddress.Direction == endpoint.EndpointAddress.Direction &&
                         ep.Attributes.Type == endpoint.Attributes.Type) {
@@ -2013,8 +1929,8 @@ class DesignWareUsbDriver : public UsbDriver
 
 Async::task<std::shared_ptr<UsbDriver>> UsbInitializeDesignWare()
 {
-    std::println("Initializing DesignWare USB Driver (from C++{})", 23);
-    auto result = std::make_unique<DesignWareUsbDriver>();
+    printf("Initializing DesignWare USB Driver\n");
+    auto result = std::make_shared<DesignWareUsbDriver>();
     co_await result->Initialize();
     co_return result;
 };

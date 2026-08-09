@@ -5,6 +5,9 @@
 
 #include <memory>
 #include <span>
+#include <vector>
+
+#include "UsbSpec.h"
 
 namespace PCIe {
     struct Bcm2711Driver;
@@ -13,6 +16,18 @@ namespace PCIe {
 
 namespace Usb
 {
+
+struct DeviceInfo
+{
+    uint32_t SlotId = 0;
+    uint32_t Port = 0;
+    uint32_t Speed = 0;
+    DeviceDescriptor Descriptor{};
+    ConfigurationDescriptor Configuration{};
+    std::vector<UsbInterfaceDescriptor> Interfaces{};
+    std::vector<std::vector<UsbEndpointDescriptor>> Endpoints{};
+    bool HasConfiguration = false;
+};
 
 enum class Status {
     Success,
@@ -32,9 +47,18 @@ public:
     virtual Status read(uint8_t endpoint, std::span<uint8_t> buffer) = 0;
     virtual Status write(uint8_t endpoint, std::span<const uint8_t> data) = 0;
     
-    virtual Status controlTransfer(uint8_t requestType, uint8_t request, 
+    virtual Status controlTransfer(uint8_t requestType, uint8_t request,
+                                 uint16_t value, uint16_t index,
+                                 std::span<uint8_t> data = {})
+    {
+        return controlTransfer(0, requestType, request, value, index, data);
+    }
+
+    virtual Status controlTransfer(uint8_t slotId, uint8_t requestType, uint8_t request,
                                  uint16_t value, uint16_t index,
                                  std::span<uint8_t> data = {}) = 0;
+
+    virtual std::span<DeviceInfo const> discovered_devices() const = 0;
 
     virtual void process_pending_events() = 0;
 

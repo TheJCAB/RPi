@@ -209,15 +209,15 @@ void Init(UsbDriver& driver)
 {
     DeviceDescriptor descriptor;
 
-    // Detect the first keyboard on USB bus
+    // Detect the first supported gamepad on USB bus.
     for (auto& device : driver.EnumerateDevices())
     {
-        if (!driver.IsHid(device))
+        if (!device.IsHid())
         {
             continue;
         }
-        auto i = driver.GetDeviceNumber(device);
-        descriptor = driver.GetDeviceDescriptor(i);
+        auto i = device.GetNumber();
+        descriptor = device.GetDescriptor();
         if (descriptor.bDeviceProtocol != 0) // Generic HID protocol (not a mouse or keyboard)
         {
             continue;
@@ -246,7 +246,6 @@ void Init(UsbDriver& driver)
 
             break;
         }
-        break;
     }
     if (firstGamepad > 0)
     {

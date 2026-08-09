@@ -549,11 +549,8 @@ void Core0(void* dtb)
 
             if (device.ClassCode == 0x0c0330) // USB xHCI controller
             {
-                auto xhci = Usb::Xhci::CreateController(pcie, device.Address);
-                xhci->initialize();
-                Cpu::DelayInMilliseconds(10);
-                xhci->process_pending_events();
-                xhci->run_hello_world_test();
+                auto usbInitTask = Usb::Xhci::UsbInitializeXhci(pcie, device.Address);
+                usbDriver = WaitOnTask(std::move(usbInitTask));
             }
         }
     }
@@ -562,10 +559,11 @@ void Core0(void* dtb)
         auto usbInitTask = UsbInitializeDesignWare();
 
         usbDriver = WaitOnTask(std::move(usbInitTask));
+    }
 
+    if (usbDriver)
+    {
         (void)WaitOnTask(usbDriver->UsbCheckForChange());
-
-        /* Display the USB tree */
         printf("\n");
         usbDriver->UsbShowTree(usbDriver->UsbGetRootHub(), 1, '+');
         printf("\n");

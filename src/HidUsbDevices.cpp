@@ -99,6 +99,7 @@ struct HidDevice {
     HidDescriptor Descriptor[MaxHIDPerDevice];	// HID descriptor of this device
     uint8_t HIDInterface[MaxHIDPerDevice];		// The interface the HID descriptor is on
     uint8_t MaxHID;
+    std::shared_ptr<UsbDevice> Device;
 };
 
 HidDevice HidTable[MaximumHids] = {};						// Usb hid device allocation table
@@ -125,6 +126,15 @@ HidDevice* AllocateHidPayload()
 void FreeHidPayload(HidDevice* device)
 {
     *device = {};
+}
+
+void BindHidOwner(HidDevice* hidDevice, std::shared_ptr<UsbDevice> const& device)
+{
+    if (hidDevice == nullptr)
+    {
+        return;
+    }
+    hidDevice->Device = device;
 }
 
 bool SetHidDescriptor(HidDevice* hidDevice, uint8_t hidIndex, uint8_t interface, std::byte const* buffer, uint8_t size)
@@ -252,7 +262,7 @@ Async::task<RESULT> EnumerateHID (UsbDriver& driver, UsbDevice* device)
     uint8_t Buf[1024];
     for (int i = 0; i < hidDevice->MaxHID; i++) {
         auto const& descriptor = hidDevice->Descriptor[i];
-        auto const interface = driver.GetInterfaceDescriptor(device, hidDevice->HIDInterface[i]);
+        auto const interface = driver.GetInterfaceDescriptor(*device, hidDevice->HIDInterface[i]);
         LOG("HID details: Version: %4x, Language: %i Descriptions: %i, Type: %i, Protocol: %i, NumInterface: %i\n",
             descriptor.HidVersion,
             descriptor.Countrycode,
@@ -609,7 +619,7 @@ Async::task<RESULT> HIDStartInterruptIN (UsbDriver& driver, uint8_t devNumber,  
 
     // Find the interrupt IN endpoint for this interface
     uint8_t interfaceIndex = hidDevice->HIDInterface[hidIndex];
-    auto const endpoint = driver.FindEndpoint(device, interfaceIndex, USB_TRANSFER_TYPE_INTERRUPT, USB_DIRECTION_IN);
+    auto const endpoint = driver.FindEndpoint(*device, interfaceIndex, USB_TRANSFER_TYPE_INTERRUPT, USB_DIRECTION_IN);
     if (endpoint.Header.DescriptorLength == 0) 
     {
         LOG("HID: No interrupt IN endpoint found for device %d, interface %d\n", 
@@ -726,7 +736,7 @@ RESULT HIDGetInterruptInterval (UsbDriver& driver, uint8_t devNumber,           
 
     // Find the interrupt IN endpoint for this interface
     uint8_t interfaceIndex = hidDevice->HIDInterface[hidIndex];
-    auto const endpoint = driver.FindEndpoint(device, interfaceIndex, USB_TRANSFER_TYPE_INTERRUPT, USB_DIRECTION_IN);
+    auto const endpoint = driver.FindEndpoint(*device, interfaceIndex, USB_TRANSFER_TYPE_INTERRUPT, USB_DIRECTION_IN);
     if (endpoint.Header.DescriptorLength == 0)
     {
         LOG("HID: No interrupt IN endpoint found for device %d, interface %d\n", 
@@ -794,7 +804,7 @@ Async::task<RESULT> HIDEnableInterruptIN (UsbDriver& driver, uint8_t devNumber, 
 
     // Verify that the device has an interrupt IN endpoint
     uint8_t interfaceIndex = hidDevice->HIDInterface[hidIndex];
-    auto const endpoint = driver.FindEndpoint(device, interfaceIndex, USB_TRANSFER_TYPE_INTERRUPT, USB_DIRECTION_IN);
+    auto const endpoint = driver.FindEndpoint(*device, interfaceIndex, USB_TRANSFER_TYPE_INTERRUPT, USB_DIRECTION_IN);
     if (endpoint.Header.DescriptorLength == 0) 
     {
         LOG("HID: No interrupt IN endpoint found for device %d, interface %d\n", 

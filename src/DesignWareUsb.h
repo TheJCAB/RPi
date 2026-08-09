@@ -31,6 +31,7 @@
 #pragma once
 
 #include "UsbSpec.h"
+#include "UsbPipe.h"
 #include "Async.h"
 
 #include <stdint.h>
@@ -42,24 +43,6 @@
 
 
 
-
-
-/***************************************************************************}
-{             PUBLIC USB STRUCTURES DEFINITIONS DEFINED BY US                }
-****************************************************************************/
-
-/*--------------------------------------------------------------------------}
-{     USB pipe our own special structure encompassing a pipe in the USB spec    }
-{---------------------------------------------------------------------------}*/
-struct PACKED UsbPipe
-{
-    uint16_t MaxPacketSizeInBytes; // Maximum packet size in bits
-    UsbSpeed Speed;               // Speed of device
-    uint8_t  EndPoint;            // Endpoint address
-    uint8_t  Number;              // Unique device number sometimes called address or id
-    uint8_t  splitNodePort;       // In low speed transfers it is port device is on closest parent high speed hub
-    uint8_t  splitNodePoint;      // In low speed transfers it is closest parent high speed hub
-};
 
 
 // Operating functions

@@ -45,12 +45,11 @@ constexpr auto CharToKeyCode = [](char c) constexpr
 
 void Init(UsbDriver& driver)
 {
-    // Detect the first keyboard on USB bus
     for (auto& device : driver.EnumerateDevices())
     {
-        if (driver.IsKeyboard(device))
+        if (device.IsKeyboard())
         {
-            firstKbd = driver.GetDeviceNumber(device);
+            firstKbd = device.GetNumber();
             break;
         }
     }
