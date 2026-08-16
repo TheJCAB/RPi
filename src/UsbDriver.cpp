@@ -79,6 +79,60 @@ UsbEndpointDescriptor UsbDevice::FindEndpoint(uint8_t interfaceIndex, usb_transf
 // ---------------------------------------------------------------------------------------------------------------------
 // Driver functions
 
+Async::task<RESULT> UsbDriver::HCDSubmitControlMessageOUT(
+    UsbDevice* device,
+    std::span<std::byte const> buffer, // Data buffer to send
+    UsbDeviceRequest request,	// USB request message
+    uint32_t timeout,					// Timeout in microseconds on message
+    uint32_t* bytesTransferred			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)				
+)
+{
+    if (request.Type & 0x80)
+    {
+        LOG("HCDSubmitControlMessageOUT called with IN request type: %#x\n", request.Type);
+        co_return RESULT::ErrorArgument;
+    }
+
+    auto const handle = GetIoHandle(device->GetAddress());
+
+    // Just returning the task from HCDSubmitControlMessage is tempting, but...
+    // In order to respect the lifetime of the channel, we need this to be a proper coroutine.
+    co_return co_await HCDSubmitControlMessageOUT(
+        device,
+        handle,
+        buffer,
+        request,
+        timeout,
+        bytesTransferred
+    );
+}
+
+Async::task<RESULT> UsbDriver::HCDSubmitControlMessageIN(
+    UsbDevice* device,
+    std::span<std::byte> buffer,					// Data buffer both send and recieve				 
+    UsbDeviceRequest request,	// USB request message
+    uint32_t timeout,					// Timeout in microseconds on message
+    uint32_t* bytesTransferred			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)				
+)
+{
+    if (!(request.Type & 0x80)) {
+        LOG("HCDSubmitControlMessageIN called with OUT request type: %#x\n", request.Type);
+        co_return RESULT::ErrorArgument;
+    }
+
+    auto const handle = GetIoHandle(device->GetAddress());
+
+    // Just returning the task from HCDSubmitControlMessage is tempting, but...
+    // In order to respect the lifetime of the channel, we need this to be a proper coroutine.
+    co_return co_await HCDSubmitControlMessageIN(
+        device,
+        handle,
+        buffer,
+        request,
+        timeout,
+        bytesTransferred
+    );
+}
 
 Async::task<RESULT> UsbDriver::HCDReadStringDescriptor (UsbDevice& device,
                                 uint8_t stringIndex,				// String index to be returned

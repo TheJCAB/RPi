@@ -1825,33 +1825,44 @@ public:
         co_return status;
     }
 
-    Async::task<RESULT> HCDSubmitControlMessageOUT(UsbDevice* device,
-        std::byte* buffer,
-        uint32_t bufferLength,
+    Async::task<RESULT> HCDSubmitControlMessageOUT(
+        UsbDevice* device,
+        IoHandle const& ioHandle,
+        std::span<std::byte const> buffer,
         UsbDeviceRequest request,
         uint32_t timeout,
         uint32_t* bytesTransferred) override
     {
-        auto slot = LookupSlot(device);
-        if (slot == 0) {
+        if (request.Type & 0x80) {
+            LOG("HCDSubmitControlMessageIN called with OUT request type: %#x\n", request.Type);
+            co_return RESULT::ErrorArgument;
+        }
+
+        auto slot = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(ioHandle.get()));
+        if (slot == 0 || slot != LookupSlot(device)) {
             co_return RESULT::ErrorDevice;
         }
-        auto const status = co_await SubmitControlTransfer(slot, request.Type, request.Request, request.Value, request.Index, buffer, bufferLength, request.Type, timeout, bytesTransferred);
+        auto const status = co_await SubmitControlTransfer(slot, request.Type, request.Request, request.Value, request.Index, const_cast<std::byte*>(buffer.data()), buffer.size(), request.Type, timeout, bytesTransferred);
         co_return status;
     }
 
     Async::task<RESULT> HCDSubmitControlMessageIN(UsbDevice* device,
-        std::byte* buffer,
-        uint32_t bufferLength,
+        IoHandle const& ioHandle,
+        std::span<std::byte> buffer,
         UsbDeviceRequest request,
         uint32_t timeout,
         uint32_t* bytesTransferred) override
     {
-        auto slot = LookupSlot(device);
-        if (slot == 0) {
+        if (!(request.Type & 0x80)) {
+            LOG("HCDSubmitControlMessageIN called with OUT request type: %#x\n", request.Type);
+            co_return RESULT::ErrorArgument;
+        }
+
+        auto slot = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(ioHandle.get()));
+        if (slot == 0 || slot != LookupSlot(device)) {
             co_return RESULT::ErrorDevice;
         }
-        auto const status = co_await SubmitControlTransfer(slot, request.Type, request.Request, request.Value, request.Index, buffer, bufferLength, request.Type, timeout, bytesTransferred);
+        auto const status = co_await SubmitControlTransfer(slot, request.Type, request.Request, request.Value, request.Index, buffer.data(), buffer.size(), request.Type, timeout, bytesTransferred);
         co_return status;
     }
 

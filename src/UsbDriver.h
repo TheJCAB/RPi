@@ -261,8 +261,8 @@ public:
     --------------------------------------------------------------------------*/
     virtual Async::task<RESULT> HCDSubmitControlMessageOUT(
         UsbDevice* device,
-        std::byte* buffer,					// Data buffer both send and recieve				 
-        uint32_t bufferLength,				// Buffer length for send or recieve
+        IoHandle const& ioHandle,
+        std::span<std::byte const> buffer, // Data buffer to send
         UsbDeviceRequest request,	// USB request message
         uint32_t timeout,					// Timeout in microseconds on message
         uint32_t* bytesTransferred			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)				
@@ -270,12 +270,28 @@ public:
 
     virtual Async::task<RESULT> HCDSubmitControlMessageIN(
         UsbDevice* device,
-        std::byte* buffer,					// Data buffer both send and recieve				 
-        uint32_t bufferLength,				// Buffer length for send or recieve
+        IoHandle const& ioHandle,
+        std::span<std::byte> buffer, // Data buffer to recieve				 
         UsbDeviceRequest request,	// USB request message
         uint32_t timeout,					// Timeout in microseconds on message
         uint32_t* bytesTransferred			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)				
     ) = 0;
+
+    virtual Async::task<RESULT> HCDSubmitControlMessageOUT(
+        UsbDevice* device,
+        std::span<std::byte const> buffer, // Data buffer to send
+        UsbDeviceRequest request,	// USB request message
+        uint32_t timeout,					// Timeout in microseconds on message
+        uint32_t* bytesTransferred			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)				
+    );
+
+    virtual Async::task<RESULT> HCDSubmitControlMessageIN(
+        UsbDevice* device,
+        std::span<std::byte> buffer, // Data buffer to recieve				 
+        UsbDeviceRequest request,	// USB request message
+        uint32_t timeout,					// Timeout in microseconds on message
+        uint32_t* bytesTransferred			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)				
+    );
 
     // Sends/recieves data from/to the given buffer to/from the given endpoint.
     virtual Async::task<RESULT> HCDEndpointTransfer(UsbDevice* device, UsbEndpointDescriptor endpoint, std::byte* buffer, uint32_t& bufferLength) = 0;

@@ -367,9 +367,8 @@ Async::task<RESULT> HIDReadReport (UsbDriver& driver, uint8_t devNumber,							/
     }
 
     result = co_await driver.HCDSubmitControlMessageIN(
-        device,												// Control pipe
-        Buffer,														// Pass buffer pointer
-        Length,														// Read length requested
+        device,
+        { Buffer, Length },
         UsbDeviceRequest {
             .Type = 0xa1,											// D7 = Device to Host, D5 = Vendor, D0 = Interface = 1010 0001 = 0xA1	
             .Request = GetReport,									// Get report
@@ -400,9 +399,8 @@ Async::task<RESULT> HIDSetIdle (UsbDriver& driver, uint8_t devNumber, uint8_t hi
     }
 
     result = co_await driver.HCDSubmitControlMessageOUT(
-        device,												// Control pipe
-        nullptr,													// Pass buffer pointer
-        0,															// Read length requested
+        device,
+        {},
         UsbDeviceRequest {
             .Type = 0xa1,											// D7 = Device to Host, D5 = Vendor, D0 = Interface = 1010 0001 = 0xA1	
             .Request = SetIdle,
@@ -446,9 +444,8 @@ Async::task<RESULT> HIDWriteReport (UsbDriver& driver, uint8_t devNumber,							
     }
 
     result = co_await driver.HCDSubmitControlMessageOUT(
-        device,												// Control pipe
-        Buffer,														// Transfer buffer pointer
-        Length,														// Write length requested
+        device,
+        { Buffer, Length },
         UsbDeviceRequest {
             .Type = 0x21,											// D7 = Host to Device  D5 = Vendor, D0 = Interface = 0010 0001 = 0x21	
             .Request = SetReport,									// Set report
@@ -529,9 +526,8 @@ Async::task<RESULT> HIDSetProtocol (UsbDriver& driver, uint8_t devNumber,							
     }
 
     result = co_await driver.HCDSubmitControlMessageOUT(
-        device,												// Use the control pipe
-        NULL,														// No buffer for command
-        0,															// No buffer length because of above
+        device,
+        {},
         UsbDeviceRequest {
             .Type = 0x21,											// D7 = Host to Device  D5 = Vendor D0 = Interface = 0010 0001 = 0x21	
             .Request = SetProtocol,									// Set protocol request
@@ -835,8 +831,7 @@ Async::task<RESULT> HIDEnableInterruptIN (UsbDriver& driver, uint8_t devNumber, 
         // Custom SetIdle implementation with configurable idle rate
         result = co_await driver.HCDSubmitControlMessageOUT(
             device,
-            nullptr,
-            0,
+            {},
             UsbDeviceRequest {
                 .Type = 0x21,                                       // Host to device, Class, Interface
                 .Request = SetIdle,

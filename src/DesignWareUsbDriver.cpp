@@ -164,10 +164,8 @@ class DesignWareUsbDriver : public UsbDriver
     24Feb17 LdB
     --------------------------------------------------------------------------*/
     Async::task<RESULT> HCDSubmitControlMessage (UsbDevice* device,
-                                    HCDChannel& channel,
-                                    UsbDirection Direction,
-                                    std::byte* buffer,					// Data buffer both send and recieve				 
-                                    uint32_t bufferLength,				// Buffer length for send or recieve
+                                    IoHandle const& ioHandle,
+                                    std::span<std::byte> buffer,					// Data buffer both send and recieve				 
                                     UsbDeviceRequest request,	// USB request message
                                     uint32_t timeout,					// Timeout in microseconds on message
                                     uint32_t* bytesTransferred)			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)				
@@ -179,6 +177,10 @@ class DesignWareUsbDriver : public UsbDriver
 
         uint32_t lastTransfer = 0;
 
+        auto& channel = *static_cast<HCDChannel*>(ioHandle.get());
+
+        UsbDirection Direction = (request.Type & 0x80) ? USB_DIRECTION_IN : USB_DIRECTION_OUT;
+
         LOG_DEBUG("Setup phase\n");
         // Setup phase
         uint32_t transferLength = co_await channel.TransferOut(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, { (std::byte const*)&request, sizeof(request) }, USB_PID_SETUP);
@@ -189,7 +191,7 @@ class DesignWareUsbDriver : public UsbDriver
             co_return ResultFromDwcResult(result);
         }
 
-        if (buffer == nullptr)
+        if (buffer.empty())
         {
             if (Direction == USB_DIRECTION_IN) {
                 LOG("HCD: No buffer provided for IN transfer to device %i.\n", device->Pipe0.Number);
@@ -205,11 +207,11 @@ class DesignWareUsbDriver : public UsbDriver
         else if (Direction == USB_DIRECTION_OUT)
         {
             LOG_DEBUG("Transfer phase\n");
-            lastTransfer = co_await channel.TransferOut(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, { buffer, bufferLength }, USB_PID_DATA1);
-            if (lastTransfer != bufferLength)
+            lastTransfer = co_await channel.TransferOut(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, buffer, USB_PID_DATA1);
+            if (lastTransfer != buffer.size())
             {
-                LOG("HCD: OUT transfer to device %i failed, expected %u bytes, got %u bytes.\n",
-                    device->Pipe0.Number, bufferLength, lastTransfer);
+                LOG("HCD: OUT transfer to device %i failed, expected %zu bytes, got %u bytes.\n",
+                    device->Pipe0.Number, buffer.size(), lastTransfer);
                 co_return RESULT::ErrorGeneral; // Some parameter or communication issue.
             }
             LOG_DEBUG("Status phase\n");
@@ -218,11 +220,11 @@ class DesignWareUsbDriver : public UsbDriver
         else
         {
             LOG_DEBUG("Transfer phase\n");
-            lastTransfer = co_await channel.TransferIn(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, { buffer, bufferLength }, USB_PID_DATA1);
-            if (lastTransfer != bufferLength)
+            lastTransfer = co_await channel.TransferIn(device->Pipe0, USB_TRANSFER_TYPE_CONTROL, buffer, USB_PID_DATA1);
+            if (lastTransfer != buffer.size())
             {
-                LOG("HCD: IN transfer to device %i failed, expected %u bytes, got %u bytes.\n",
-                    device->Pipe0.Number, bufferLength, lastTransfer);
+                LOG("HCD: IN transfer to device %i failed, expected %zu bytes, got %u bytes.\n",
+                    device->Pipe0.Number, buffer.size(), lastTransfer);
                 co_return RESULT::ErrorGeneral; // Some parameter or communication issue.
             }
             LOG_DEBUG("Status phase\n");
@@ -233,25 +235,29 @@ class DesignWareUsbDriver : public UsbDriver
         co_return RESULT::Ok;
     }
 
+    using UsbDriver::HCDSubmitControlMessageOUT;
+    using UsbDriver::HCDSubmitControlMessageIN;
+
     Async::task<RESULT> HCDSubmitControlMessageOUT(
         UsbDevice* device,
-        std::byte* buffer,					// Data buffer both send and recieve				 
-        uint32_t bufferLength,				// Buffer length for send or recieve
+        IoHandle const& ioHandle,
+        std::span<std::byte const> buffer, // Data buffer to send
         UsbDeviceRequest request,	// USB request message
         uint32_t timeout,					// Timeout in microseconds on message
         uint32_t* bytesTransferred			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)				
     ) override
     {
-        auto const channel = Host->GetChannel();
+        if (request.Type & 0x80) {
+            LOG("HCDSubmitControlMessageOUT called with IN request type: %#x\n", request.Type);
+            co_return RESULT::ErrorArgument;
+        }
 
         // Just returning the task from HCDSubmitControlMessage is tempting, but...
         // In order to respect the lifetime of the channel, we need this to be a proper coroutine.
         co_return co_await HCDSubmitControlMessage(
             device,
-            *channel,
-            USB_DIRECTION_OUT,
-            buffer,
-            bufferLength,
+            ioHandle,
+            { const_cast<std::byte*>(buffer.data()), buffer.size() }, // Cast away constness for the transfer, as the underlying API expects a non-const span
             request,
             timeout,
             bytesTransferred
@@ -260,23 +266,24 @@ class DesignWareUsbDriver : public UsbDriver
 
     Async::task<RESULT> HCDSubmitControlMessageIN(
         UsbDevice* device,
-        std::byte* buffer,					// Data buffer both send and recieve				 
-        uint32_t bufferLength,				// Buffer length for send or recieve
+        IoHandle const& ioHandle,
+        std::span<std::byte> buffer,					// Data buffer both send and recieve				 
         UsbDeviceRequest request,	// USB request message
         uint32_t timeout,					// Timeout in microseconds on message
         uint32_t* bytesTransferred			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)				
     ) override
     {
-        auto const channel = Host->GetChannel();
+        if (!(request.Type & 0x80)) {
+            LOG("HCDSubmitControlMessageIN called with OUT request type: %#x\n", request.Type);
+            co_return RESULT::ErrorArgument;
+        }
 
         // Just returning the task from HCDSubmitControlMessage is tempting, but...
         // In order to respect the lifetime of the channel, we need this to be a proper coroutine.
         co_return co_await HCDSubmitControlMessage(
             device,
-            *channel,
-            USB_DIRECTION_IN,
+            ioHandle,
             buffer,
-            bufferLength,
             request,
             timeout,
             bytesTransferred
@@ -289,35 +296,32 @@ class DesignWareUsbDriver : public UsbDriver
     is a restricted address for the rootHub and will return if attempted.
     24Feb17 LdB
     --------------------------------------------------------------------------*/
-    Async::task<RESULT> HCDSetAddress (UsbDevice* device, HCDChannel& channel, uint8_t address)
+    Async::task<RESULT> HCDSetAddress (UsbDevice* device, IoHandle const& ioHandle, uint8_t address)
     {
         if (address == 0) co_return RESULT::ErrorArgument;							// You can't set address zero that is strictly reserved for roothub
         co_return co_await HCDSubmitControlMessage(
-            device,														// Pipe which points to current device endpoint
-            channel,
-            USB_DIRECTION_OUT,
-            nullptr,													// No data its a command
-            0,															// Zero size transfer as no data
+            device,
+            ioHandle,
+            {},													// No data
             UsbDeviceRequest {
                 .Type = 0,
                 .Request = SetAddress,									// Set address request
                 .Value = address,										// Address to set
             },
-            ControlMessageTimeout, nullptr);
+            ControlMessageTimeout,
+            nullptr);
     }
 
     /*-INTERNAL: HCDSetConfiguration---------------------------------------------
     Sets a given USB device configuration to the config index number requested.
     28Feb17 LdB
     --------------------------------------------------------------------------*/
-    Async::task<RESULT> HCDSetConfiguration (UsbDevice* device, HCDChannel& channel, uint8_t configuration)
+    Async::task<RESULT> HCDSetConfiguration (UsbDevice* device, IoHandle const& ioHandle, uint8_t configuration)
     {
         return HCDSubmitControlMessage(
             device,
-            channel,
-            USB_DIRECTION_OUT,
-            nullptr,
-            0,
+            ioHandle,
+            {},                                                    // No data
             UsbDeviceRequest {
                 .Type = 0,
                 .Request = SetConfiguration,							// Set configuration
@@ -345,9 +349,8 @@ class DesignWareUsbDriver : public UsbDriver
     {
         uint32_t transfer = 0;
         auto const result = co_await HCDSubmitControlMessageIN(
-            device,														// Pass control pipe thru unchanged
-            (std::byte*)&Status,											// Pass in pointer to status
-            sizeof(uint32_t),											// We want full structure for either call which is 32 bits
+            device,
+            { (std::byte*)&Status, sizeof(Status) },
             UsbDeviceRequest {								// Construct a USB request
                 .Type = port ? bmREQ_PORT_STATUS : bmREQ_HUB_STATUS,	// Request bit mask is for hub if port = 0, hub port otherwise 
                 .Request = GetStatus,									// Get status id
@@ -383,14 +386,13 @@ class DesignWareUsbDriver : public UsbDriver
                                     bool set)							// Set or clear the feature
     {
         auto const result = co_await HCDSubmitControlMessageOUT(
-            device,														// Pipe settings passed thru as is
-            nullptr,													// No buffer as no data
-            0,															// Length zero as no data
+            device,
+            {},
             UsbDeviceRequest {
-                .Type = port ? bmREQ_PORT_FEATURE : bmREQ_HUB_FEATURE,	// Request bit mask is for hub if port = 0, hub port otherwise
+                .Type = port > 0 ? bmREQ_PORT_FEATURE : bmREQ_HUB_FEATURE,
                 .Request = set ? SetFeature : ClearFeature,				// Set or clear feature as requested
                 .Value = (uint16_t)feature,								// Feature we are changing
-                .Index = port,											// Port (index 1 so add one)
+                .Index = port,
             },
             ControlMessageTimeout,										// Standard control message timeouts
             nullptr
@@ -913,7 +915,7 @@ class DesignWareUsbDriver : public UsbDriver
         DeviceDescriptor desc = { 0 };
         char buffer[256] __attribute__((aligned(4)));					// Text buffer
 
-        auto const channel = Host->GetChannel();
+        auto const ioHandle = GetIoHandle(device->GetAddress());
 
         /* Store the unique address until it is actually assigned. */
         address = device->Pipe0.Number;									// Hold unique address we will set device to
@@ -921,12 +923,10 @@ class DesignWareUsbDriver : public UsbDriver
         LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 1 = Read first 8 Bytes of Device Descriptor\n");
         device->Pipe0.MaxPacketSizeInBytes = 8;							// Set max packet size to 8 ( So exchange will be exactly 1 packet)
 
-        result = co_await HCDSubmitControlMessage(
-            device,												// Pipe as given to us
-            *channel,
-            USB_DIRECTION_IN,
-            (std::byte*)&desc,											// Pointer to descriptor
-            8,															// Ask for first 8 bytes as per USB specification
+        result = co_await HCDSubmitControlMessageIN(
+            device,
+            ioHandle,
+            { reinterpret_cast<std::byte*>(&desc), 8 }, // Ask for first 8 bytes as per USB specification
             UsbDeviceRequest {								// We will build a request structure
                 .Type = bmREQ_GET_DEVICE_DESCRIPTOR,					// Recipient is a flag usually 0x0 for normal device, 0x20 for a hub
                 .Request = GetDescriptor,								// We want a descriptor obviously
@@ -956,7 +956,7 @@ class DesignWareUsbDriver : public UsbDriver
         }
         
         LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 3 = Set Device Address %u\n", address);
-        if ((result = co_await HCDSetAddress(device, *channel, address)) != RESULT::Ok) {
+        if ((result = co_await HCDSetAddress(device, ioHandle, address)) != RESULT::Ok) {
             LOG("Enumeration: Failed to assign address to %#x.\n", address);// Log the error
             device->Pipe0.Number = address;								// Set device number just so it stays valid
             co_return result;												// Fatal enumeration error of this device
@@ -1017,12 +1017,10 @@ class DesignWareUsbDriver : public UsbDriver
         uint8_t configNum = configDesc.bConfigurationValue;
         // Okay we have the total length of config so we will read it in entirity
         std::byte configBuffer[1024];										// Largest config I have ever seen is few hundred bytes this is 1K buffer
-        result = co_await HCDSubmitControlMessage(
+        result = co_await HCDSubmitControlMessageIN(
             device,												// Device 
-            *channel,
-            USB_DIRECTION_IN,
-            &configBuffer[0],											// Buffer pointer passed in as is
-            configDesc.wTotalLength,									// Length of whole config descriptor
+            ioHandle,
+            { configBuffer, configDesc.wTotalLength },
             UsbDeviceRequest {								// We will build a request structure
                 .Type = bmREQ_GET_DEVICE_DESCRIPTOR,					// We want normal device descriptor
                 .Request = GetDescriptor,								// We want a descriptor obviously
@@ -1086,7 +1084,7 @@ class DesignWareUsbDriver : public UsbDriver
         }
 
         LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 6 = Set Configuration to Device\n");
-        if (auto const thisResult = co_await HCDSetConfiguration(device, *channel, configNum); thisResult != RESULT::Ok) {
+        if (auto const thisResult = co_await HCDSetConfiguration(device, ioHandle, configNum); thisResult != RESULT::Ok) {
             LOG("HCD: Failed to set configuration %#x for device %i.\n",
                 configNum, device->Pipe0.Number);
             co_return thisResult;
@@ -1184,18 +1182,16 @@ class DesignWareUsbDriver : public UsbDriver
                             uint32_t *bytesTransferred,     			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)								
                             bool runHeaderCheck) override						// Whether to run header check
     {
-        auto const channel = Host->GetChannel();
+        auto const ioHandle = GetIoHandle(device->GetAddress());
 
         RESULT result;
         uint32_t transfer;
         alignas(4) struct UsbDescriptorHeader header  = { 0 };
         if (runHeaderCheck) {
-            result = co_await HCDSubmitControlMessage(
+            result = co_await HCDSubmitControlMessageIN(
                 device,													// Pipe passed in as is
-                *channel,
-                USB_DIRECTION_IN,
-                (std::byte*)&header,										// Buffer to description header
-                sizeof(header),											// Size of the header
+                ioHandle,
+                { reinterpret_cast<std::byte*>(&header), sizeof(header) },
                 UsbDeviceRequest {							// We will build a request structure
                     .Type = recipient,									// Recipient is a flag usually bmREQ_GET_DEVICE_DESCRIPTOR, bmREQ_GET_HUB_DESCRIPTOR etc
                     .Request = GetDescriptor,							// We want a descriptor obviously
@@ -1219,12 +1215,10 @@ class DesignWareUsbDriver : public UsbDriver
             if (length > header.DescriptorLength)						// Check descriptor length vs buffer space
                 length = header.DescriptorLength;						// The descriptor is shorter than buffer space provided
         }
-        result = co_await HCDSubmitControlMessage(
+        result = co_await HCDSubmitControlMessageIN(
             device,														// Pipe passed in as is
-            *channel,
-            USB_DIRECTION_IN,
-            (std::byte*)buffer,														// Buffer pointer passed in as is
-            length,														// Length transferred (it may be shorter from above)
+            ioHandle,
+            { reinterpret_cast<std::byte*>(buffer), length },
             UsbDeviceRequest {								// We will build a request structure
                 .Type = recipient,										//  Recipient is a flag usually bmREQ_GET_DEVICE_DESCRIPTOR, bmREQ_GET_HUB_DESCRIPTOR etc
                 .Request = GetDescriptor,								// We want a descriptor obviously
