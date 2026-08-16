@@ -216,7 +216,7 @@ void Init(UsbDriver& driver)
         {
             continue;
         }
-        auto i = device.GetNumber();
+        auto i = device.GetAddress();
         descriptor = device.GetDescriptor();
         if (descriptor.bDeviceProtocol != 0) // Generic HID protocol (not a mouse or keyboard)
         {
@@ -249,22 +249,23 @@ void Init(UsbDriver& driver)
     }
     if (firstGamepad > 0)
     {
+        auto& device = *driver.UsbDeviceAtAddress(firstGamepad);
         printf("Gamepad detected\r\n");
         printf("Vendor ID: %04X, Product ID: %04X\r\n", descriptor.idVendor, descriptor.idProduct);
         char buffer[256];
-        if (size_t length = driver.GetDeviceProductString(firstGamepad, buffer))
+        if (size_t length = device.GetDeviceProductString(buffer))
         {
             printf("Product: %s\r\n", buffer);
         }
-        if (size_t length = driver.GetDeviceManufacturerString(firstGamepad, buffer))
+        if (size_t length = device.GetDeviceManufacturerString(buffer))
         {
             printf("Manufacturer: %s\r\n", buffer);
         }
-        if (size_t length = driver.GetDeviceSerialNumberString(firstGamepad, buffer))
+        if (size_t length = device.GetDeviceSerialNumberString(buffer))
         {
             printf("Serial Number: %s\r\n", buffer);
         }
-        if (size_t length = driver.GetDeviceConfigStringString(firstGamepad, buffer))
+        if (size_t length = device.GetDeviceConfigStringString(buffer))
         {
             printf("Configuration: %s\r\n", buffer);
         }

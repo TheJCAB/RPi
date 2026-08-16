@@ -33,7 +33,7 @@ add_kernel_image(kernel8
     Debugger.cpp        Debugger.h
     TimerExample.cpp    TimerExample.h
     Timer.cpp           Timer.h
-                        UsbDriver.h
+    UsbDriver.cpp       UsbDriver.h
     HidUsbDevices.cpp   HidUsbDevices.h
     Keyboard.cpp        Keyboard.h
     Gamepad.cpp         Gamepad.h

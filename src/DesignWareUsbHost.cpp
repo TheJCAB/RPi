@@ -332,7 +332,7 @@ Async::task<std::shared_ptr<HCDHost>> HCDHost::Make(uintptr_t baseAddress, Clock
         host->registers.PORT = tempPort;
     }
 
-    co_await Async::DelayInMicroseconds(1000);
+    /*co_await Async*/ Cpu::DelayInMicroseconds(1000);
 
     LOG_DEBUG("HCD: Initial resetting physical host.\n");
     tempPort = *host->registers.PORT;
@@ -368,7 +368,7 @@ Async::task<std::shared_ptr<HCDHost>> HCDHost::Make(uintptr_t baseAddress, Clock
 
     LOG_DEBUG("HCD: Initialized %u channels\n", m_NumChannels);
 
-    co_await Async::DelayInMilliseconds(1);								// Wait 1 millisecond to allow the USB bus to stabilize
+    /*co_await Async*/ Cpu::DelayInMilliseconds(1);								// Wait 1 millisecond to allow the USB bus to stabilize
 
     tempPort = *host->registers.PORT;
     tempPort.Raw32 &= HOSTPORTMASK;
@@ -376,7 +376,7 @@ Async::task<std::shared_ptr<HCDHost>> HCDHost::Make(uintptr_t baseAddress, Clock
     host->registers.PORT = tempPort;
 
     LOG("HCD: Root HUB powered on.\n");
-    co_await Async::DelayInMilliseconds(2);
+    /*co_await Async*/ Cpu::DelayInMilliseconds(2);
 
     tempPort = *host->registers.PORT;
     tempPort.Raw32 &= HOSTPORTMASK;
@@ -392,7 +392,7 @@ Async::task<std::shared_ptr<HCDHost>> HCDHost::Make(uintptr_t baseAddress, Clock
     tempPort.Reset = false;
     host->registers.PORT = tempPort;
 
-    co_await Async::DelayInMilliseconds(1);
+    /*co_await Async*/ Cpu::DelayInMilliseconds(1);
 
     co_return host;
 }

@@ -255,14 +255,14 @@ void describe_hid_descriptor(const uint8_t* data, size_t length)
  enumeration it will call this procedure to enumerate connected HID devices.
  11Feb17 LdB
  --------------------------------------------------------------------------*/
-Async::task<RESULT> EnumerateHID (UsbDriver& driver, UsbDevice* device)
+Async::task<RESULT> EnumerateHID(UsbDevice& device)
 {
-    auto const hidDevice = driver.GetHidDevice(*device);
+    auto const hidDevice = device.GetHidDevice();
 
     uint8_t Buf[1024];
     for (int i = 0; i < hidDevice->MaxHID; i++) {
         auto const& descriptor = hidDevice->Descriptor[i];
-        auto const interface = driver.GetInterfaceDescriptor(*device, hidDevice->HIDInterface[i]);
+        auto const interface = device.GetInterfaceDescriptor(hidDevice->HIDInterface[i]);
         LOG("HID details: Version: %4x, Language: %i Descriptions: %i, Type: %i, Protocol: %i, NumInterface: %i\n",
             descriptor.HidVersion,
             descriptor.Countrycode,
@@ -271,7 +271,7 @@ Async::task<RESULT> EnumerateHID (UsbDriver& driver, UsbDevice* device)
             interface.Protocol,
             interface.Number);
 
-        if (co_await HIDReadDescriptor(driver, driver.GetDeviceNumber(*device), i, &Buf[0], sizeof(Buf)) == RESULT::Ok) {
+        if (co_await HIDReadDescriptor(device.GetDriver(), device.GetAddress(), i, &Buf[0], sizeof(Buf)) == RESULT::Ok) {
             LOG_DEBUG("HID REPORT> Page usage: 0x%02x%02x, Usage: 0x%02x%02x, Collection: 0x%02x%02x\n",
                 Buf[0], Buf[1], Buf[2], Buf[3], Buf[4], Buf[5]);
 
@@ -314,7 +314,7 @@ Async::task<RESULT> HIDReadDescriptor (UsbDriver& driver, uint8_t devNumber,				
     {
         co_return RESULT::ErrorDeviceNumber;
     }
-    auto const hidDevice = driver.GetHidDevice(*device);			// Fetch pointer to device number requested
+    auto const hidDevice = device->GetHidDevice();			// Fetch pointer to device number requested
     if (hidDevice == nullptr)
     {
         co_return RESULT::ErrorNotHID;
@@ -330,7 +330,7 @@ Async::task<RESULT> HIDReadDescriptor (UsbDriver& driver, uint8_t devNumber,				
     if ((result != RESULT::Ok) || (transfer != sizeToRead)) {				// Read/transfer failed
         LOG("HCD: Fetch HID descriptor %u for device: %u failed.\n",
             hidDevice->HIDInterface[hidIndex], 
-            driver.GetDeviceNumber(*device));									// Log the error
+            device->GetAddress());									// Log the error
         co_return RESULT::ErrorDevice;											// No idea what problem is so bail
     }
 
@@ -360,7 +360,7 @@ Async::task<RESULT> HIDReadReport (UsbDriver& driver, uint8_t devNumber,							/
     {
         co_return RESULT::ErrorDeviceNumber;
     }
-    auto const hidDevice = driver.GetHidDevice(*device);
+    auto const hidDevice = device->GetHidDevice();
     if (hidDevice == nullptr)
     {
         co_return RESULT::ErrorNotHID;
@@ -393,7 +393,7 @@ Async::task<RESULT> HIDSetIdle (UsbDriver& driver, uint8_t devNumber, uint8_t hi
     {
         co_return RESULT::ErrorDeviceNumber;
     }
-    auto const hidDevice = driver.GetHidDevice(*device);
+    auto const hidDevice = device->GetHidDevice();
     if (hidDevice == nullptr)
     {
         co_return RESULT::ErrorNotHID;
@@ -439,7 +439,7 @@ Async::task<RESULT> HIDWriteReport (UsbDriver& driver, uint8_t devNumber,							
     {
         co_return RESULT::ErrorDeviceNumber;
     }
-    auto const hidDevice = driver.GetHidDevice(*device);
+    auto const hidDevice = device->GetHidDevice();
     if (hidDevice == nullptr)
     {
         co_return RESULT::ErrorNotHID;
@@ -522,7 +522,7 @@ Async::task<RESULT> HIDSetProtocol (UsbDriver& driver, uint8_t devNumber,							
     {
         co_return RESULT::ErrorDeviceNumber;
     }
-    auto const hidDevice = driver.GetHidDevice(*device);
+    auto const hidDevice = device->GetHidDevice();
     if (hidDevice == nullptr)
     {
         co_return RESULT::ErrorNotHID;
@@ -606,7 +606,7 @@ Async::task<RESULT> HIDStartInterruptIN (UsbDriver& driver, uint8_t devNumber,  
     {
         co_return RESULT::ErrorDeviceNumber;
     }
-    auto const hidDevice = driver.GetHidDevice(*device);
+    auto const hidDevice = device->GetHidDevice();
     if (hidDevice == nullptr)
     {
         co_return RESULT::ErrorNotHID;
@@ -619,7 +619,7 @@ Async::task<RESULT> HIDStartInterruptIN (UsbDriver& driver, uint8_t devNumber,  
 
     // Find the interrupt IN endpoint for this interface
     uint8_t interfaceIndex = hidDevice->HIDInterface[hidIndex];
-    auto const endpoint = driver.FindEndpoint(*device, interfaceIndex, USB_TRANSFER_TYPE_INTERRUPT, USB_DIRECTION_IN);
+    auto const endpoint = device->FindEndpoint(interfaceIndex, USB_TRANSFER_TYPE_INTERRUPT, USB_DIRECTION_IN);
     if (endpoint.Header.DescriptorLength == 0) 
     {
         LOG("HID: No interrupt IN endpoint found for device %d, interface %d\n", 
@@ -660,7 +660,7 @@ Async::task<RESULT> HIDStopInterruptIN (UsbDriver& driver, uint8_t devNumber,   
     {
         co_return RESULT::ErrorDeviceNumber;
     }
-    auto const hidDevice = driver.GetHidDevice(*device);
+    auto const hidDevice = device->GetHidDevice();
     if (hidDevice == nullptr)
     {
         co_return RESULT::ErrorNotHID;
@@ -726,7 +726,7 @@ RESULT HIDGetInterruptInterval (UsbDriver& driver, uint8_t devNumber,           
     {
         return RESULT::ErrorDeviceNumber;
     }
-    auto const hidDevice = driver.GetHidDevice(*device);
+    auto const hidDevice = device->GetHidDevice();
     if (hidDevice == nullptr)
     {
         return RESULT::ErrorNotHID;
@@ -736,7 +736,7 @@ RESULT HIDGetInterruptInterval (UsbDriver& driver, uint8_t devNumber,           
 
     // Find the interrupt IN endpoint for this interface
     uint8_t interfaceIndex = hidDevice->HIDInterface[hidIndex];
-    auto const endpoint = driver.FindEndpoint(*device, interfaceIndex, USB_TRANSFER_TYPE_INTERRUPT, USB_DIRECTION_IN);
+    auto const endpoint = device->FindEndpoint(interfaceIndex, USB_TRANSFER_TYPE_INTERRUPT, USB_DIRECTION_IN);
     if (endpoint.Header.DescriptorLength == 0)
     {
         LOG("HID: No interrupt IN endpoint found for device %d, interface %d\n", 
@@ -791,7 +791,7 @@ Async::task<RESULT> HIDEnableInterruptIN (UsbDriver& driver, uint8_t devNumber, 
     {
         co_return RESULT::ErrorDeviceNumber;
     }
-    auto const hidDevice = driver.GetHidDevice(*device);
+    auto const hidDevice = device->GetHidDevice();
     if (hidDevice == nullptr)
     {
         co_return RESULT::ErrorNotHID;
@@ -804,7 +804,7 @@ Async::task<RESULT> HIDEnableInterruptIN (UsbDriver& driver, uint8_t devNumber, 
 
     // Verify that the device has an interrupt IN endpoint
     uint8_t interfaceIndex = hidDevice->HIDInterface[hidIndex];
-    auto const endpoint = driver.FindEndpoint(*device, interfaceIndex, USB_TRANSFER_TYPE_INTERRUPT, USB_DIRECTION_IN);
+    auto const endpoint = device->FindEndpoint(interfaceIndex, USB_TRANSFER_TYPE_INTERRUPT, USB_DIRECTION_IN);
     if (endpoint.Header.DescriptorLength == 0) 
     {
         LOG("HID: No interrupt IN endpoint found for device %d, interface %d\n", 

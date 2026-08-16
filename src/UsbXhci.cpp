@@ -151,9 +151,9 @@ constexpr uint32_t TRB_CC_ENDPOINT_NOT_ENABLED = 12;
 
 // Transfer Request Block structure (16 bytes, 64-byte aligned for rings)
 struct alignas(16) TRB {
-    uint64_t parameter;
-    uint32_t status;
-    uint32_t control;
+    uint64_t parameter = 0;
+    uint32_t status    = 0;
+    uint32_t control   = 0;
 
     friend constexpr bool operator==(TRB const&, TRB const&) = default;
 };
@@ -663,6 +663,8 @@ private:
                 Cpu::DelayInMicroseconds(50);
                 continue;
             }
+
+            printf("XHCI: Event received: Control=0x%08X Status=0x%08X Parameter=0x%016llX\n", event->control, event->status, event->parameter);
 
             uint32_t const trb_type        = (event->control >> 10) & 0x3F;
             uint32_t const completion_code = (event->status >> 24) & 0xFF;
@@ -1267,11 +1269,17 @@ public:
             setup_trb.parameter = setup_packet_data;
             setup_trb.status = 8;
             setup_trb.control =
-                (TRB_TYPE_SETUP << 10) |
-                (trt << 16) |
-                TRB_CTRL_CHAIN |
-                TRB_CTRL_IDT |
-                (slot.transfer_ring_cycle_state ? TRB_CTRL_CYCLE : 0);
+            (TRB_TYPE_SETUP << 10) |
+            (trt << 16) |
+            TRB_CTRL_CHAIN |
+            TRB_CTRL_IDT |
+            (slot.transfer_ring_cycle_state ? TRB_CTRL_CYCLE : 0);
+            printf("XHCI: Setup TRB - 0x%016X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n", &setup_trb,
+                reinterpret_cast<uint8_t*>(&setup_trb)[0], reinterpret_cast<uint8_t*>(&setup_trb)[1], reinterpret_cast<uint8_t*>(&setup_trb)[2], reinterpret_cast<uint8_t*>(&setup_trb)[3],
+                reinterpret_cast<uint8_t*>(&setup_trb)[4], reinterpret_cast<uint8_t*>(&setup_trb)[5], reinterpret_cast<uint8_t*>(&setup_trb)[6], reinterpret_cast<uint8_t*>(&setup_trb)[7],
+                reinterpret_cast<uint8_t*>(&setup_trb)[8], reinterpret_cast<uint8_t*>(&setup_trb)[9], reinterpret_cast<uint8_t*>(&setup_trb)[10], reinterpret_cast<uint8_t*>(&setup_trb)[11],
+                reinterpret_cast<uint8_t*>(&setup_trb)[12], reinterpret_cast<uint8_t*>(&setup_trb)[13], reinterpret_cast<uint8_t*>(&setup_trb)[14], reinterpret_cast<uint8_t*>(&setup_trb)[15]
+            );
             Processor::FlushDataCache(&setup_trb, sizeof(TRB));
 
             uint32_t next_pos = advance_transfer_ring_pointer(setup_pos);
@@ -1289,6 +1297,13 @@ public:
                 if (data_stage_in) {
                     data_trb.control |= TRB_CTRL_DIR_IN;
                 }
+                printf("XHCI: Data TRB - 0x%016X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n", &data_trb,
+                    reinterpret_cast<uint8_t*>(&data_trb)[0], reinterpret_cast<uint8_t*>(&data_trb)[1], reinterpret_cast<uint8_t*>(&data_trb)[2], reinterpret_cast<uint8_t*>(&data_trb)[3],
+                    reinterpret_cast<uint8_t*>(&data_trb)[4], reinterpret_cast<uint8_t*>(&data_trb)[5], reinterpret_cast<uint8_t*>(&data_trb)[6], reinterpret_cast<uint8_t*>(&data_trb)[7],
+                    reinterpret_cast<uint8_t*>(&data_trb)[8], reinterpret_cast<uint8_t*>(&data_trb)[9], reinterpret_cast<uint8_t*>(&data_trb)[10], reinterpret_cast<uint8_t*>(&data_trb)[11],
+                    reinterpret_cast<uint8_t*>(&data_trb)[12], reinterpret_cast<uint8_t*>(&data_trb)[13], reinterpret_cast<uint8_t*>(&data_trb)[14], reinterpret_cast<uint8_t*>(&data_trb)[15]
+                );
+
                 Processor::FlushDataCache(&data_trb, sizeof(TRB));
 
                 next_pos = advance_transfer_ring_pointer(data_pos);
@@ -1303,10 +1318,16 @@ public:
             status_trb.parameter = 0;
             status_trb.status = 0;
             status_trb.control =
-                (TRB_TYPE_STATUS << 10) |
-                TRB_CTRL_IOC |
-                ((!data_stage_present || !data_stage_in) ? TRB_CTRL_DIR_IN : 0) |
-                (slot.transfer_ring_cycle_state ? TRB_CTRL_CYCLE : 0);
+            (TRB_TYPE_STATUS << 10) |
+            TRB_CTRL_IOC |
+            ((!data_stage_present || !data_stage_in) ? TRB_CTRL_DIR_IN : 0) |
+            (slot.transfer_ring_cycle_state ? TRB_CTRL_CYCLE : 0);
+            printf("XHCI: Status TRB - 0x%016X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n", &status_trb,
+                reinterpret_cast<uint8_t*>(&status_trb)[0], reinterpret_cast<uint8_t*>(&status_trb)[1], reinterpret_cast<uint8_t*>(&status_trb)[2], reinterpret_cast<uint8_t*>(&status_trb)[3],
+                reinterpret_cast<uint8_t*>(&status_trb)[4], reinterpret_cast<uint8_t*>(&status_trb)[5], reinterpret_cast<uint8_t*>(&status_trb)[6], reinterpret_cast<uint8_t*>(&status_trb)[7],
+                reinterpret_cast<uint8_t*>(&status_trb)[8], reinterpret_cast<uint8_t*>(&status_trb)[9], reinterpret_cast<uint8_t*>(&status_trb)[10], reinterpret_cast<uint8_t*>(&status_trb)[11],
+                reinterpret_cast<uint8_t*>(&status_trb)[12], reinterpret_cast<uint8_t*>(&status_trb)[13], reinterpret_cast<uint8_t*>(&status_trb)[14], reinterpret_cast<uint8_t*>(&status_trb)[15]
+            );
             Processor::FlushDataCache(&status_trb, sizeof(TRB));
 
             next_pos = advance_transfer_ring_pointer(status_pos);
@@ -1320,9 +1341,20 @@ public:
         ring_doorbell(slot_id, 1);
 
         Status const transfer_status = wait_for_transfer_event(slot_id);
-        if (transfer_status == Status::Success && data_stage_in && !data.empty()) {
+        printf("XHCI: Control transfer completed with status %s\n",
+            transfer_status == Status::Success  ? "Success" :
+            transfer_status == Status::Timeout  ? "Timeout" :
+            transfer_status == Status::Error    ? "Error" :
+            /*transfer_status == Status::NotFound ?*/ "NotFound");
+        if (/*transfer_status == Status::Success &&*/ data_stage_in && !data.empty()) {
             Processor::InvalidateDataCache(dma_data_ptr, data.size());
             std::memcpy(data.data(), dma_data_ptr, data.size());
+
+            printf("Data:");
+            for (auto data_byte : data) {
+                printf(" %02X", data_byte);
+            }
+            printf("\n");
         }
         return transfer_status;
     }
@@ -1512,12 +1544,7 @@ public:
             return false;
         }
 
-        TRB enable_slot_cmd{};
-        enable_slot_cmd.parameter = 0;
-        enable_slot_cmd.status = 0;
-        enable_slot_cmd.control = (TRB_TYPE_ENABLE_SLOT << 10) | 1; // Set cycle bit
-
-        if (send_command(enable_slot_cmd)) {
+        if (send_command(TRB{ .control = TRB_TYPE_ENABLE_SLOT << 10 })) {
             printf("XHCI: Enable slot command sent for port %u\n", logical_port);
         }
 
@@ -1541,24 +1568,27 @@ public:
         default_control_slot_id.store(hw_slot_id);
 
         std::array<uint8_t, 64> device_descriptor{};
-        if (controlTransfer(hw_slot_id, 0x80, 0x06, 0x0100, 0, device_descriptor) == Status::Success) {
-            std::array<uint8_t, 64> config_descriptor{};
-            if (controlTransfer(hw_slot_id, 0x80, 0x06, 0x0200, 0, config_descriptor) == Status::Success) {
-                remember_discovered_device(hw_slot_id, logical_port, post_reset_speed, device_descriptor, config_descriptor);
-                print_device_summary(logical_port, slot_id, device_descriptor, config_descriptor);
-            }
-            else {
-                remember_discovered_device(hw_slot_id, logical_port, post_reset_speed, device_descriptor, {});
-                print_device_summary(logical_port, slot_id, device_descriptor, {});
-            }
-
-            if (device_descriptor.size() >= 4 && device_descriptor[4] == 0x09) {
-                enumerate_hub_children(hw_slot_id, address_port, hccparams1);
-            }
-        }
-        else {
+        if (controlTransfer(hw_slot_id, 0x80, 0x06, 0x0100, 0, device_descriptor) != Status::Success)
+        {
             printf("XHCI: Port %u could not retrieve a device descriptor\n", logical_port);
             return false;
+        }
+        std::array<uint8_t, 64> config_descriptor{};
+        if (controlTransfer(hw_slot_id, 0x80, 0x06, 0x0200, 0, config_descriptor) == Status::Success) {
+            remember_discovered_device(hw_slot_id, logical_port, post_reset_speed, device_descriptor, config_descriptor);
+            print_device_summary(logical_port, slot_id, device_descriptor, config_descriptor);
+
+            controlTransfer(hw_slot_id, 0x00, 0x09, config_descriptor[5], 0, {});
+        }
+        else {
+            remember_discovered_device(hw_slot_id, logical_port, post_reset_speed, device_descriptor, {});
+            print_device_summary(logical_port, slot_id, device_descriptor, {});
+
+            controlTransfer(hw_slot_id, 0x00, 0x09, 1, 0, {});
+        }
+
+        if (device_descriptor.size() >= 4 && device_descriptor[4] == 0x09) {
+            enumerate_hub_children(hw_slot_id, address_port, hccparams1);
         }
 
         return true;
@@ -1654,6 +1684,22 @@ public:
     {
     }
 
+    IoHandle GetIoHandle(uint8_t deviceAddress) override
+    {
+        if (deviceAddress == 0 || deviceAddress > deviceTable_.size())
+        {
+            return {};
+        }
+        auto& devicePtr = deviceTable_[deviceAddress - 1];
+        if (!devicePtr)
+        {
+            return {};
+        }
+        return IoHandle(reinterpret_cast<void*>(deviceAddress), IoHandleDeleter{ nullptr });
+    }
+
+    void DeleteIoHandle(void* ptr) override {}
+
     Async::task<> Initialize()
     {
         if (!controller_) {
@@ -1668,31 +1714,29 @@ public:
 
         std::vector<std::shared_ptr<UsbDevice>> devices;
         for (auto const& info : controller_->discovered_devices()) {
-            auto device = std::make_shared<UsbDevice>();
-            device->SetDriver(std::shared_ptr<UsbDriver>(this, [](UsbDriver*) {}));
+            auto device = std::make_shared<UsbDevice>(std::shared_ptr<UsbDriver>(this, [](UsbDriver*) {}));
             device->Pipe0.Number = static_cast<uint8_t>(devices.size() + 1);
             device->Descriptor = info.Descriptor;
             device->Interfaces = info.Interfaces;
             device->Endpoints = info.Endpoints;
             device->Config.Status = info.HasConfiguration ? USB_STATUS_CONFIGURED : USB_STATUS_DEFAULT;
             if (info.Descriptor.bDeviceClass == DeviceClassHub) {
-                device->PayLoadId = HubPayload;
+                device->PayLoadId = PayLoadType::Hub;
             }
             else if (info.Descriptor.bDeviceClass == DeviceClassInInterface || info.Descriptor.bDeviceClass == 0x03) {
-                device->PayLoadId = HidPayload;
+                device->PayLoadId = PayLoadType::Hid;
             }
             else {
-                device->PayLoadId = NoPayload;
+                device->PayLoadId = PayLoadType::None;
             }
             devices.push_back(std::move(device));
         }
 
         if (devices.empty()) {
-            auto root = std::make_shared<UsbDevice>();
-            root->SetDriver(std::shared_ptr<UsbDriver>(this, [](UsbDriver*) {}));
+            auto root = std::make_shared<UsbDevice>(std::shared_ptr<UsbDriver>(this, [](UsbDriver*) {}));
             root->Pipe0.Number = 1;
             root->Config.Status = USB_STATUS_ATTACHED;
-            root->PayLoadId = NoPayload;
+            root->PayLoadId = PayLoadType::None;
             devices.push_back(std::move(root));
         }
 
@@ -1712,43 +1756,6 @@ public:
         }
     }
 
-    DeviceDescriptor GetDeviceDescriptor(uint8_t devNumber) override
-    {
-        if (auto* device = UsbDeviceAtAddress(devNumber)) {
-            return device->Descriptor;
-        }
-        return {};
-    }
-
-    size_t GetDeviceProductString(uint8_t devNumber, std::span<char> buffer) override
-    {
-        return ReadStringDescriptor(devNumber, GetStringIndex(devNumber, 0x0F), buffer);
-    }
-
-    size_t GetDeviceManufacturerString(uint8_t devNumber, std::span<char> buffer) override
-    {
-        return ReadStringDescriptor(devNumber, GetStringIndex(devNumber, 0x0E), buffer);
-    }
-
-    size_t GetDeviceSerialNumberString(uint8_t devNumber, std::span<char> buffer) override
-    {
-        return ReadStringDescriptor(devNumber, GetStringIndex(devNumber, 0x10), buffer);
-    }
-
-    size_t GetDeviceConfigStringString(uint8_t devNumber, std::span<char> buffer) override
-    {
-        return ReadStringDescriptor(devNumber, GetConfigStringIndex(devNumber), buffer);
-    }
-
-    bool IsHub(UsbDevice&) override { return false; }
-    bool IsHub(uint8_t devNumber) override { return false; }
-    bool IsHid(UsbDevice& device) override { return device.PayLoadId == HidPayload; }
-    bool IsHid(uint8_t devNumber) override { return IsHid(*UsbDeviceAtAddress(devNumber)); }
-    bool IsMassStorage(uint8_t devNumber) override { return false; }
-    bool IsMouse(uint8_t devNumber) override { return false; }
-    bool IsKeyboard(UsbDevice& device) override { return device.PayLoadId == HidPayload && !device.Interfaces.empty() && device.Interfaces[0].Protocol == 1; }
-    bool IsKeyboard(uint8_t devNumber) override { return IsKeyboard(*UsbDeviceAtAddress(devNumber)); }
-
     UsbDevice* UsbGetRootHub() override { return deviceTable_.empty() ? nullptr : deviceTable_.front().get(); }
 
     UsbDevice* UsbDeviceAtAddress(uint8_t devNumber) override
@@ -1758,39 +1765,6 @@ public:
         }
         auto const& device = deviceTable_[devNumber - 1];
         return device ? device.get() : nullptr;
-    }
-
-    uint8_t GetDeviceNumber(UsbDevice& device) override
-    {
-        for (size_t i = 0; i < deviceTable_.size(); ++i) {
-            if (deviceTable_[i].get() == &device) {
-                return static_cast<uint8_t>(i + 1);
-            }
-        }
-        return 0;
-    }
-
-    HidDevice* GetHidDevice(UsbDevice&) override { return nullptr; }
-
-    UsbInterfaceDescriptor GetInterfaceDescriptor(UsbDevice& device, uint8_t interfaceIndex) override
-    {
-        if (interfaceIndex >= device.Interfaces.size()) {
-            return {};
-        }
-        return device.Interfaces[interfaceIndex];
-    }
-
-    UsbEndpointDescriptor FindEndpoint(UsbDevice& device, uint8_t interfaceIndex, usb_transfer_type type, UsbDirection direction) override
-    {
-        if (interfaceIndex >= device.Endpoints.size()) {
-            return {};
-        }
-        for (auto const& endpoint : device.Endpoints[interfaceIndex]) {
-            if (endpoint.Attributes.Type == type && endpoint.EndpointAddress.Direction == direction) {
-                return endpoint;
-            }
-        }
-        return {};
     }
 
     Async::task<void> UsbCheckForChange() override { co_return; }
@@ -1803,13 +1777,11 @@ public:
         if (device->Descriptor.bDeviceClass == DeviceClassHub) {
             return "USB Hub";
         }
-        if (device->PayLoadId == HidPayload) {
+        if (device->PayLoadId == PayLoadType::Hid) {
             return "USB HID";
         }
         return "USB Device";
     }
-
-    void UsbShowTree(UsbDevice*, const int, const char) override {}
 
     Async::task<RESULT> HCDGetDescriptor(UsbDevice* device,
                             usb_descriptor_type type,
@@ -1905,60 +1877,6 @@ public:
     }
 
 private:
-    size_t ReadStringDescriptor(uint8_t devNumber, uint8_t index, std::span<char> buffer)
-    {
-        if (buffer.empty() || index == 0) {
-            return 0;
-        }
-
-        auto* device = UsbDeviceAtAddress(devNumber);
-        if (!device) {
-            return 0;
-        }
-
-        std::array<std::byte, 256> response{};
-        uint32_t transferred = 0;
-        auto const status = Async::WaitOnTask(HCDGetDescriptor(device, USB_DESCRIPTOR_TYPE_STRING, index, 0, response.data(), static_cast<uint32_t>(response.size()), 0x80, &transferred, false));
-        if (status != RESULT::Ok || transferred < 2) {
-            return 0;
-        }
-
-        auto const* descriptor = reinterpret_cast<UsbStringDescriptor const*>(response.data());
-        size_t out = 0;
-        for (uint16_t i = 1; i + 1 < descriptor->Header.DescriptorLength; i += 2) {
-            uint8_t const ch = static_cast<uint8_t>(descriptor->Data[i / 2]);
-            if (ch == 0) {
-                break;
-            }
-            if (out + 1 >= buffer.size()) {
-                break;
-            }
-            buffer[out++] = static_cast<char>(ch);
-        }
-        if (out < buffer.size()) {
-            buffer[out] = '\0';
-        }
-        return out;
-    }
-
-    uint8_t GetStringIndex(uint8_t devNumber, uint8_t field) {
-        auto* device = UsbDeviceAtAddress(devNumber);
-        if (!device) {
-            return 0;
-        }
-        switch (field) {
-            case 0x0E: return device->Descriptor.iManufacturer;
-            case 0x0F: return device->Descriptor.iProduct;
-            case 0x10: return device->Descriptor.iSerialNumber;
-            default: return 0;
-        }
-    }
-
-    uint8_t GetConfigStringIndex(uint8_t devNumber) {
-        auto* device = UsbDeviceAtAddress(devNumber);
-        return device ? device->Config.ConfigStringIndex : 0;
-    }
-
     uint8_t LookupSlot(UsbDevice* device) const
     {
         if (!device) {

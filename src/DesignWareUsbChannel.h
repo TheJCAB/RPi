@@ -23,28 +23,19 @@ public:
     HCDChannel(HCDHost&, uintptr_t baseAddress, uint8_t channelNumber, std::span<std::byte, 1024> dmaBuffer);
 
     void Reset();
-    void SetMaxPacketSize(uint16_t size);
-    void SetDeviceAddress(uint8_t address);
-    void SetEndpointType(uint8_t type);
-    void SetDirection(bool isIn);
-    void SetInterval(uint8_t interval);
-    
-    bool StartTransfer(void const* data, size_t length);
-    bool IsTransferComplete() const;
-    size_t GetTransferredBytes() const;
 
     using InCallback = bool (*)(uintptr_t context, HCDChannel& channel);
 
-    void Prepare(
-        UsbPipe const&    pipe, // Endpoint information
-        usb_transfer_type Type,
-        UsbDirection      Direction,
-        PacketId          packetId,
-        uint32_t          transferSize,
-        InCallback        callback, // Callback to call when transfer is complete
-        uintptr_t         context
-    );
-    void StartInTransfer();
+    //void Prepare(
+    //    UsbPipe const&    pipe, // Endpoint information
+    //    usb_transfer_type Type,
+    //    UsbDirection      Direction,
+    //    PacketId          packetId,
+    //    uint32_t          transferSize,
+    //    InCallback        callback, // Callback to call when transfer is complete
+    //    uintptr_t         context
+    //);
+    //void StartInTransfer();
 
     void HandleInterrupt();
 

@@ -49,7 +49,7 @@ void Init(UsbDriver& driver)
     {
         if (device.IsKeyboard())
         {
-            firstKbd = device.GetNumber();
+            firstKbd = device.GetAddress();
             break;
         }
     }

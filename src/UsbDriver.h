@@ -45,6 +45,7 @@ namespace PCIe {
 #include <vector>
 
 #include <stdint.h>
+#include <wchar.h>
 
 
 enum class RESULT : int
@@ -73,12 +74,12 @@ struct HubDevice;
 struct HidDevice;
 struct MassStorageDevice;
 
-enum PayLoadType {
-    ErrorPayload = 0,
-    NoPayload = 1,
-    HubPayload = 2,
-    HidPayload = 3,
-    MassStoragePayload = 4,
+enum class PayLoadType {
+    Error       = 0,
+    None        = 1,
+    Hub         = 2,
+    Hid         = 3,
+    MassStorage = 4,
 };
 
 struct __attribute__((__packed__)) UsbParent {
@@ -94,6 +95,14 @@ struct __attribute__((__packed__)) UsbConfigControl {
     uint8_t reserved;
 };
 
+class UsbDevice;
+
+// USB hub structure which is just extra data attached to a USB node
+struct HubDevice {
+    std::vector<UsbDevice*> Children;
+    HubDescriptor Descriptor;
+};
+
 class UsbDevice
 {
 public:
@@ -102,22 +111,30 @@ public:
     {
     }
 
-    void SetDriver(std::shared_ptr<UsbDriver> driver)
-    {
-        driver_ = std::move(driver);
-    }
+    UsbDriver const& GetDriver() const { return *driver_; }
+    UsbDriver&       GetDriver()       { return *driver_; }
 
-    std::shared_ptr<UsbDriver> const& GetDriver() const
-    {
-        return driver_;
-    }
+    std::shared_ptr<UsbDriver> const& GetSharedDriver() const { return driver_; }
 
-    bool IsHid();
-    bool IsKeyboard();
-    uint8_t GetNumber();
-    DeviceDescriptor GetDescriptor();
-    UsbInterfaceDescriptor GetInterfaceDescriptor(uint8_t interfaceIndex);
-    UsbEndpointDescriptor FindEndpoint(uint8_t interfaceIndex, usb_transfer_type type, UsbDirection direction);
+    bool IsHub        () const { return PayLoadId == PayLoadType::Hub; }
+    bool IsHid        () const { return PayLoadId == PayLoadType::Hid; }
+    bool IsMassStorage() const { return PayLoadId == PayLoadType::MassStorage; }
+    bool IsKeyboard   () const { return PayLoadId == PayLoadType::Hid && !Interfaces.empty() && Interfaces[0].Protocol == 1; }
+    bool IsMouse      () const { return PayLoadId == PayLoadType::Hid && !Interfaces.empty() && Interfaces[0].Protocol == 2; }
+    // TODO: These:
+    //bool IsGamepad    () const { return false; }
+
+    size_t GetDeviceProductString     (std::span<char> buffer);
+    size_t GetDeviceManufacturerString(std::span<char> buffer);
+    size_t GetDeviceSerialNumberString(std::span<char> buffer);
+    size_t GetDeviceConfigStringString(std::span<char> buffer);
+
+    uint8_t GetAddress() { return Pipe0.Number; }
+    DeviceDescriptor const& GetDescriptor() const { return Descriptor; }
+    UsbInterfaceDescriptor const& GetInterfaceDescriptor(uint8_t index) const { return index < Interfaces.size() ? Interfaces[index] : NullInterfaceDescriptor; }
+    UsbEndpointDescriptor FindEndpoint(uint8_t interfaceIndex, usb_transfer_type type, UsbDirection direction) const;
+
+    HidDevice* GetHidDevice() { return IsHid() ? HidPayload : nullptr; }
 
     UsbParent ParentHub{};
     UsbPipe Pipe0{};
@@ -126,7 +143,7 @@ public:
     std::vector<std::vector<UsbEndpointDescriptor>> Endpoints{};
     alignas(4) DeviceDescriptor Descriptor{};
 
-    PayLoadType PayLoadId = ErrorPayload;
+    PayLoadType PayLoadId = PayLoadType::Error;
     HubDevice* HubPayload = nullptr;
     HidDevice* HidPayload = nullptr;
     MassStorageDevice* MassPayload = nullptr;
@@ -139,69 +156,32 @@ private:
 
 class UsbDriver
 {
+protected:
+    struct IoHandleDeleter
+    {
+        UsbDriver* Driver = nullptr;
+
+        void operator()(void* ptr) const
+        {
+            if (Driver)
+            {
+                Driver->DeleteIoHandle(ptr);
+            }
+        }
+    };
+
+    virtual void DeleteIoHandle(void* ptr) = 0;
+
 public:
     virtual ~UsbDriver() = default;
 
     virtual RESULT GetError() = 0;
 
+    using IoHandle = std::unique_ptr<void, IoHandleDeleter>;
+
+    virtual IoHandle GetIoHandle(uint8_t deviceAddress) = 0;
+
     virtual std::generator<UsbDevice&> EnumerateDevices() = 0;
-
-    virtual DeviceDescriptor GetDeviceDescriptor(uint8_t devNumber) = 0;
-
-    virtual size_t GetDeviceProductString     (uint8_t devNumber, std::span<char> buffer) = 0;
-    virtual size_t GetDeviceManufacturerString(uint8_t devNumber, std::span<char> buffer) = 0;
-    virtual size_t GetDeviceSerialNumberString(uint8_t devNumber, std::span<char> buffer) = 0;
-    virtual size_t GetDeviceConfigStringString(uint8_t devNumber, std::span<char> buffer) = 0;
-
-    /*-IsHub---------------------------------------------------------------------
-    Will return if the given usbdevice is infact a hub and thus has hub payload
-    data available. Remember the gateway node of a hub is a normal usb device.
-    You should always call this first up in any routine that accesses the hub
-    payload to make sure the payload pointers are valid. If it returns true it
-    is safe to proceed and do things with the hub payload via it's pointer.
-    24Feb17 LdB
-    --------------------------------------------------------------------------*/
-    virtual bool IsHub(UsbDevice& device) = 0;
-    virtual bool IsHub(uint8_t devNumber) = 0;
-
-    /*-IsHid---------------------------------------------------------------------
-    Will return if the given usbdevice is infact a hid and thus has hid payload
-    data available. Remember a hid device is a normal usb device which takes
-    human input (like keyboard, mouse etc). You should always call this first
-    in any routine that accesses the hid payload to make sure the pointers are
-    valid. If it returns true it is safe to proceed and do things with the hid
-    payload via it's pointer.
-    24Feb17 LdB
-    --------------------------------------------------------------------------*/
-    virtual bool IsHid(UsbDevice&) = 0;
-    virtual bool IsHid(uint8_t devNumber) = 0;
-
-    /*-IsMassStorage------------------------------------------------------------
-    Will return if the given usbdevice is infact a mass storage device and thus
-    has a mass storage payload data available. You should always call this first
-    in any routine that accesses the storage payload to make sure the pointers
-    are valid. If it returns true it is safe to proceed and do things with the
-    storage payload via it's pointer.
-    24Feb17 LdB
-    --------------------------------------------------------------------------*/
-    virtual bool IsMassStorage(uint8_t devNumber) = 0;
-
-    /*-IsMouse-------------------------------------------------------------------
-    Will return if the given usbdevice is infact a mouse. This initially checks
-    the device IsHid and then refines that down to looking at the interface and
-    checking it is defined as a mouse.
-    24Feb17 LdB
-    --------------------------------------------------------------------------*/
-    virtual bool IsMouse(uint8_t devNumber) = 0;
-
-    /*-IsKeyboard----------------------------------------------------------------
-    Will return if the given usbdevice is infact a keyboard. This initially will
-    check the device IsHid and then refines that down to looking at the interface 
-    and checking it is defined as a keyboard.
-    24Feb17 LdB
-    --------------------------------------------------------------------------*/
-    virtual bool IsKeyboard(UsbDevice&) = 0;
-    virtual bool IsKeyboard(uint8_t devNumber) = 0;
 
     /*-UsbGetRootHub ------------------------------------------------------------
     On a Universal Serial Bus, there exists a root hub. This if often a virtual
@@ -220,12 +200,6 @@ public:
     11Apr17 LdB
     --------------------------------------------------------------------------*/
     virtual UsbDevice* UsbDeviceAtAddress (uint8_t devNumber) = 0;
-
-    virtual uint8_t    GetDeviceNumber(UsbDevice&) = 0;
-    virtual HidDevice* GetHidDevice   (UsbDevice&) = 0;
-
-    virtual UsbInterfaceDescriptor GetInterfaceDescriptor(UsbDevice& device, uint8_t interfaceIndex) = 0;
-    virtual UsbEndpointDescriptor  FindEndpoint(UsbDevice& device, uint8_t interfaceIndex, usb_transfer_type type, UsbDirection direction) = 0;
 
 
     /*--------------------------------------------------------------------------}
@@ -251,13 +225,6 @@ public:
     Unchanged from Alex Chadwick
     --------------------------------------------------------------------------*/
     virtual const char* UsbGetDescription (UsbDevice *device) = 0;
-
-    /*-UsbShowTree --------------------------------------------------------------
-    Shows the USB tree as ascii art using the Printf command. The normal command
-    to show from roothub up is UsbShowTree(UsbGetRootHub(), 1, '+');
-    14Mar17 LdB
-    --------------------------------------------------------------------------*/
-    virtual void UsbShowTree (UsbDevice *root, const int level, const char tee) = 0;
 
     /*--------------------------------------------------------------------------}
     {						 PUBLIC USB DESCRIPTOR ROUTINES						}
@@ -312,61 +279,27 @@ public:
 
     // Sends/recieves data from/to the given buffer to/from the given endpoint.
     virtual Async::task<RESULT> HCDEndpointTransfer(UsbDevice* device, UsbEndpointDescriptor endpoint, std::byte* buffer, uint32_t& bufferLength) = 0;
+
+    void LOG(const char* format, ...) {}
+
+    /*-INTERNAL: HCDReadStringDescriptor-----------------------------------------
+    Reads the string descriptor at the given string index returning an ascii of
+    the descriptor. Internally the descriptor is unicode so the raw descriptor
+    is not returned. The code is setup to US English language support (0x409),
+    and if a string does not have a valid English language string the default
+    language is use to read blindly to satisfy enumeration. Non english speakers
+    if you want to choose a different language you need to change 0x409 in the
+    code below to your standard USB language ID you want.
+    21Mar17 LdB
+    --------------------------------------------------------------------------*/
+    Async::task<RESULT> HCDReadStringDescriptor (UsbDevice& device,
+                                    uint8_t stringIndex,				// String index to be returned
+                                    char* buffer,						// Pointer to a buffer
+                                    size_t& length);					// The size of that buffer
+
+    // Shows the USB tree as ascii art using the Printf command
+    void UsbShowTree();
 };
-
-inline bool UsbDevice::IsHid()
-{
-    if (!driver_)
-    {
-        return false;
-    }
-    return driver_->IsHid(*this);
-}
-
-inline bool UsbDevice::IsKeyboard()
-{
-    if (!driver_)
-    {
-        return false;
-    }
-    return driver_->IsKeyboard(*this);
-}
-
-inline uint8_t UsbDevice::GetNumber()
-{
-    if (!driver_)
-    {
-        return 0;
-    }
-    return driver_->GetDeviceNumber(*this);
-}
-
-inline DeviceDescriptor UsbDevice::GetDescriptor()
-{
-    if (!driver_)
-    {
-        return {};
-    }
-    return driver_->GetDeviceDescriptor(GetNumber());
-}
-
-inline UsbInterfaceDescriptor UsbDevice::GetInterfaceDescriptor(uint8_t interfaceIndex)
-{
-    if (!driver_)
-    {
-        return {};
-    }
-    return driver_->GetInterfaceDescriptor(*this, interfaceIndex);
-}
-
-inline UsbEndpointDescriptor UsbDevice::FindEndpoint(uint8_t interfaceIndex, usb_transfer_type type, UsbDirection direction)
-{
-    if (!driver_)
-    {
-        return {};
-    }
-    return driver_->FindEndpoint(*this, interfaceIndex, type, direction);
-}
 
 Async::task<std::shared_ptr<UsbDriver>> UsbInitializeDesignWare();
 

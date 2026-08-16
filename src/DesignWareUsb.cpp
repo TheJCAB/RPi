@@ -783,7 +783,7 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
     coreUsb.TsDlinePulseEnable = 0;
     DWC_CORE->CONTROL = coreUsb;
 
-    co_await Async::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
 
     LOG_DEBUG("HCD: Master reset.\n");                                
     if ((result = HCDReset()) != DWCRESULT::Ok) {
@@ -791,7 +791,7 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
         co_return std::unexpected{ result };
     }
 
-    co_await Async::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
 
     if (!PhyInitialized) {
         LOG_DEBUG("HCD: One time phy initialisation.\n");
@@ -807,7 +807,7 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
         }
     }
 
-    co_await Async::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
 
     coreUsb = *DWC_CORE->CONTROL;
     if ((*DWC_CORE->HARDWARE1).HighSpeedPhysical == Ulpi
@@ -822,14 +822,14 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
     }
     DWC_CORE->CONTROL = coreUsb;
 
-    co_await Async::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
 
     CoreAhb tempAhb = *DWC_CORE->AHB;
     tempAhb.DmaEnable = true;
     tempAhb.DmaRemainderMode = Incremental;
     DWC_CORE->AHB = tempAhb;
 
-    co_await Async::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
 
     coreUsb = *DWC_CORE->CONTROL;
     switch ((*DWC_CORE->HARDWARE1).OperatingMode) {
@@ -857,15 +857,15 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
     LOG_DEBUG("HCD: Core started.\n");
     LOG_DEBUG("HCD: Starting host.\n");
 
-    co_await Async::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
 
     DWC_POWER_AND_CLOCK = {};
 
-    co_await Async::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
 
     DWC_CORE->RECEIVESIZE = ReceiveFifoSize;
 
-    co_await Async::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
 
     DWC_CORE->NONPERIODICFIFO_SIZE = [](auto& r)
     {
@@ -873,7 +873,7 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
         r.StartAddress = ReceiveFifoSize;
     };
 
-    co_await Async::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
 
     DWC_CORE->PERIODICINFO_HostSize = [](auto& r)
     {
@@ -881,7 +881,7 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
         r.StartAddress = ReceiveFifoSize + NonPeriodicFifoSize;
     };
 
-    co_await Async::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
 
     LOG_DEBUG("HCD: Set HNP: enabled.\n");
 
@@ -890,15 +890,15 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
     DWC_CORE->OTGCONTROL = tempOtgControl;
     //DWC_CORE->OTGINTERRUPT = 0xFFFF'FFFFu; // Clear all OTG interrupts
 
-    co_await Async::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
 
     if ((result = HCDTransmitFifoFlush(FlushAll)) != DWCRESULT::Ok)
         co_return std::unexpected{ result };
-    co_await Async::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
 
     if ((result = HCDReceiveFifoFlush()) != DWCRESULT::Ok)
         co_return std::unexpected{ result };
-    co_await Async::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
 
     HCDHost::ClockRate clockRate;
 

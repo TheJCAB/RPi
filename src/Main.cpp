@@ -565,7 +565,7 @@ void Core0(void* dtb)
     {
         (void)WaitOnTask(usbDriver->UsbCheckForChange());
         printf("\n");
-        usbDriver->UsbShowTree(usbDriver->UsbGetRootHub(), 1, '+');
+        usbDriver->UsbShowTree();
         printf("\n");
     }
 

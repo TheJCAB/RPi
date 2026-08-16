@@ -82,6 +82,7 @@ enum usb_transfer_size {
 {	 USB description types as per Table 9-5 in Section 9.4 of USB2.0 spec	}
 {---------------------------------------------------------------------------}*/
 enum usb_descriptor_type : uint8_t {
+    USB_DESCRIPTOR_TYPE_INVALID = 0,
     USB_DESCRIPTOR_TYPE_DEVICE = 1,
     USB_DESCRIPTOR_TYPE_CONFIGURATION = 2,
     USB_DESCRIPTOR_TYPE_STRING = 3,
@@ -178,6 +179,8 @@ struct UsbDescriptorHeader {
 };
 
 static_assert(sizeof(UsbDescriptorHeader) == 0x02, "Structure should be 2 bytes");
+
+constexpr UsbDescriptorHeader NullDescriptorHeader{ 0, USB_DESCRIPTOR_TYPE_INVALID };
 
 
 /*--------------------------------------------------------------------------}
@@ -296,6 +299,8 @@ struct __attribute__((__packed__)) UsbInterfaceDescriptor {
 
 static_assert(sizeof(UsbInterfaceDescriptor) == 0x09, "Structure should be 9 bytes");
 
+constexpr UsbInterfaceDescriptor NullInterfaceDescriptor = { NullDescriptorHeader };
+
 
 /*--------------------------------------------------------------------------}
 { USB endpoint descriptor structure (7 Bytes) as per 9.6.6 of USB2.0 manual }
@@ -335,6 +340,8 @@ struct __attribute__((__packed__)) UsbEndpointDescriptor {
 };
 
 static_assert(sizeof(UsbEndpointDescriptor) == 0x07, "Structure should be 7 bytes");
+
+constexpr UsbEndpointDescriptor NullEndpointDescriptor = { NullDescriptorHeader };
 
 
 /*--------------------------------------------------------------------------}
