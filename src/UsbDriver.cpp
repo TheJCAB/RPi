@@ -491,6 +491,9 @@ Async::task<RESULT> UsbDriver::EnumerateDevice(struct UsbDevice *device, struct 
     LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 1 = Read first 8 Bytes of Device Descriptor\n");
     device->Pipe0.MaxPacketSizeInBytes = 8;							// Set max packet size to 8 ( So exchange will be exactly 1 packet)
 
+// For XHCI, this needs to be done after addressing is completed.
+// TODO: Abstract early initialization, since it seems to be HW-flavor-specific.
+//
 //    result = co_await HCDSubmitControlMessageIN(
 //        device,
 //        ioHandle,
