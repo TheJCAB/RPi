@@ -5,35 +5,78 @@
 namespace Debugger
 {
 
+void RawPrintCallstack(Uart::LockedStream& stream, ThreadContext* context)
+{
+    stream.Puts("Call Stack:\n");
+
+    uint64_t fp = context->Fp;
+
+    stream.Puts("0: FP ");
+    stream.PutHex(fp);
+    stream.Puts("  PC ");
+    stream.PutHex(context->Lr);
+    stream.Puts("\n");
+
+    stream.Puts("1: FP ");
+    stream.PutHex(fp);
+    stream.Puts("  PC ");
+    stream.PutHex(context->Lr);
+    stream.Puts(" (maybe, if leaf)\n");
+
+    for (uint32_t level = 2; fp != 0 && level < 64; ++level)
+    {
+        auto const frame = reinterpret_cast<uint64_t const*>(fp);
+
+        uint64_t const parentFp = frame[0];
+        uint64_t const returnAddress = frame[1];
+
+        stream.PutDec(level);
+        stream.Puts(": FP ");
+        stream.PutHex(parentFp);
+        stream.Puts("  PC ");
+        stream.PutHex(returnAddress);
+        stream.Puts("\n");
+
+        fp = parentFp;
+    }
+}
+
 void PrintThreadContext(Uart::LockedStream& stream, ThreadContext* context)
 {
     stream.Puts("Thread Context:\n");
-    for (uint32_t i = 0; i < 31; ++i)
+    for (uint32_t i = 0; i < 29; ++i)
     {
         stream.PutHex(context->X[i]);
         stream.Puts(" X");
         stream.PutDec(i);
         stream.Puts("\n");
     }
+    stream.PutHex(context->Fp);
+    stream.Puts(" FP\n");
+    stream.PutHex(context->Lr);
+    stream.Puts(" LR\n");
     stream.PutHex(context->Sp);
     stream.Puts(" SP\n");
     stream.PutHex(context->Pc);
     stream.Puts(" PC\n");
 
-    stream.PutHex(*reinterpret_cast<uintptr_t*>(context->X[20]));
-    stream.Puts(" [X20]\n");
+
 }
 
 void RawPrintThreadContext(ThreadContext* context)
 {
     Uart::Raw::Puts("Thread Context:\n");
-    for (uint32_t i = 0; i < 31; ++i)
+    for (uint32_t i = 0; i < 29; ++i)
     {
         Uart::Raw::PutHex(context->X[i]);
         Uart::Raw::Puts(" X");
         Uart::Raw::PutDec(i);
         Uart::Raw::Puts("\n");
     }
+    Uart::Raw::PutHex(context->Fp);
+    Uart::Raw::Puts(" FP\n");
+    Uart::Raw::PutHex(context->Lr);
+    Uart::Raw::Puts(" LR\n");
     Uart::Raw::PutHex(context->Sp);
     Uart::Raw::Puts(" SP\n");
     Uart::Raw::PutHex(context->Pc);
@@ -50,6 +93,7 @@ Scheduler::ThreadInfo* DebuggerThread = nullptr;
     stream.Puts("Debugger thread started\n");
     stream.Puts("Debugging thread context:\n");
     PrintThreadContext(stream, context);
+    RawPrintCallstack(stream, context);
 
     // Here you can add code to handle debugging tasks, like printing thread contexts.
     while (true)

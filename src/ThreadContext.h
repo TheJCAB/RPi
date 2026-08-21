@@ -19,7 +19,9 @@ typedef __attribute__((neon_vector_type(16))) unsigned char __n128;
 
 struct ThreadContext
 {
-    uint64_t X[31];                 // General purpose registers
+    uint64_t X[29];                 // General purpose registers
+    uint64_t Fp;                    // Frame pointer
+    uint64_t Lr;                    // Link (return) pointer
     uint64_t Sp;                    // Stack pointer
     uint64_t Pc;                    // Program counter
     Cpu::SysRegData::spsr_el1 Spsr; // Saved Program Status Register (for exception handling)

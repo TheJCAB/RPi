@@ -21,6 +21,7 @@ struct DeviceInfo
 {
     uint32_t SlotId = 0;
     uint32_t Port = 0;
+    uint32_t RootHubPort = 0;
     uint32_t Speed = 0;
     DeviceDescriptor Descriptor{};
     ConfigurationDescriptor Configuration{};
@@ -44,6 +45,8 @@ public:
     virtual Status initialize() = 0;
     virtual Status shutdown() = 0;
     
+    virtual uint32_t allocate_device_slot() = 0;
+
     virtual Status read(uint8_t endpoint, std::span<uint8_t> buffer) = 0;
     virtual Status write(uint8_t endpoint, std::span<const uint8_t> data) = 0;
     

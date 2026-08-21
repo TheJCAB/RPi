@@ -20,6 +20,8 @@
 
 extern uintptr_t GpuMemBase;
 
+HidDevice* AllocateHidPayload();
+
 namespace Usb::Xhci
 {
 
@@ -247,7 +249,9 @@ private:
 
     // Slot selected for endpoint 0 control transfers.
     std::atomic<uint32_t> default_control_slot_id{0};
-    
+
+    uint32_t controller_hccparams1 = 0;
+
     // Device slots
     struct DeviceSlot {
         uint32_t slot_id = 0;
@@ -315,9 +319,9 @@ private:
         doorbellRegisters_[doorbell] = target;
     }
 
-    static uint32_t context_size_bytes(uint32_t hccparams1) {
+    uint32_t context_size_bytes() {
         // HCCPARAMS1[2] = CSZ: 0 -> 32-byte contexts, 1 -> 64-byte contexts.
-        return ((hccparams1 >> 2) & 1u) ? 64u : 32u;
+        return ((controller_hccparams1 >> 2) & 1u) ? 64u : 32u;
     }
 
     static uint32_t endpoint0_max_packet_size(uint32_t speed) {
@@ -332,7 +336,10 @@ private:
         }
     }
 
-    bool address_device(uint32_t slot_id, uint32_t port, uint32_t port_speed, uint32_t hccparams1) {
+    public:
+    bool address_device(uint32_t slot_id, uint32_t port, uint32_t port_speed, uint32_t route, uint32_t parentHubSlotId, uint32_t parentHubPort) {
+        printf("XHCI: Addressing device on slot %u, port %u, speed %u\n", slot_id, port, port_speed);
+
         if (slot_id == 0 || slot_id > max_device_slots) {
             return false;
         }
@@ -342,7 +349,7 @@ private:
             return false;
         }
 
-        uint32_t const ctx_size = context_size_bytes(hccparams1);
+        uint32_t const ctx_size = context_size_bytes();
         uint32_t const page_count_for_two_context_pages = 2;
 
         void* device_context = device_slots[slot_id].device_context;
@@ -380,9 +387,11 @@ private:
 
         // Slot Context
         // DW0: Speed[23:20], Context Entries[31:27]
-        slot_ctx[0] = ((port_speed & 0xF) << 20) | (1u << 27);
+        slot_ctx[0] = ((port_speed & 0xF) << 20) | (1u << 27) | (route & 0xF'FFFFu);
         // DW1: Root Hub Port Number[23:16]
         slot_ctx[1] = ((port & 0xFF) << 16);
+        // DW2: TT Hub Slot ID[23:16], TT Port Number[31:24]
+        slot_ctx[2] = (parentHubSlotId & 0xFF) | ((parentHubPort & 0xFF) << 8);
 
         // Endpoint 0 Context (DCI 1)
         uint32_t const mps = endpoint0_max_packet_size(port_speed);
@@ -427,7 +436,8 @@ private:
         printf("XHCI: Address Device completed for slot %u (port %u speed %u MPS %u)\n", slot_id, port, port_speed, mps);
         return true;
     }
-    
+    private:
+
     bool setup_rings() {
         printf("XHCI: Setting up rings...\n");
         
@@ -743,6 +753,8 @@ private:
                 continue;
             }
 
+            printf("XHCI: Event received: Control=0x%08X Status=0x%08X Parameter=0x%016llX\n", event->control, event->status, event->parameter);
+
             uint32_t const trb_type        = (event->control >> 10) & 0x3F;
             uint32_t const completion_code = (event->status >> 24) & 0xFF;
             uint32_t const event_slot_id   = (event->control >> 24) & 0xFF;
@@ -813,22 +825,43 @@ private:
         // Ring doorbell 0 (command ring)
         ring_doorbell(0, 0);
 
-         printf("XHCI: Command submitted (USBCMD=0x%08X USBSTS=0x%08X CRCR=0x%016llX)\n",
-             usbcmd_before,
-             usbsts_before,
-             get_command_ring_control());
+         printf("XHCI: Command submitted Control=0x%08X Status=0x%08X Parameter=0x%016llX (USBCMD=0x%08X USBSTS=0x%08X CRCR=0x%016llX)\n",
+            command_trb.control,
+            command_trb.status,
+            command_trb.parameter,
+            usbcmd_before,
+            usbsts_before,
+            get_command_ring_control());
         
         return true;
     }
     
-    uint32_t allocate_device_slot() {
-        for (uint32_t i = 1; i <= max_device_slots; ++i) {
-            bool expected = false;
-            if (device_slots[i].in_use.compare_exchange_strong(expected, true)) {
-                device_slots[i].slot_id = i;
-                return i;
-            }
+    uint32_t allocate_device_slot() override
+    {
+
+        if (!send_command(TRB{ .control = TRB_TYPE_ENABLE_SLOT << 10 }))
+        {
+            return 0;
         }
+        printf("XHCI: Enable slot command sent\n");
+
+        uint32_t slot_id = 0;
+        if (!wait_for_command_completion(slot_id) || slot_id == 0) {
+            printf("XHCI: Enable slot command did not complete successfully\n");
+            return false;
+        }
+
+        printf("XHCI: Enabled slot %u\n", slot_id);
+
+        bool expected = false;
+        if (device_slots[slot_id].in_use.compare_exchange_strong(expected, true))
+         {
+            device_slots[slot_id].slot_id = slot_id;
+            return slot_id;
+        }
+
+        printf("XHCI: Failed to enable slot %u in the slot table\n", slot_id);
+
         return 0; // No available slots
     }
     
@@ -839,7 +872,7 @@ private:
         }
     }
     
-    void remember_discovered_device(uint32_t slot_id, uint32_t port, uint32_t speed,
+    void remember_discovered_device(uint32_t slot_id, uint32_t port, uint32_t root_hub_port, uint32_t speed,
                                      std::span<uint8_t const> descriptor,
                                      std::span<uint8_t const> config_descriptor)
     {
@@ -850,6 +883,7 @@ private:
         DeviceInfo info{};
         info.SlotId = slot_id;
         info.Port = port;
+        info.RootHubPort = root_hub_port;
         info.Speed = speed;
         info.HasConfiguration = !config_descriptor.empty();
 
@@ -1054,7 +1088,7 @@ public:
             return Status::Error;
         }
 
-        uint32_t const controller_hccparams1 = hccparams1;
+        controller_hccparams1 = hccparams1;
         
         // Set number of device slots
         operationalRegisters_.Configure = [&](auto& reg){ reg.MaxDeviceSlotsEnabled = max_device_slots; };
@@ -1083,7 +1117,7 @@ public:
         printf("XHCI: Controller initialized successfully\n");
         
         // Start device enumeration
-        enumerate_devices(controller_hccparams1);
+        enumerate_devices();
         
         return Status::Success;
     }
@@ -1213,8 +1247,8 @@ public:
     Status controlTransfer(uint8_t slotId, uint8_t requestType, uint8_t request,
                            uint16_t value, uint16_t index,
                            std::span<uint8_t> data = {}) override {
-        printf("XHCI: Control transfer - Type: 0x%02X, Request: 0x%02X, Value: 0x%04X, Index: 0x%04X, Length: %zu\n",
-               requestType, request, value, index, data.size()
+        printf("XHCI: Control transfer on slot %u - Type: 0x%02X, Request: 0x%02X, Value: 0x%04X, Index: 0x%04X, Length: %zu\n",
+               slotId, requestType, request, value, index, data.size()
         );
 
         if (!ensure_transfer_ring(slotId)) {
@@ -1269,11 +1303,11 @@ public:
             setup_trb.parameter = setup_packet_data;
             setup_trb.status = 8;
             setup_trb.control =
-            (TRB_TYPE_SETUP << 10) |
-            (trt << 16) |
-            TRB_CTRL_CHAIN |
-            TRB_CTRL_IDT |
-            (slot.transfer_ring_cycle_state ? TRB_CTRL_CYCLE : 0);
+                (TRB_TYPE_SETUP << 10) |
+                (trt << 16) |
+                TRB_CTRL_CHAIN |
+                TRB_CTRL_IDT |
+                (slot.transfer_ring_cycle_state ? TRB_CTRL_CYCLE : 0);
             printf("XHCI: Setup TRB - 0x%016X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n", &setup_trb,
                 reinterpret_cast<uint8_t*>(&setup_trb)[0], reinterpret_cast<uint8_t*>(&setup_trb)[1], reinterpret_cast<uint8_t*>(&setup_trb)[2], reinterpret_cast<uint8_t*>(&setup_trb)[3],
                 reinterpret_cast<uint8_t*>(&setup_trb)[4], reinterpret_cast<uint8_t*>(&setup_trb)[5], reinterpret_cast<uint8_t*>(&setup_trb)[6], reinterpret_cast<uint8_t*>(&setup_trb)[7],
@@ -1482,7 +1516,7 @@ public:
         return true;
     }
 
-    bool enumerate_hub_children(uint32_t hub_slot_id, uint32_t hub_root_port, uint32_t hccparams1) {
+    bool enumerate_hub_children(uint32_t hub_slot_id, uint32_t hub_root_port) {
         std::array<uint8_t, 9> hub_descriptor{};
         if (controlTransfer(hub_slot_id, 0xA0, 0x06, 0x2900, 0, hub_descriptor) != Status::Success) {
             printf("XHCI: Failed to read hub descriptor for slot %u\n", hub_slot_id);
@@ -1510,13 +1544,13 @@ public:
 
             printf("XHCI: Hub slot %u port %u has a child device attached\n", hub_slot_id, port);
             (void)reset_hub_port(hub_slot_id, port);
-            enumerate_device_at_port(hub_root_port, port, hccparams1, true);
+            enumerate_device_at_port(hub_root_port, port, true);
         }
 
         return true;
     }
 
-    bool enumerate_device_at_port(uint32_t address_port, uint32_t logical_port, uint32_t hccparams1, bool is_hub_child) {
+    bool enumerate_device_at_port(uint32_t address_port, uint32_t logical_port, bool is_hub_child) {
         if (!is_hub_child) {
             uint32_t portsc = get_port_status(address_port);
             bool     const connected    = (portsc & 1u) != 0;
@@ -1544,61 +1578,54 @@ public:
             return false;
         }
 
-        if (send_command(TRB{ .control = TRB_TYPE_ENABLE_SLOT << 10 })) {
-            printf("XHCI: Enable slot command sent for port %u\n", logical_port);
-        }
-
-        uint32_t hw_slot_id = 0;
-        if (!wait_for_command_completion(hw_slot_id) || hw_slot_id == 0) {
-            printf("XHCI: Enable slot command for port %u did not complete successfully\n", logical_port);
-            free_device_slot(slot_id);
-            return false;
-        }
-
-        printf("XHCI: Enable slot completion returned slot ID %u\n", hw_slot_id);
+        printf("XHCI: Enable slot completion returned slot ID %u\n", slot_id);
 
         uint32_t const post_reset_portsc = get_port_status(address_port);
         uint32_t const post_reset_speed = (post_reset_portsc >> 10) & 0x0F;
-        if (!address_device(hw_slot_id, address_port, post_reset_speed, hccparams1)) {
-            printf("XHCI: Failed to address device on root port %u (slot %u)\n", address_port, hw_slot_id);
+        if (!address_device(slot_id, address_port, post_reset_speed, 0, 0, 0)) {
+            printf("XHCI: Failed to address device on root port %u (slot %u)\n", address_port, slot_id);
             free_device_slot(slot_id);
             return false;
         }
 
-        default_control_slot_id.store(hw_slot_id);
+        default_control_slot_id.store(slot_id);
+
+//        remember_discovered_device(slot_id, logical_port, address_port, post_reset_speed, {}, {});
+        //print_device_summary(logical_port, slot_id, {}, {});
 
         std::array<uint8_t, 64> device_descriptor{};
-        if (controlTransfer(hw_slot_id, 0x80, 0x06, 0x0100, 0, device_descriptor) != Status::Success)
+        if (controlTransfer(slot_id, 0x80, 0x06, 0x0100, 0, device_descriptor) != Status::Success)
         {
             printf("XHCI: Port %u could not retrieve a device descriptor\n", logical_port);
             return false;
         }
         std::array<uint8_t, 64> config_descriptor{};
-        if (controlTransfer(hw_slot_id, 0x80, 0x06, 0x0200, 0, config_descriptor) == Status::Success) {
-            remember_discovered_device(hw_slot_id, logical_port, post_reset_speed, device_descriptor, config_descriptor);
+        if (controlTransfer(slot_id, 0x80, 0x06, 0x0200, 0, config_descriptor) == Status::Success) {
+            remember_discovered_device(slot_id, logical_port, address_port, post_reset_speed, device_descriptor, config_descriptor);
             print_device_summary(logical_port, slot_id, device_descriptor, config_descriptor);
 
-            controlTransfer(hw_slot_id, 0x00, 0x09, config_descriptor[5], 0, {});
+            controlTransfer(slot_id, 0x00, 0x09, config_descriptor[5], 0, {});
         }
         else {
-            remember_discovered_device(hw_slot_id, logical_port, post_reset_speed, device_descriptor, {});
+            remember_discovered_device(slot_id, logical_port, address_port, post_reset_speed, device_descriptor, {});
             print_device_summary(logical_port, slot_id, device_descriptor, {});
 
-            controlTransfer(hw_slot_id, 0x00, 0x09, 1, 0, {});
+            controlTransfer(slot_id, 0x00, 0x09, 1, 0, {});
         }
 
-        if (device_descriptor.size() >= 4 && device_descriptor[4] == 0x09) {
-            enumerate_hub_children(hw_slot_id, address_port, hccparams1);
-        }
+        // Do this later using common code. We only do the roots here.
+        //if (device_descriptor.size() >= 4 && device_descriptor[4] == 0x09) {
+        //    enumerate_hub_children(slot_id, address_port);
+        //}
 
         return true;
     }
 
-    void enumerate_devices(uint32_t hccparams1) {
+    void enumerate_devices() {
         printf("XHCI: Enumerating devices...\n");
 
         for (uint32_t port = 1; port <= max_ports; ++port) {
-            enumerate_device_at_port(port, port, hccparams1, false);
+            enumerate_device_at_port(port, port, false);
         }
     }
 
@@ -1700,6 +1727,125 @@ public:
 
     void DeleteIoHandle(void* ptr) override {}
 
+    void RemoveHubPayload(UsbDevice& device) {
+        if (device.PayLoadId == PayLoadType::Hub && device.HubPayload) {
+            for (auto* pChild : device.HubPayload->Children) {
+                if (pChild) {
+                    UsbDeallocateDevice(pChild);
+                }
+            }
+
+            device.HubPayload = nullptr;
+            device.PayLoadId = PayLoadType::None;
+        }
+    }
+
+    std::shared_ptr<UsbDriver> DriverRef()
+    {
+        return std::shared_ptr<UsbDriver>(this, [](UsbDriver*) {});
+    }
+
+    std::expected<std::shared_ptr<UsbDevice>, RESULT> UsbAllocateDevice(uint32_t address, UsbDevice* parentHubDevice, uint8_t parentHubPort)
+    {
+        std::shared_ptr<UsbDevice> device = std::make_shared<UsbDevice>(address, DriverRef());
+        if (!device)
+        {
+            return std::unexpected(RESULT::ErrorMemory);
+        }
+
+        device->Config.Status = USB_STATUS_ATTACHED;
+        device->ParentHub.PortNumber = parentHubPort;
+        device->ParentHub.Device = parentHubDevice ? deviceTable_[parentHubDevice->GetAddress() - 1] : nullptr;
+        device->PayLoadId = PayLoadType::None;
+
+        if (deviceTable_.size() < address)
+        {
+            deviceTable_.resize(address);
+        }
+
+        deviceTable_[address - 1] = device;
+        return std::move(device);
+    }
+
+    std::expected<std::shared_ptr<UsbDevice>, RESULT> UsbAllocateDevice(UsbDevice* parentHubDevice, uint8_t parentHubPort) override
+    {
+        auto const address = controller_->allocate_device_slot();
+        if (address == 0)
+        {
+            return std::unexpected(RESULT::ErrorMemory);
+        }
+
+        return UsbAllocateDevice(address, parentHubDevice, parentHubPort);
+    }
+
+    void UsbDeallocateDevice (struct UsbDevice *device) override
+    {
+        if (device == nullptr) {
+            return;
+        }
+
+        if (device->IsHub()) {								// If this device is a hub we will need to deal with the children
+            for (auto* child : device->HubPayload->Children) {
+                if (child != nullptr)
+                    UsbDeallocateDevice(child);
+            }
+            RemoveHubPayload(*device);
+        }
+
+        if (auto& parent = device->ParentHub.Device; parent && parent->PayLoadId == PayLoadType::Hub && parent->HubPayload)
+        {
+            auto const port = static_cast<size_t>(device->ParentHub.PortNumber);
+            if (port < parent->HubPayload->Children.size() && parent->HubPayload->Children[port] == device)
+            {
+                parent->HubPayload->Children[port] = nullptr;
+            }
+        }
+
+        auto const deviceAddress = static_cast<size_t>(device->GetAddress());
+        if (deviceAddress > 0 && deviceAddress <= deviceTable_.size())
+        {
+            deviceTable_[deviceAddress - 1].reset();
+        }
+    }
+    // Sets the address of the device with control endpoint given by the pipe. Zero
+    // is a restricted address for the rootHub and will return if attempted.
+    Async::task<RESULT> HCDSetAddress (UsbDevice* device, IoHandle const& ioHandle, uint8_t address) override
+    {
+        if (device->RootHubPort == address)
+        {
+            // Already done during initialization.
+            co_return RESULT::Ok;
+        }
+        auto slot = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(ioHandle.get()));
+        if (slot == 0 || slot != LookupSlot(device)) {
+            co_return RESULT::ErrorDevice;
+        }
+        uint32_t route = device->ParentHub.PortNumber;
+        uint32_t parentHubSlotId = 0;
+        uint32_t parentHubPort = device->ParentHub.PortNumber;
+
+        if (device->ParentHub.Device)
+        {
+            route = device->ParentHub.PortNumber;
+            auto parentHub = device->ParentHub.Device.get();
+            parentHubSlotId = parentHub->GetAddress();
+            for (uint32_t i = 1; i <= 5 && parentHub->ParentHub.Device; ++i)
+            {
+                route = (route << 5) | (parentHub->ParentHub.PortNumber & 0x1F);
+                parentHub = parentHub->ParentHub.Device.get();
+            }
+        }
+
+        uint32_t const address_port = device->RootHubPort;
+        uint32_t const post_reset_portsc = static_cast<Controller*>(controller_.get())->get_port_status(address_port);
+        uint32_t const post_reset_speed = (post_reset_portsc >> 10) & 0x0F;
+        if (!static_cast<Controller*>(controller_.get())->address_device(slot, address_port, post_reset_speed, route, 0, 0 /*parentHubSlotId, parentHubPort*/)) {
+            printf("XHCI: Failed to address device on root port %u (slot %u) route %05X parentHubSlotId %u parentHubPort %u\n", address_port, slot, route, parentHubSlotId, parentHubPort);
+            co_return RESULT::ErrorDevice;
+        }
+        co_return RESULT::Ok;
+    }
+
     Async::task<> Initialize()
     {
         if (!controller_) {
@@ -1712,10 +1858,17 @@ public:
             co_return;
         }
 
-        std::vector<std::shared_ptr<UsbDevice>> devices;
-        for (auto const& info : controller_->discovered_devices()) {
-            auto device = std::make_shared<UsbDevice>(std::shared_ptr<UsbDriver>(this, [](UsbDriver*) {}));
-            device->Pipe0.Number = static_cast<uint8_t>(devices.size() + 1);
+        printf("discovered devices: %zu\n", controller_->discovered_devices().size());
+
+        for (auto const& info : controller_->discovered_devices())
+        {
+            auto deviceEx = UsbAllocateDevice(info.SlotId, nullptr, 0);
+            if (!deviceEx) {
+                error_ = deviceEx.error();
+                co_return;
+            }
+            auto& device = deviceEx.value();
+            device->RootHubPort = info.RootHubPort;
             device->Descriptor = info.Descriptor;
             device->Interfaces = info.Interfaces;
             device->Endpoints = info.Endpoints;
@@ -1725,22 +1878,34 @@ public:
             }
             else if (info.Descriptor.bDeviceClass == DeviceClassInInterface || info.Descriptor.bDeviceClass == 0x03) {
                 device->PayLoadId = PayLoadType::Hid;
+                device->HidPayload = AllocateHidPayload();
             }
             else {
                 device->PayLoadId = PayLoadType::None;
             }
-            devices.push_back(std::move(device));
         }
 
-        if (devices.empty()) {
-            auto root = std::make_shared<UsbDevice>(std::shared_ptr<UsbDriver>(this, [](UsbDriver*) {}));
-            root->Pipe0.Number = 1;
-            root->Config.Status = USB_STATUS_ATTACHED;
-            root->PayLoadId = PayLoadType::None;
-            devices.push_back(std::move(root));
+        if (deviceTable_.empty())
+        {
+            printf("Adding empty device\n");
+            auto deviceEx = UsbAllocateDevice(0, nullptr, 0);
+            if (!deviceEx) {
+                error_ = deviceEx.error();
+                co_return;
+            }
         }
 
-        deviceTable_ = std::move(devices);
+        for (auto&& rootDevice : deviceTable_)
+        {
+            auto const result = co_await EnumerateDevice(rootDevice.get(), nullptr, 0);
+            if (result != RESULT::Ok)
+            {
+                LOG("FATAL ERROR: Could not enumerate root HUB\n");
+                error_ = result;
+                co_return;
+            }
+        }
+
         error_ = RESULT::Ok;
         co_return;
     }
@@ -1767,8 +1932,6 @@ public:
         return device ? device.get() : nullptr;
     }
 
-    Async::task<void> UsbCheckForChange() override { co_return; }
-
     const char* UsbGetDescription(UsbDevice* device) override
     {
         if (!device) {
@@ -1783,48 +1946,6 @@ public:
         return "USB Device";
     }
 
-    Async::task<RESULT> HCDGetDescriptor(UsbDevice* device,
-                            usb_descriptor_type type,
-                            uint8_t index,
-                            uint16_t langId,
-                            void* buffer,
-                            uint32_t length,
-                            uint8_t recipient,
-                            uint32_t* bytesTransferred,
-                            bool runHeaderCheck) override
-    {
-        if (!device || !buffer || length == 0) {
-            co_return RESULT::ErrorArgument;
-        }
-
-        auto slot = LookupSlot(device);
-        if (slot == 0) {
-            co_return RESULT::ErrorDevice;
-        }
-
-        std::array<std::byte, sizeof(UsbDescriptorHeader)> headerBuffer{};
-        uint32_t transferLength = 0;
-        if (runHeaderCheck) {
-            auto const headerStatus = co_await SubmitControlTransfer(slot, USB_SETUP_DEVICE_TO_HOST, GetDescriptor, static_cast<uint16_t>(type << 8 | index), langId, headerBuffer.data(), static_cast<uint32_t>(headerBuffer.size()), recipient);
-            if (headerStatus != RESULT::Ok) {
-                co_return headerStatus;
-            }
-            auto const* header = reinterpret_cast<UsbDescriptorHeader const*>(headerBuffer.data());
-            if (header->DescriptorType != type) {
-                co_return RESULT::ErrorGeneral;
-            }
-            if (length > header->DescriptorLength) {
-                length = header->DescriptorLength;
-            }
-        }
-
-        auto const status = co_await SubmitControlTransfer(slot, USB_SETUP_DEVICE_TO_HOST, GetDescriptor, static_cast<uint16_t>(type << 8 | index), langId, static_cast<std::byte*>(buffer), length, recipient);
-        if (bytesTransferred) {
-            *bytesTransferred = length;
-        }
-        co_return status;
-    }
-
     Async::task<RESULT> HCDSubmitControlMessageOUT(
         UsbDevice* device,
         IoHandle const& ioHandle,
@@ -1834,7 +1955,7 @@ public:
         uint32_t* bytesTransferred) override
     {
         if (request.Type & 0x80) {
-            LOG("HCDSubmitControlMessageIN called with OUT request type: %#x\n", request.Type);
+            LOG("HCDSubmitControlMessageOUT called with IN request type: %#x\n", request.Type);
             co_return RESULT::ErrorArgument;
         }
 
@@ -1842,7 +1963,7 @@ public:
         if (slot == 0 || slot != LookupSlot(device)) {
             co_return RESULT::ErrorDevice;
         }
-        auto const status = co_await SubmitControlTransfer(slot, request.Type, request.Request, request.Value, request.Index, const_cast<std::byte*>(buffer.data()), buffer.size(), request.Type, timeout, bytesTransferred);
+        auto const status = co_await SubmitControlTransfer(slot, request.Type, request.Request, request.Value, request.Index, const_cast<std::byte*>(buffer.data()), buffer.size(), timeout, bytesTransferred);
         co_return status;
     }
 
@@ -1859,10 +1980,11 @@ public:
         }
 
         auto slot = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(ioHandle.get()));
+        printf("ioHandle slot = %u, device slot = %u\n", slot, LookupSlot(device));
         if (slot == 0 || slot != LookupSlot(device)) {
             co_return RESULT::ErrorDevice;
         }
-        auto const status = co_await SubmitControlTransfer(slot, request.Type, request.Request, request.Value, request.Index, buffer.data(), buffer.size(), request.Type, timeout, bytesTransferred);
+        auto const status = co_await SubmitControlTransfer(slot, request.Type, request.Request, request.Value, request.Index, buffer.data(), buffer.size(), timeout, bytesTransferred);
         co_return status;
     }
 
@@ -1908,7 +2030,6 @@ private:
                                               uint16_t index,
                                               std::byte* buffer,
                                               uint32_t bufferLength,
-                                              uint8_t recipient,
                                               uint32_t timeout = ControlMessageTimeout,
                                               uint32_t* bytesTransferred = nullptr)
     {

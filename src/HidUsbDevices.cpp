@@ -99,7 +99,6 @@ struct HidDevice {
     HidDescriptor Descriptor[MaxHIDPerDevice];	// HID descriptor of this device
     uint8_t HIDInterface[MaxHIDPerDevice];		// The interface the HID descriptor is on
     uint8_t MaxHID;
-    std::shared_ptr<UsbDevice> Device;
 };
 
 HidDevice HidTable[MaximumHids] = {};						// Usb hid device allocation table
@@ -134,7 +133,6 @@ void BindHidOwner(HidDevice* hidDevice, std::shared_ptr<UsbDevice> const& device
     {
         return;
     }
-    hidDevice->Device = device;
 }
 
 bool SetHidDescriptor(HidDevice* hidDevice, uint8_t hidIndex, uint8_t interface, std::byte const* buffer, uint8_t size)
@@ -324,7 +322,7 @@ Async::task<RESULT> HIDReadDescriptor (UsbDriver& driver, uint8_t devNumber,				
     uint16_t sizeToRead = hidDevice->Descriptor[hidIndex].Length;	// Total size we need to read
 
     /* Okay read the HID descriptor */
-    result = co_await driver.HCDGetDescriptor(device, USB_DESCRIPTOR_TYPE_HID_REPORT, 0,
+    result = co_await HCDGetDescriptor(device, USB_DESCRIPTOR_TYPE_HID_REPORT, 0,
         hidDevice->HIDInterface[hidIndex],					// Index number of HID index
         Buffer, sizeToRead, 0x81, &transfer, false);				// Read the HID report descriptor 	
     if ((result != RESULT::Ok) || (transfer != sizeToRead)) {				// Read/transfer failed

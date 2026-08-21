@@ -111,13 +111,17 @@ void PutRawSynchronousExceptionInfo(Uart::LockedStream& stream, uint32_t code, u
 void PutThreadContext(Uart::LockedStream& stream, ThreadContext* context)
 {
     stream.Puts("Thread Context:\n");
-    for (uint32_t i = 0; i < 31; ++i)
+    for (uint32_t i = 0; i < 29; ++i)
     {
         stream.PutHex(context->X[i]);
         stream.Puts(" X");
         stream.PutDec(i);
         stream.Puts("\n");
     }
+    stream.PutHex(context->Fp);
+    stream.Puts(" FP\n");
+    stream.PutHex(context->Lr);
+    stream.Puts(" LR\n");
     stream.PutHex(context->Sp);
     stream.Puts(" SP\n");
     stream.PutHex(context->Pc);

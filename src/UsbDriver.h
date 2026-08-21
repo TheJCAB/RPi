@@ -39,6 +39,7 @@ namespace PCIe {
     struct DeviceAddress;
 }
 
+#include <expected>
 #include <generator>
 #include <memory>
 #include <span>
@@ -69,6 +70,7 @@ enum class RESULT : int
 };
 
 class UsbDriver;
+class UsbDevice;
 
 struct HubDevice;
 struct HidDevice;
@@ -82,10 +84,10 @@ enum class PayLoadType {
     MassStorage = 4,
 };
 
-struct __attribute__((__packed__)) UsbParent {
-    unsigned Number : 8;
-    unsigned PortNumber : 8;
-    unsigned reserved : 16;
+struct UsbParent
+{
+    std::shared_ptr<UsbDevice> Device;
+    uint8_t                    PortNumber;
 };
 
 struct __attribute__((__packed__)) UsbConfigControl {
@@ -94,8 +96,6 @@ struct __attribute__((__packed__)) UsbConfigControl {
     UsbDeviceStatus Status;
     uint8_t reserved;
 };
-
-class UsbDevice;
 
 // USB hub structure which is just extra data attached to a USB node
 struct HubDevice {
@@ -106,9 +106,14 @@ struct HubDevice {
 class UsbDevice
 {
 public:
-    explicit UsbDevice(std::shared_ptr<UsbDriver> driver = {})
+    explicit UsbDevice(uint8_t address, std::shared_ptr<UsbDriver> driver)
         : driver_(std::move(driver))
     {
+        if (!driver_)
+        {
+            Cpu::Halt();
+        }
+        Pipe0.Number = address;
     }
 
     UsbDriver const& GetDriver() const { return *driver_; }
@@ -136,6 +141,7 @@ public:
 
     HidDevice* GetHidDevice() { return IsHid() ? HidPayload : nullptr; }
 
+    uint32_t RootHubPort = 1;
     UsbParent ParentHub{};
     UsbPipe Pipe0{};
     UsbConfigControl Config{};
@@ -201,20 +207,6 @@ public:
     --------------------------------------------------------------------------*/
     virtual UsbDevice* UsbDeviceAtAddress (uint8_t devNumber) = 0;
 
-
-    /*--------------------------------------------------------------------------}
-    {					 PUBLIC USB CHANGE CHECKING ROUTINES					}
-    {---------------------------------------------------------------------------}*/
-
-    /*-UsbCheckForChange --------------------------------------------------------
-    Recursively calls HubCheckConnection on all ports on all hubs connected to
-    the root hub. It will hence automatically change the device tree matching
-    any physical changes. If we don't have interrupts turned on you will need
-    to poll this from time to time.
-    10Apr17 LdB
-    --------------------------------------------------------------------------*/
-    virtual Async::task<void> UsbCheckForChange () = 0;
-
     /*--------------------------------------------------------------------------}
     {					 PUBLIC DISPLAY USB INTERFACE ROUTINES					}
     {---------------------------------------------------------------------------}*/
@@ -229,28 +221,6 @@ public:
     /*--------------------------------------------------------------------------}
     {						 PUBLIC USB DESCRIPTOR ROUTINES						}
     {--------------------------------------------------------------------------*/
-
-    /*-HCDGetDescriptor ---------------------------------------------------------
-    Has the ability to fetches all the different descriptors from the device if
-    you provide the right parameters. It is a marshal call that many internal
-    descriptor reads will use and it has no checking on parameters. So if you
-    provide invalid parameters it will most likely fail and return with error.
-    The descriptor is read in two calls first the header is read to check the
-    type matches and it provides the descriptor size. If the buffer length is
-    longer than the descriptor the second call shortens the length to just the
-    descriptor length. So the call provides the length of data requested or
-    shorter if the descriptor is shorter than the buffer space provided.
-    24Feb17 LdB
-    --------------------------------------------------------------------------*/
-    virtual Async::task<RESULT> HCDGetDescriptor (UsbDevice* device,
-                            usb_descriptor_type type,				// The type of descriptor
-                            uint8_t index,								// The index of the type descriptor
-                            uint16_t langId,							// The language id
-                            void* buffer,								// Buffer to recieve descriptor
-                            uint32_t length,							// Maximumlength of descriptor
-                            uint8_t recipient,							// Recipient flags									 
-                            uint32_t *bytesTransferred,     			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)								
-                            bool runHeaderCheck) = 0;       			// Whether to run header check
 
     /*-HCDSubmitControlMessage --------------------------------------------------
     Sends a control message to a device. Handles all necessary channel creation
@@ -296,7 +266,36 @@ public:
     // Sends/recieves data from/to the given buffer to/from the given endpoint.
     virtual Async::task<RESULT> HCDEndpointTransfer(UsbDevice* device, UsbEndpointDescriptor endpoint, std::byte* buffer, uint32_t& bufferLength) = 0;
 
+    virtual std::expected<std::shared_ptr<UsbDevice>, RESULT> UsbAllocateDevice(UsbDevice* parentHubDevice, uint8_t parentHubPort) = 0;
+    virtual void UsbDeallocateDevice (struct UsbDevice *device) = 0;
+
+    // Reads the given port status on a hub device. Port input is index 1 and so
+    // requesting port 0 is interpretted as you want the port gateway node status.
+    // When reading a port the return is really a HubPortFullStatus, while for
+    // port = 0 the return will be a struct HubFullStatus. There are uint32_t unions
+    // on those two structures to pass the raw 32 bits in/out.
+    Async::task<RESULT> HCDReadHubPortStatus (UsbDevice* device,
+                                uint8_t port,							// Port to get status  OR  0 = Gateway node
+                                uint32_t& Status);						// HubPortFullStatus or HubFullStatus .. use Raw union  
+
+    Async::task<RESULT> HubPortReset(UsbDevice& device, uint8_t port);
+
+    // Sets the address of the device with control endpoint given by the pipe. Zero
+    // is a restricted address for the rootHub and will return if attempted.
+    virtual Async::task<RESULT> HCDSetAddress (UsbDevice* device, IoHandle const& ioHandle, uint8_t address);
+
+    // Sets a given USB device configuration to the config index number requested.
+    Async::task<RESULT> HCDSetConfiguration (UsbDevice* device, IoHandle const& ioHandle, uint8_t configuration);
+
+    Async::task<RESULT> EnumerateDevice(UsbDevice *device, struct UsbDevice* ParentHub, uint8_t PortNum);
+
+    // Continues enumeration of each port if an enumerated detected device is a hub
+    Async::task<RESULT> EnumerateHub(UsbDevice& device);
+
+    Async::task<void> UsbCheckForChange();
+
     void LOG(const char* format, ...) {}
+    void LOG_DEBUG(const char* format, ...) {}
 
     /*-INTERNAL: HCDReadStringDescriptor-----------------------------------------
     Reads the string descriptor at the given string index returning an ascii of
@@ -316,6 +315,25 @@ public:
     // Shows the USB tree as ascii art using the Printf command
     void UsbShowTree();
 };
+
+// Has the ability to fetches all the different descriptors from the device if
+// you provide the right parameters. It is a marshal call that many internal
+// descriptor reads will use and it has no checking on parameters. So if you
+// provide invalid parameters it will most likely fail and return with error.
+// The descriptor is read in two calls first the header is read to check the
+// type matches and it provides the descriptor size. If the buffer length is
+// longer than the descriptor the second call shortens the length to just the
+// descriptor length. So the call provides the length of data requested or
+// shorter if the descriptor is shorter than the buffer space provided.
+Async::task<RESULT> HCDGetDescriptor (UsbDevice* device,
+                        usb_descriptor_type type,				// The type of descriptor
+                        uint8_t index,								// The index of the type descriptor
+                        uint16_t langId,							// The language id
+                        void* buffer,								// Buffer to recieve descriptor
+                        uint32_t length,							// Maximumlength of descriptor
+                        uint8_t recipient,							// Recipient flags									 
+                        uint32_t *bytesTransferred,     			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)								
+                        bool runHeaderCheck);       			// Whether to run header check
 
 Async::task<std::shared_ptr<UsbDriver>> UsbInitializeDesignWare();
 
