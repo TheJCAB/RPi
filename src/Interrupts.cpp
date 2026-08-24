@@ -11,11 +11,13 @@
 #include "Debugger.h"
 
 #include <stdint.h>
+#include <atomic>
 
 namespace Interrupts
 {
 
-HandlerFunction UsbHandler;
+std::atomic<HandlerFunction> UsbHandler;
+std::atomic<HandlerFunction> XhciHandler;
 
 struct CoreInterrupts
 {
@@ -228,6 +230,7 @@ namespace Rpi4
 enum class Source : uint32_t
 {
     VTimer = 27,
+    PCIe   = 32,
 };
 
 namespace Distributor
@@ -240,7 +243,7 @@ union ControlReg
         uint32_t Enable    :  1;
         uint32_t Reserved0 : 31;
     };
-    uint32_t Raw32;    
+    uint32_t Raw32;
 };
 
 union Irqs0
@@ -255,7 +258,7 @@ union Irqs0
         uint32_t PNSTimer     :  1;
         uint32_t LegacyIrq    :  1;
     };
-    uint32_t Raw32;    
+    uint32_t Raw32;
 };
 
 union CpuTarget6
@@ -267,7 +270,7 @@ union CpuTarget6
         uint8_t HPTimer;
         uint8_t VTimer;
     };
-    uint32_t Raw32;    
+    uint32_t Raw32;
 };
 
 union CpuTarget7
@@ -279,7 +282,7 @@ union CpuTarget7
         uint8_t PNSTimer;
         uint8_t LegacyIrq;
     };
-    uint32_t Raw32;    
+    uint32_t Raw32;
 };
 
 union Registers
@@ -330,7 +333,7 @@ union ControlReg
         uint32_t Enable    :  1;
         uint32_t Reserved0 : 31;
     };
-    uint32_t Raw32;    
+    uint32_t Raw32;
 };
 
 union Registers
@@ -402,8 +405,12 @@ void EnableUsb(HandlerFunction handler)
 {
     if (Cpu::IsRpi4())
     {
+        return;
     }
-    else
+
+    auto const oldHandler = UsbHandler.exchange(handler);
+
+    if ((handler == nullptr) != (oldHandler == nullptr))
     {
         if (handler == nullptr)
         {
@@ -414,7 +421,28 @@ void EnableUsb(HandlerFunction handler)
             Rpi3::EnableIrq1 = Rpi3::Irq1{ .USB = true };
         }
     }
-    UsbHandler = handler;
+}
+
+void EnableXhci(HandlerFunction handler)
+{
+    if (!Cpu::IsRpi4())
+    {
+        return;
+    }
+
+    auto const oldHandler = XhciHandler.exchange(handler);
+
+    if ((handler == nullptr) != (oldHandler == nullptr))
+    {
+        if (handler == nullptr)
+        {
+            //Rpi4::...;
+        }
+        else
+        {
+            //Rpi4::...;
+        }
+    }
 }
 
 void EnableCoreVirtualTimerInterrupt(HandlerFunction handler)
@@ -506,9 +534,9 @@ extern "C" Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
             if (basicPending.USB)
             {
                 // Handle USB IRQ
-                if (UsbHandler)
+                if (auto const handler = UsbHandler.load(std::memory_order_relaxed))
                 {
-                    UsbHandler();
+                    handler();
                 }
             }
         }
@@ -541,9 +569,9 @@ extern "C" Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
         if (basicPending.USB)
         {
             // Handle USB IRQ
-            if (UsbHandler)
+            if (auto const handler = UsbHandler.load(std::memory_order_relaxed))
             {
-                UsbHandler();
+                handler();
             }
         }
 

@@ -211,13 +211,6 @@ public:
     {					 PUBLIC DISPLAY USB INTERFACE ROUTINES					}
     {---------------------------------------------------------------------------}*/
 
-    /*-UsbGetDescription --------------------------------------------------------
-    Returns a description for a device. This is not read from the device, this
-    is just generated given by the driver.
-    Unchanged from Alex Chadwick
-    --------------------------------------------------------------------------*/
-    virtual const char* UsbGetDescription (UsbDevice *device) = 0;
-
     /*--------------------------------------------------------------------------}
     {						 PUBLIC USB DESCRIPTOR ROUTINES						}
     {--------------------------------------------------------------------------*/
@@ -269,6 +262,8 @@ public:
     virtual std::expected<std::shared_ptr<UsbDevice>, RESULT> UsbAllocateDevice(UsbDevice* parentHubDevice, uint8_t parentHubPort) = 0;
     virtual void UsbDeallocateDevice (struct UsbDevice *device) = 0;
 
+    virtual Async::task<IoHandle> InitializeDevice(UsbDevice&) = 0;
+
     // Reads the given port status on a hub device. Port input is index 1 and so
     // requesting port 0 is interpretted as you want the port gateway node status.
     // When reading a port the return is really a HubPortFullStatus, while for
@@ -280,19 +275,22 @@ public:
 
     Async::task<RESULT> HubPortReset(UsbDevice& device, uint8_t port);
 
-    // Sets the address of the device with control endpoint given by the pipe. Zero
-    // is a restricted address for the rootHub and will return if attempted.
-    virtual Async::task<RESULT> HCDSetAddress (UsbDevice* device, IoHandle const& ioHandle, uint8_t address);
+    // Sets the address of the device with control endpoint given by the pipe.
+    virtual Async::task<RESULT> HCDSetAddress (UsbDevice&, IoHandle const&);
 
     // Sets a given USB device configuration to the config index number requested.
-    Async::task<RESULT> HCDSetConfiguration (UsbDevice* device, IoHandle const& ioHandle, uint8_t configuration);
+    Async::task<RESULT> HCDSetConfiguration (UsbDevice*, IoHandle const&, uint8_t configuration);
 
-    Async::task<RESULT> EnumerateDevice(UsbDevice *device, struct UsbDevice* ParentHub, uint8_t PortNum);
+    Async::task<RESULT> EnumerateDevice(UsbDevice&);
 
     // Continues enumeration of each port if an enumerated detected device is a hub
-    Async::task<RESULT> EnumerateHub(UsbDevice& device);
+    Async::task<RESULT> EnumerateHub(UsbDevice&);
 
     Async::task<void> UsbCheckForChange();
+
+    // Returns a description for a device. This is not read from the device, this
+    // is just generated given by the driver.
+    const char* UsbGetDescription(UsbDevice&);
 
     void LOG(const char* format, ...) {}
     void LOG_DEBUG(const char* format, ...) {}
@@ -325,7 +323,7 @@ public:
 // longer than the descriptor the second call shortens the length to just the
 // descriptor length. So the call provides the length of data requested or
 // shorter if the descriptor is shorter than the buffer space provided.
-Async::task<RESULT> HCDGetDescriptor (UsbDevice* device,
+Async::task<RESULT> HCDGetDescriptor (UsbDevice&,
                         usb_descriptor_type type,				// The type of descriptor
                         uint8_t index,								// The index of the type descriptor
                         uint16_t langId,							// The language id

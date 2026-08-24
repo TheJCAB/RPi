@@ -123,6 +123,7 @@ union CapabilityRegisters
     Mmio::Register<HccParams1 const, 0x10> CapabilityParams1;
     Mmio::Register<uint32_t   const, 0x14> DoorbellOffset;
     Mmio::Register<uint32_t   const, 0x18> RuntimeOffset;
+    Mmio::Register<uint32_t   const, 0x1C> CapabilityParams2;
 };
 
 union OpConfig
@@ -315,9 +316,8 @@ public:
     DoorbellRegisters&    doorbellRegisters_;
 
     // Device capabilities
-    uint32_t max_interrupters = 0;
-    uint32_t max_ports = 0;
-    uint32_t max_scratchpad_buffers = 0;
+    uint32_t maxRootPorts = 0;
+    uint32_t maxScratchpadBuffers = 0;
     
     // DMA allocated memory regions
     std::span<TRB> command_ring{};
@@ -408,7 +408,8 @@ public:
         return controller_hccparams1.ContextSize ? 64u : 32u;
     }
 
-    bool address_device(uint32_t const slotId, uint32_t port, uint32_t port_speed, uint32_t route, uint32_t parentHubSlotId, uint32_t parentHubPort) {
+    bool address_device(uint32_t const slotId, uint32_t port, uint32_t port_speed, uint32_t route, uint32_t parentHubSlotId, uint32_t parentHubPort, bool bsr)
+    {
         printf("XHCI: Addressing device on slot %u, port %u, speed %u\n", slotId, port, port_speed);
 
         auto* slot = deviceSlots_[slotId];
@@ -435,7 +436,10 @@ public:
             }
             slot->device_context = device_context;
         }
-        std::memset(device_context, 0, page_count_for_two_context_pages * Mmu::PageSize);
+        if (bsr) // !
+        {
+            std::memset(device_context, 0, page_count_for_two_context_pages * Mmu::PageSize);
+        }
 
         void* input_context = slot->input_context;
         if (!input_context) {
@@ -493,7 +497,7 @@ public:
         TRB address_device_cmd{};
         address_device_cmd.parameter = get_physical_address(input_context);
         address_device_cmd.status = 0;
-        address_device_cmd.control = (TRB_TYPE_ADDRESS_DEV << 10) | (slotId << 24);
+        address_device_cmd.control = (TRB_TYPE_ADDRESS_DEV << 10) | (slotId << 24) | (bsr ? 0x200 : 0);
 
         if (!send_command(address_device_cmd)) {
             printf("XHCI: Failed to submit Address Device for slot %u\n", slotId);
@@ -510,7 +514,8 @@ public:
         return true;
     }
 
-    bool setup_rings() {
+    bool setup_rings()
+    {
         printf("XHCI: Setting up rings...\n");
         
         // Allocate command ring (64-byte aligned)
@@ -565,17 +570,18 @@ public:
         std::fill(device_context_base_array.begin(), device_context_base_array.end(), 0);
         Processor::FlushDataCache(device_context_base_array.data(), device_context_base_array.size_bytes());
 
-        if (max_scratchpad_buffers > 0) {
-            if (max_scratchpad_buffers > scratchpad_buffers.size()) {
+        if (maxScratchpadBuffers > 0)
+        {
+            if (maxScratchpadBuffers > scratchpad_buffers.size()) {
                 printf("XHCI: Scratchpad count %u exceeds supported max %zu\n",
-                       max_scratchpad_buffers,
+                       maxScratchpadBuffers,
                        scratchpad_buffers.size());
                 return false;
             }
 
             scratchpad_buffer_array = {
-                Mmu::AllocateGpuMemory<uint64_t>((max_scratchpad_buffers * sizeof(uint64_t) + Mmu::PageSize - 1) / Mmu::PageSize),
-                max_scratchpad_buffers
+                Mmu::AllocateGpuMemory<uint64_t>((maxScratchpadBuffers * sizeof(uint64_t) + Mmu::PageSize - 1) / Mmu::PageSize),
+                maxScratchpadBuffers
             };
             if (!scratchpad_buffer_array.data()) {
                 scratchpad_buffer_array = {};
@@ -586,7 +592,7 @@ public:
             std::fill(scratchpad_buffer_array.begin(), scratchpad_buffer_array.end(), 0);
             scratchpad_buffers.fill(nullptr);
 
-            for (uint32_t i = 0; i < max_scratchpad_buffers; ++i) {
+            for (uint32_t i = 0; i < maxScratchpadBuffers; ++i) {
                 void* const scratch = Mmu::AllocateGpuMemory(1);
                 if (!scratch) {
                     printf("XHCI: Failed to allocate scratchpad buffer %u\n", i);
@@ -601,7 +607,7 @@ public:
             Processor::FlushDataCache(scratchpad_buffer_array.data(), scratchpad_buffer_array.size_bytes());
             device_context_base_array[0] = get_physical_address(scratchpad_buffer_array.data());
             Processor::FlushDataCache(&device_context_base_array[0], sizeof(device_context_base_array[0]));
-            printf("XHCI: Programmed %u scratchpad buffers\n", max_scratchpad_buffers);
+            printf("XHCI: Programmed %u scratchpad buffers\n", maxScratchpadBuffers);
         }
         
         // Setup command ring control register
@@ -611,14 +617,14 @@ public:
         set_dcbaap(get_physical_address(device_context_base_array.data()));
         
         // Setup event ring
-        runtimeRegisters_.EventRingSegmentTableSize        = 1; // One segment
+        runtimeRegisters_.EventRingSegmentTableSize = 1; // One segment
         set_erstba(get_physical_address(event_ring_segment_table.data()));
-        set_erdp(get_physical_address(event_ring.data()));
-        
+        set_erdp  (get_physical_address(event_ring.data()));
+
         // Enable interrupter
         runtimeRegisters_.InterrupterManagement = 2; // Interrupt Enable (IE)
         runtimeRegisters_.InterrupterModeration = 0x00004000; // 1ms moderation
-        
+
         printf("XHCI: Rings setup complete\n");
         return true;
     }
@@ -958,12 +964,12 @@ public:
         slot->slotId = 0;
     }
     
-    void remember_discovered_device(uint32_t slotId, uint32_t port, uint32_t root_hub_port, uint32_t speed,
+    DeviceInfo remember_discovered_device(uint32_t slotId, uint32_t port, uint32_t root_hub_port, uint32_t speed,
                                      std::span<uint8_t const> descriptor,
                                      std::span<uint8_t const> config_descriptor)
     {
         if (descriptor.empty()) {
-            return;
+            return DeviceInfo{};
         }
 
         DeviceInfo info{};
@@ -1018,7 +1024,7 @@ public:
             }
         }
 
-        discovered_devices_.push_back(info);
+        return info;
     }
 
     bool wait_for_ready(uint32_t timeout_ms = 1000) {
@@ -1034,31 +1040,8 @@ public:
         return false;
     }
 
-    bool wait_for_controller_running(uint32_t timeout_ms = 1000) {
-        auto start_time = Cpu::GetPerformanceCounter();
-        auto timeout_ticks = Cpu::GetPerformanceTicksForMs(timeout_ms);
-
-        while ((Cpu::GetPerformanceCounter() - start_time) < timeout_ticks) {
-            uint32_t const status = operationalRegisters_.UsbStatus;
-            bool const controller_not_ready = (status & XHCI_STS_CNR) != 0;
-            bool const halted = (status & XHCI_STS_HCH) != 0;
-            if (!controller_not_ready && !halted) {
-                return true;
-            }
-            Cpu::DelayInMicroseconds(50);
-        }
-        return false;
-    }
-
-    void clear_usb_status_bits() {
-        uint32_t const sticky = operationalRegisters_.UsbStatus.get() &
-                                (XHCI_STS_HSE | XHCI_STS_EINT | XHCI_STS_PCD | XHCI_STS_SSS | XHCI_STS_RSS | XHCI_STS_SRE | XHCI_STS_HCE);
-        if (sticky != 0) {
-            operationalRegisters_.UsbStatus = sticky;
-        }
-    }
-    
-    bool reset_controller() {
+    bool reset_controller()
+    {
         auto start_time = Cpu::GetPerformanceCounter();
         auto timeout_ticks = Cpu::GetPerformanceTicksForMs(5000);
         
@@ -1378,8 +1361,9 @@ public:
     }
     
     // Additional utility methods
-    uint32_t get_port_status(uint32_t port) {
-        if (port == 0 || port > max_ports) {
+    uint32_t get_port_status(uint32_t port)
+    {
+        if (port == 0 || port > maxRootPorts) {
             return 0;
         }
         
@@ -1387,7 +1371,7 @@ public:
     }
     
     void reset_port(uint32_t port) {
-        if (port == 0 || port > max_ports) {
+        if (port == 0 || port > maxRootPorts) {
             return;
         }
         
@@ -1486,124 +1470,72 @@ public:
         }
     }
 
-    bool reset_hub_port(uint32_t hub_slot_id, uint32_t port_number) {
-        if (controlTransfer(hub_slot_id, 0x23, 0x04, 0x0004, port_number, {}) != Status::Success) {
-            printf("XHCI: Failed to reset hub port %u on slot %u\n", port_number, hub_slot_id);
+    bool initialize_root_port(uint32_t port)
+    {
+        uint32_t portsc = get_port_status(port);
+        bool     const connected    = (portsc & 1u) != 0;
+        bool     const enabled      = (portsc & (1u << 1)) != 0;
+        bool     const over_current = (portsc & (1u << 3)) != 0;
+        uint32_t const speed        = (portsc >> 10) & 0x0F;
+
+        printf("XHCI: Port %u status: 0x%08X [connected=%u enabled=%u speed=%u over-current=%u]\n",
+                port, portsc, connected ? 1u : 0u, enabled ? 1u : 0u, speed, over_current ? 1u : 0u);
+
+        if (!connected) {
+            printf("XHCI: Port %u has no device attached\n", port);
             return false;
         }
-        Cpu::DelayInMicroseconds(100'000);
+
+        reset_port(port);
         return true;
     }
 
-    bool enumerate_hub_children(uint32_t hub_slot_id, uint32_t hub_root_port) {
-        std::array<uint8_t, 9> hub_descriptor{};
-        if (controlTransfer(hub_slot_id, 0xA0, 0x06, 0x2900, 0, hub_descriptor) != Status::Success) {
-            printf("XHCI: Failed to read hub descriptor for slot %u\n", hub_slot_id);
-            return false;
+    bool initialize_device_at_port(uint32_t slotId, uint32_t rootPort, uint32_t hubSlotId, uint32_t hubPort)
+    {
+        if (hubSlotId == 0)
+        {
+            printf("XHCI: Enumerating device in root port %u\n", rootPort);
+        }
+        else
+        {
+            printf("XHCI: Enumerating device in hub at slot %u port %u using root port %u\n", hubSlotId, hubPort, rootPort);
         }
 
-        if (hub_descriptor.size() < 3) {
-            return false;
-        }
-
-        uint8_t const port_count = hub_descriptor[2];
-        printf("XHCI: Enumerating %u downstream ports for hub slot %u\n", port_count, hub_slot_id);
-
-        for (uint8_t port = 1; port <= port_count; ++port) {
-            std::array<uint8_t, 4> port_status_data{};
-            if (controlTransfer(hub_slot_id, 0xA3, 0x00, 0x0000, port, port_status_data) != Status::Success) {
-                continue;
-            }
-
-            uint16_t const port_status = static_cast<uint16_t>(port_status_data[0] | (port_status_data[1] << 8));
-            bool const connected = (port_status & 0x0001u) != 0;
-            if (!connected) {
-                continue;
-            }
-
-            printf("XHCI: Hub slot %u port %u has a child device attached\n", hub_slot_id, port);
-            (void)reset_hub_port(hub_slot_id, port);
-            enumerate_device_at_port(hub_root_port, port, true);
-        }
-
-        return true;
-    }
-
-    bool enumerate_device_at_port(uint32_t address_port, uint32_t logical_port, bool is_hub_child) {
-        if (!is_hub_child) {
-            uint32_t portsc = get_port_status(address_port);
-            bool     const connected    = (portsc & 1u) != 0;
-            bool     const enabled      = (portsc & (1u << 1)) != 0;
-            bool     const over_current = (portsc & (1u << 3)) != 0;
-            uint32_t const speed        = (portsc >> 10) & 0x0F;
-
-            printf("XHCI: Port %u status: 0x%08X [connected=%u enabled=%u speed=%u over-current=%u]\n",
-                   address_port, portsc, connected ? 1u : 0u, enabled ? 1u : 0u, speed, over_current ? 1u : 0u);
-
-            if (!connected) {
-                printf("XHCI: Port %u has no device attached\n", address_port);
-                return false;
-            }
-
-            reset_port(address_port);
-        }
-        else {
-            printf("XHCI: Enumerating child device behind hub port %u using root port %u\n", logical_port, address_port);
-        }
-
-        uint32_t slotId = allocate_device_slot();
-        if (slotId == 0) {
-            printf("XHCI: No free device slots available for port %u\n", logical_port);
-            return false;
-        }
-
-        printf("XHCI: Enable slot completion returned slot ID %u\n", slotId);
-
-        uint32_t const post_reset_portsc = get_port_status(address_port);
+        uint32_t const post_reset_portsc = get_port_status(rootPort);
         uint32_t const post_reset_speed = (post_reset_portsc >> 10) & 0x0F;
-        if (!address_device(slotId, address_port, post_reset_speed, 0, 0, 0)) {
-            printf("XHCI: Failed to address device on root port %u (slot %u)\n", address_port, slotId);
+        if (!address_device(slotId, rootPort, post_reset_speed, 0, 0, 0, true))
+        {
+            printf("XHCI: Failed to address device on root port %u (slot %u)\n", rootPort, slotId);
             free_device_slot(slotId);
             return false;
         }
 
-//        remember_discovered_device(slotId, logical_port, address_port, post_reset_speed, {}, {});
-        //print_device_summary(logical_port, slotId, {}, {});
+//        remember_discovered_device(slotId, hubPort, rootPort, post_reset_speed, {}, {});
+        //print_device_summary(hubPort, slotId, {}, {});
 
         std::array<uint8_t, 64> device_descriptor{};
-        if (controlTransfer(slotId, 0x80, 0x06, 0x0100, 0, device_descriptor) != Status::Success)
-        {
-            printf("XHCI: Port %u could not retrieve a device descriptor\n", logical_port);
-            return false;
-        }
-        std::array<uint8_t, 64> config_descriptor{};
-        if (controlTransfer(slotId, 0x80, 0x06, 0x0200, 0, config_descriptor) == Status::Success) {
-            remember_discovered_device(slotId, logical_port, address_port, post_reset_speed, device_descriptor, config_descriptor);
-            print_device_summary(logical_port, slotId, device_descriptor, config_descriptor);
-
-            controlTransfer(slotId, 0x00, 0x09, config_descriptor[5], 0, {});
-        }
-        else {
-            remember_discovered_device(slotId, logical_port, address_port, post_reset_speed, device_descriptor, {});
-            print_device_summary(logical_port, slotId, device_descriptor, {});
-
-            controlTransfer(slotId, 0x00, 0x09, 1, 0, {});
-        }
-
-        // Do this later using common code. We only do the roots here.
-        //if (device_descriptor.size() >= 4 && device_descriptor[4] == 0x09) {
-        //    enumerate_hub_children(slotId, address_port);
+        //if (controlTransfer(slotId, 0x80, 0x06, 0x0100, 0, device_descriptor) != Status::Success)
+        //{
+        //    printf("XHCI: Port %u could not retrieve a device descriptor\n", hubPort);
+        //    return false;
         //}
+        std::array<uint8_t, 64> config_descriptor{};
+        //DeviceInfo deviceInfo{};
+//        if (controlTransfer(slotId, 0x80, 0x06, 0x0200, 0, config_descriptor) == Status::Success) {
+//            //deviceInfo = remember_discovered_device(slotId, hubPort, rootPort, post_reset_speed, device_descriptor, config_descriptor);
+//            print_device_summary(hubPort, slotId, device_descriptor, config_descriptor);
+//
+//            //controlTransfer(slotId, 0x00, 0x09, config_descriptor[5], 0, {});
+//        }
+//        else
+        {
+            //deviceInfo = remember_discovered_device(slotId, hubPort, rootPort, post_reset_speed, device_descriptor, {});
+            print_device_summary(hubPort, slotId, device_descriptor, {});
+
+            //controlTransfer(slotId, 0x00, 0x09, 1, 0, {});
+        }
 
         return true;
-    }
-
-    void enumerate_devices() {
-        printf("XHCI: Enumerating devices...\n");
-
-        for (uint32_t port = 1; port <= max_ports; ++port) {
-            enumerate_device_at_port(port, port, false);
-        }
     }
 
     std::span<DeviceInfo const> discovered_devices() const
@@ -1712,9 +1644,9 @@ public:
         return std::shared_ptr<UsbDriver>(this, [](UsbDriver*) {});
     }
 
-    std::expected<std::shared_ptr<UsbDevice>, RESULT> UsbAllocateDevice(uint32_t address, UsbDevice* parentHubDevice, uint8_t parentHubPort)
+    std::expected<std::shared_ptr<UsbDevice>, RESULT> UsbAllocateDevice(uint32_t slotId, UsbDevice* parentHubDevice, uint8_t parentHubPort)
     {
-        std::shared_ptr<UsbDevice> device = std::make_shared<UsbDevice>(address, DriverRef());
+        std::shared_ptr<UsbDevice> device = std::make_shared<UsbDevice>(slotId, DriverRef());
         if (!device)
         {
             return std::unexpected(RESULT::ErrorMemory);
@@ -1725,24 +1657,25 @@ public:
         device->ParentHub.Device = parentHubDevice ? deviceTable_[parentHubDevice->GetAddress() - 1] : nullptr;
         device->PayLoadId = PayLoadType::None;
 
-        if (deviceTable_.size() < address)
+        if (deviceTable_.size() < slotId)
         {
-            deviceTable_.resize(address);
+            deviceTable_.resize(slotId);
         }
 
-        deviceTable_[address - 1] = device;
+        deviceTable_[slotId - 1] = device;
         return std::move(device);
     }
 
     std::expected<std::shared_ptr<UsbDevice>, RESULT> UsbAllocateDevice(UsbDevice* parentHubDevice, uint8_t parentHubPort) override
     {
-        auto const address = allocate_device_slot();
-        if (address == 0)
+        auto const slotId = allocate_device_slot();
+        printf("XHCI: UsbAllocateDevice: allocate slot completion returned slot ID %u\n", slotId);
+        if (slotId == 0)
         {
             return std::unexpected(RESULT::ErrorMemory);
         }
 
-        return UsbAllocateDevice(address, parentHubDevice, parentHubPort);
+        return UsbAllocateDevice(slotId, parentHubDevice, parentHubPort);
     }
 
     void UsbDeallocateDevice (struct UsbDevice *device) override
@@ -1776,25 +1709,20 @@ public:
     }
     // Sets the address of the device with control endpoint given by the pipe. Zero
     // is a restricted address for the rootHub and will return if attempted.
-    Async::task<RESULT> HCDSetAddress (UsbDevice* device, IoHandle const& ioHandle, uint8_t address) override
+    Async::task<RESULT> HCDSetAddress(UsbDevice& device, IoHandle const& ioHandle) override
     {
-        if (device->RootHubPort == address)
-        {
-            // Already done during initialization.
-            co_return RESULT::Ok;
-        }
         auto slot = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(ioHandle.get()));
-        if (slot == 0 || slot != LookupSlot(device)) {
+        if (slot == 0 || slot != LookupSlot(&device)) {
             co_return RESULT::ErrorDevice;
         }
-        uint32_t route = device->ParentHub.PortNumber;
+        uint32_t route = device.ParentHub.PortNumber;
         uint32_t parentHubSlotId = 0;
-        uint32_t parentHubPort = device->ParentHub.PortNumber;
+        uint32_t parentHubPort = device.ParentHub.PortNumber;
 
-        if (device->ParentHub.Device)
+        if (device.ParentHub.Device)
         {
-            route = device->ParentHub.PortNumber;
-            auto parentHub = device->ParentHub.Device.get();
+            route = device.ParentHub.PortNumber;
+            auto parentHub = device.ParentHub.Device.get();
             parentHubSlotId = parentHub->GetAddress();
             for (uint32_t i = 1; i <= 5 && parentHub->ParentHub.Device; ++i)
             {
@@ -1803,10 +1731,11 @@ public:
             }
         }
 
-        uint32_t const address_port = device->RootHubPort;
+        uint32_t const address_port = device.RootHubPort;
         uint32_t const post_reset_portsc = get_port_status(address_port);
         uint32_t const post_reset_speed = (post_reset_portsc >> 10) & 0x0F;
-        if (!address_device(slot, address_port, post_reset_speed, route, 0, 0 /*parentHubSlotId, parentHubPort*/)) {
+        if (!address_device(slot, address_port, post_reset_speed, route, 0, 0 /*parentHubSlotId, parentHubPort*/, false))
+        {
             printf("XHCI: Failed to address device on root port %u (slot %u) route %05X parentHubSlotId %u parentHubPort %u\n", address_port, slot, route, parentHubSlotId, parentHubPort);
             co_return RESULT::ErrorDevice;
         }
@@ -1821,36 +1750,40 @@ public:
         printf("XHCI: Testing memory access...\n");
         uint32_t test_value = *reinterpret_cast<uint32_t volatile*>(&capabilityRegisters_);
         printf("XHCI: First word: 0x%X\n", test_value);
-
         if (test_value == 0xdeaddead || test_value == 0xffffffff || test_value == 0x00000000) {
             printf("XHCI: Invalid response, device not accessible\n");
             error_ = RESULT::ErrorHardware;
             co_return;
         }
+        printf("XHCI: Valid response, proceeding with initialization\n");
 
         // Read the controller parameters
         HcsParams1 hcsparams1 = capabilityRegisters_.StructuralParams1;
         HcsParams2 hcsparams2 = capabilityRegisters_.StructuralParams2;
         HccParams1 hccparams1 = capabilityRegisters_.CapabilityParams1;
 
+        size_t maxDeviceSlots  = hcsparams1.MaxDeviceSlots;
+        size_t maxInterrupters = hcsparams1.MaxInterrupters;
+        maxRootPorts           = hcsparams1.MaxPorts;
+        maxScratchpadBuffers   = (hcsparams2.MaxScratchpadBuffersHi << 5) + hcsparams2.MaxScratchpadBuffersLo;
+
         printf("XHCI: Capability length: 0x%X\n", capabilityRegisters_.CapLength.get());
-        printf("XHCI: HCI Version: 0x%X\n", capabilityRegisters_.InterfaceVersion.get());
+        printf("XHCI: HCI Version      : 0x%X\n", capabilityRegisters_.InterfaceVersion.get());
+        printf("XHCI: StructuralParams1: 0x%X\n", hcsparams1.Raw32);
+        printf("XHCI: StructuralParams2: 0x%X\n", hcsparams2.Raw32);
+        printf("XHCI: StructuralParams3: 0x%X\n", capabilityRegisters_.StructuralParams3.get().Raw32);
+        printf("XHCI: CapabilityParams1: 0x%X\n", hccparams1.Raw32);
+        printf("XHCI: DoorbellOffset   : 0x%X\n", capabilityRegisters_.DoorbellOffset.get());
+        printf("XHCI: RuntimeOffset    : 0x%X\n", capabilityRegisters_.RuntimeOffset.get());
+        printf("XHCI: CapabilityParams2: 0x%X\n", capabilityRegisters_.CapabilityParams2.get());
 
-        // Allocate device slots array
-        deviceSlots_.Init(hcsparams1.MaxDeviceSlots);
-
-        // Extract parameters
-        max_interrupters = hcsparams1.MaxInterrupters;
-        max_ports        = hcsparams1.MaxPorts;
-
-        printf("XHCI: Max device slots: %u\n", hcsparams1.MaxDeviceSlots);
-        printf("XHCI: Max interrupters: %u\n", hcsparams1.MaxInterrupters);
-        printf("XHCI: Max ports: %u\n"       , hcsparams1.MaxPorts);
+        printf("XHCI: Max device slots: %zu\n", maxDeviceSlots);
+        printf("XHCI: Max interrupters: %u\n" , maxInterrupters);
+        printf("XHCI: Max root ports  : %u\n" , maxRootPorts);
 
         printf("XHCI: Isochronous scheduling threshold: %u %s\n", hcsparams2.IsoSchedThreshold, hcsparams2.IsoSchedThresholdIsInFrames ? "frames" : "microframes");
         printf("XHCI: Event ring segment table max: %u\n", hcsparams2.EventRingSegmentTableMax);
-        max_scratchpad_buffers = (hcsparams2.MaxScratchpadBuffersHi << 5) + hcsparams2.MaxScratchpadBuffersLo;
-        printf("XHCI: Max scratchpad buffers: %u\n", max_scratchpad_buffers);
+        printf("XHCI: Max scratchpad buffers: %u\n", maxScratchpadBuffers);
         printf("XHCI: Save/restore uses scratchpad: %u\n", hcsparams2.SaveRestoreUsesScratchpad);
         printf("XHCI: Doorbells offset: 0x%X\n", capabilityRegisters_.DoorbellOffset.get());
         printf("XHCI: Runtime offset: 0x%X\n", capabilityRegisters_.RuntimeOffset.get());
@@ -1858,15 +1791,23 @@ public:
 
         printf("Command: 0x%X, Status: 0x%X\n", operationalRegisters_.UsbCommand.get(), operationalRegisters_.UsbStatus.get());
 
+        deviceSlots_.Init(maxDeviceSlots);
+        // TODO: Also these:
+        // - Interrupters
+        // - RootPorts
+        // - ScratchpadBuffers
+
         // Reset the controller
-        if (!reset_controller()) {
+        if (!reset_controller())
+        {
             printf("XHCI: Controller reset failed\n");
             error_ = RESULT::ErrorHardware;
             co_return;
         }
         
         // Setup memory structures
-        if (!setup_rings()) {
+        if (!setup_rings())
+        {
             printf("XHCI: Ring setup failed\n");
             error_ = RESULT::ErrorHardware;
             co_return;
@@ -1878,7 +1819,12 @@ public:
         operationalRegisters_.Configure = [&](auto& reg){ reg.MaxDeviceSlotsEnabled = static_cast<uint8_t>(deviceSlots_.size() - 1); };
 
         // Clear sticky status events before enabling run/interrupts.
-        clear_usb_status_bits();
+        uint32_t const sticky = operationalRegisters_.UsbStatus.get() &
+                                (XHCI_STS_HSE | XHCI_STS_EINT | XHCI_STS_PCD | XHCI_STS_SSS | XHCI_STS_RSS | XHCI_STS_SRE | XHCI_STS_HCE);
+        if (sticky != 0)
+        {
+            operationalRegisters_.UsbStatus = sticky;
+        }
         
         // Enable interrupts
         operationalRegisters_.UsbCommand |= XHCI_CMD_INTE;
@@ -1890,7 +1836,24 @@ public:
         operationalRegisters_.UsbCommand |= XHCI_CMD_RUN;
         
         // Wait for controller to start and leave halted state.
-        if (!wait_for_controller_running()) {
+        auto start_time = Cpu::GetPerformanceCounter();
+        auto timeout_ticks = Cpu::GetPerformanceTicksForMs(1000u);
+
+        bool running = false;
+        while ((Cpu::GetPerformanceCounter() - start_time) < timeout_ticks)
+        {
+            uint32_t const status = operationalRegisters_.UsbStatus;
+            // We're waiting until the controller is no longer in the "Controller Not Ready" or "Halted" state.
+            if ((status & (XHCI_STS_CNR | XHCI_STS_HCH)) == 0)
+            {
+                running = true;
+                break;
+            }
+            co_await Async::DelayInMicroseconds(50);
+        }
+
+        if (!running)
+        {
             printf("XHCI: Controller did not enter running state\n");
             printf("XHCI: USBCMD=0x%08X USBSTS=0x%08X\n",
                    operationalRegisters_.UsbCommand.get(),
@@ -1900,61 +1863,68 @@ public:
         }
         
         printf("XHCI: Controller initialized successfully\n");
-        
         // Start device enumeration
-        enumerate_devices();
-
-        printf("discovered devices: %zu\n", discovered_devices().size());
-
-        for (auto const& info : discovered_devices())
+        printf("XHCI: Enumerating devices...\n");
+        
+        for (uint32_t port = 1; port <= maxRootPorts; ++port)
         {
-            auto deviceEx = UsbAllocateDevice(info.SlotId, nullptr, 0);
+            if (!initialize_root_port(port))
+            {
+                continue;
+            }
+
+            auto deviceEx = UsbAllocateDevice(/*info.SlotId,*/ nullptr, 0);
             if (!deviceEx) {
                 error_ = deviceEx.error();
                 co_return;
             }
-            auto& device = deviceEx.value();
-            device->RootHubPort = info.RootHubPort;
-            device->Descriptor = info.Descriptor;
-            device->Interfaces = info.Interfaces;
-            device->Endpoints = info.Endpoints;
-            device->Config.Status = info.HasConfiguration ? USB_STATUS_CONFIGURED : USB_STATUS_DEFAULT;
-            if (info.Descriptor.bDeviceClass == DeviceClassHub) {
-                device->PayLoadId = PayLoadType::Hub;
+            auto& device = *deviceEx.value();
+            device.RootHubPort = port;
+            //device.Descriptor = info.Descriptor;
+            //device.Interfaces = info.Interfaces;
+            //device.Endpoints = info.Endpoints;
+            device.Config.Status = USB_STATUS_ATTACHED;
+            //if (info.Descriptor.bDeviceClass == DeviceClassHub) {
+            //    device.PayLoadId = PayLoadType::Hub;
+            //}
+            //else if (info.Descriptor.bDeviceClass == DeviceClassInInterface || info.Descriptor.bDeviceClass == 0x03) {
+            //    device.PayLoadId = PayLoadType::Hid;
+            //    device.HidPayload = AllocateHidPayload();
+            //}
+            //else
+            {
+                device.PayLoadId = PayLoadType::None;
             }
-            else if (info.Descriptor.bDeviceClass == DeviceClassInInterface || info.Descriptor.bDeviceClass == 0x03) {
-                device->PayLoadId = PayLoadType::Hid;
-                device->HidPayload = AllocateHidPayload();
-            }
-            else {
-                device->PayLoadId = PayLoadType::None;
-            }
-        }
 
-        if (deviceTable_.empty())
-        {
-            printf("Adding empty device\n");
-            auto deviceEx = UsbAllocateDevice(0, nullptr, 0);
-            if (!deviceEx) {
-                error_ = deviceEx.error();
-                co_return;
-            }
-        }
-
-        for (auto&& rootDevice : deviceTable_)
-        {
-            auto const result = co_await EnumerateDevice(rootDevice.get(), nullptr, 0);
+            auto const result = co_await EnumerateDevice(device);
             if (result != RESULT::Ok)
             {
-                LOG("FATAL ERROR: Could not enumerate root HUB\n");
+                LOG("FATAL ERROR: Could not enumerate root port %u\n", port);
                 error_ = result;
                 co_return;
             }
         }
+        
+        printf("discovered devices: %zu\n", deviceTable_.size());
 
         error_ = RESULT::Ok;
         co_return;
     }
+
+    Async::task<IoHandle> InitializeDevice(UsbDevice& device) override
+    {
+        if (device.ParentHub.Device)
+        {
+            initialize_device_at_port(device.GetAddress(), device.RootHubPort, device.ParentHub.Device->GetAddress(), device.ParentHub.PortNumber);
+        }
+        else
+        {
+            // Root device.
+            initialize_device_at_port(device.GetAddress(), device.RootHubPort, 0, 0);
+        }
+        co_return GetIoHandle(device.GetAddress());
+    }
+
 
     RESULT GetError() override { return error_; }
 
@@ -1976,20 +1946,6 @@ public:
         }
         auto const& device = deviceTable_[devNumber - 1];
         return device ? device.get() : nullptr;
-    }
-
-    const char* UsbGetDescription(UsbDevice* device) override
-    {
-        if (!device) {
-            return "USB Device";
-        }
-        if (device->Descriptor.bDeviceClass == DeviceClassHub) {
-            return "USB Hub";
-        }
-        if (device->PayLoadId == PayLoadType::Hid) {
-            return "USB HID";
-        }
-        return "USB Device";
     }
 
     Async::task<RESULT> HCDSubmitControlMessageOUT(

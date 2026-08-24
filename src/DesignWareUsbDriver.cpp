@@ -377,6 +377,53 @@ class DesignWareUsbDriver : public UsbDriver
         }
     }
 
+    Async::task<IoHandle> InitializeDevice(UsbDevice& device) override
+    {
+        RESULT result;
+        uint8_t address;
+        uint32_t transferred;
+        DeviceDescriptor desc = { 0 };
+
+        auto ioHandle = GetIoHandle(device.GetAddress());
+
+        /* Store the unique address until it is actually assigned. */
+        address = device.GetAddress();									// Hold unique address we will set device to
+        device.Pipe0.Number = 0;										// Initially it starts as zero
+        LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 1 = Read first 8 Bytes of Device Descriptor\n");
+        device.Pipe0.MaxPacketSizeInBytes = 8;							// Set max packet size to 8 ( So exchange will be exactly 1 packet)
+
+        result = co_await HCDSubmitControlMessageIN(
+            &device,
+            ioHandle,
+            { reinterpret_cast<std::byte*>(&desc), 8 }, // Ask for first 8 bytes as per USB specification
+            UsbDeviceRequest {								// We will build a request structure
+                .Type = bmREQ_GET_DEVICE_DESCRIPTOR,					// Recipient is a flag usually 0x0 for normal device, 0x20 for a hub
+                .Request = GetDescriptor,								// We want a descriptor obviously
+                .Value = (uint16_t)USB_DESCRIPTOR_TYPE_DEVICE << 8,		// Type and the index (0) get compacted as the value
+                .Index = 0,												// We want descriptor 0
+                .Length = 8,											// 8 bytes as per USB enumeration by the book
+            },
+            ControlMessageTimeout,										// The standard timeout for any control message
+            &transferred);												// Pass in pointer to get bytes transferred back
+        if ((result != RESULT::Ok) || (transferred != 8)) {						// This should pass on any valid device
+            LOG("Enumeration: Step 1 on device %i failed, Result: %#x, transferred: %u.\n",
+                address, result, transferred);										// Log any error
+            //co_return result != RESULT::Ok ? result : RESULT::ErrorTransmission;	// Fatal enumeration error of this device
+        }
+        else
+        {
+            LOG_DEBUG("Max packet size: %u\n", desc.bMaxPacketSize0);
+            device.Pipe0.MaxPacketSizeInBytes = desc.bMaxPacketSize0;	    // Set the maximum endpoint packet size to pipe from response
+            device.Config.Status = USB_STATUS_DEFAULT;						// Move device enumeration to default
+        }
+
+        device.Pipe0.Number = address;
+
+        // Nothing to do except get a channel to communicate.
+        co_return std::move(ioHandle);
+    }
+
+
     /*==========================================================================}
     {			    NON HCD INTERNAL HUB FUNCTIONS ON PORTS						}
     {==========================================================================*/
@@ -421,13 +468,13 @@ class DesignWareUsbDriver : public UsbDriver
             co_return;
         }
 
-        UsbDevice* rootHubDevice = rootHubDeviceEx.value().get();
-        rootHubDevice->Pipe0.Speed = USB_SPEED_HIGH;
-        rootHubDevice->Config.Status = USB_STATUS_ATTACHED;
-        rootHubDevice->PayLoadId = PayLoadType::None;
-        rootHubDevice->HubPayload = nullptr;
+        UsbDevice& rootHubDevice = *rootHubDeviceEx.value();
+        rootHubDevice.Pipe0.Speed = USB_SPEED_HIGH;
+        rootHubDevice.Config.Status = USB_STATUS_ATTACHED;
+        rootHubDevice.PayLoadId = PayLoadType::None;
+        rootHubDevice.HubPayload = nullptr;
 
-        auto const result = co_await EnumerateDevice(rootHubDevice, nullptr, 0);
+        auto const result = co_await EnumerateDevice(rootHubDevice);
         if (result != RESULT::Ok)
         {
             LOG("FATAL ERROR: Could not enumerate root HUB\n");
@@ -477,104 +524,6 @@ class DesignWareUsbDriver : public UsbDriver
     /*--------------------------------------------------------------------------}
     {					 PUBLIC DISPLAY USB INTERFACE ROUTINES					}
     {--------------------------------------------------------------------------*/
-
-    /*-UsbGetDescription --------------------------------------------------------
-    Returns a description for a device. This is not read from the device, this
-    is just generated given by the driver.
-    Unchanged from Alex Chadwick
-    --------------------------------------------------------------------------*/
-    const char* UsbGetDescription (struct UsbDevice *device) override
-    {
-        if (device->Config.Status == USB_STATUS_ATTACHED)
-            return "New Device (Not Ready)\0";
-        else if (device->Config.Status == USB_STATUS_POWERED)
-            return "Unknown Device (Not Ready)\0";
-        else if (!DeviceTable.empty() && DeviceTable[0] && device == DeviceTable[0].get())
-            return "USB Root Hub\0";
-
-        switch (device->Descriptor.bDeviceClass) {
-        case DeviceClassHub:
-            if (device->Descriptor.bcdUSB == 0x210)
-                return "USB 2.1 Hub\0";
-            else if (device->Descriptor.bcdUSB == 0x200)
-                return "USB 2.0 Hub\0";
-            else if (device->Descriptor.bcdUSB == 0x110)
-                return "USB 1.1 Hub\0";
-            else if (device->Descriptor.bcdUSB == 0x100)
-                return "USB 1.0 Hub\0";
-            else
-                return "USB Hub\0";
-        case DeviceClassVendorSpecific:
-            if (device->Descriptor.idVendor == 0x424 &&
-                device->Descriptor.idProduct == 0xec00)
-                return "SMSC LAN9512\0";
-        case DeviceClassInInterface:
-            if (device->Config.Status == USB_STATUS_CONFIGURED) {
-                switch (device->Interfaces[0].Class) {
-                case InterfaceClass::Audio:
-                    return "USB Audio Device\0";
-                case InterfaceClass::Communications:
-                    return "USB CDC Device\0";
-                case InterfaceClass::Hid:
-                    switch (device->Interfaces[0].Protocol) {
-                    case 1:
-                        return "USB Keyboard\0";
-                    case 2:
-                        return "USB Mouse\0";
-                    default:
-                        return "USB HID\0";
-                    }
-                case InterfaceClass::Physical:
-                    return "USB Physical Device\0";
-                case InterfaceClass::Image:
-                    return "USB Imaging Device\0";
-                case InterfaceClass::Printer:
-                    return "USB Printer\0";
-                case InterfaceClass::MassStorage:
-                    return "USB Mass Storage Device\0";
-                case InterfaceClass::Hub:
-                    if (device->Descriptor.bcdUSB == 0x210)
-                        return "USB 2.1 Hub\0";
-                    else if (device->Descriptor.bcdUSB == 0x200)
-                        return "USB 2.0 Hub\0";
-                    else if (device->Descriptor.bcdUSB == 0x110)
-                        return "USB 1.1 Hub\0";
-                    else if (device->Descriptor.bcdUSB == 0x100)
-                        return "USB 1.0 Hub\0";
-                    else
-                        return "USB Hub\0";
-                case InterfaceClass::CdcData:
-                    return "USB CDC-Data Device\0";
-                case InterfaceClass::SmartCard:
-                    return "USB Smart Card\0";
-                case InterfaceClass::ContentSecurity:
-                    return "USB Content Secuity Device\0";
-                case InterfaceClass::Video:
-                    return "USB Video Device\0";
-                case InterfaceClass::PersonalHealthcare:
-                    return "USB Healthcare Device\0";
-                case InterfaceClass::AudioVideo:
-                    return "USB AV Device\0";
-                case InterfaceClass::DiagnosticDevice:
-                    return "USB Diagnostic Device\0";
-                case InterfaceClass::WirelessController:
-                    return "USB Wireless Controller\0";
-                case InterfaceClass::Miscellaneous:
-                    return "USB Miscellaneous Device\0";
-                case InterfaceClass::VendorSpecific:
-                    return "Vendor Specific\0";
-                default:
-                    return "Generic Device\0";
-                }
-            }
-            else if (device->Descriptor.bDeviceClass == DeviceClassVendorSpecific)
-                return "Vendor Specific\0";
-            else
-                return "Unconfigured Device\0";
-        default:
-            return "Generic Device\0";
-        }
-    }
 
     // Sends/recieves data from/to the given buffer to/from the given endpoint.
     Async::task<RESULT> HCDEndpointTransfer(UsbDevice* device, UsbEndpointDescriptor endpoint, std::byte* buffer, uint32_t& bufferLength) override

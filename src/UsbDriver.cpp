@@ -153,7 +153,7 @@ Async::task<RESULT> UsbDriver::HCDSubmitControlMessageIN(
 // longer than the descriptor the second call shortens the length to just the
 // descriptor length. So the call provides the length of data requested or
 // shorter if the descriptor is shorter than the buffer space provided.
-Async::task<RESULT> HCDGetDescriptor (UsbDevice* device,
+Async::task<RESULT> HCDGetDescriptor (UsbDevice& device,
                         enum usb_descriptor_type type,				// The type of descriptor
                         uint8_t index,								// The index of the type descriptor
                         uint16_t langId,							// The language id
@@ -163,16 +163,16 @@ Async::task<RESULT> HCDGetDescriptor (UsbDevice* device,
                         uint32_t *bytesTransferred,     			// Value at pointer will be updated with bytes transfered to/from buffer (NULL to ignore)								
                         bool runHeaderCheck)						// Whether to run header check
 {
-    auto& driver = device->GetDriver();
+    auto& driver = device.GetDriver();
 
-    auto const ioHandle = driver.GetIoHandle(device->GetAddress());
+    auto const ioHandle = driver.GetIoHandle(device.GetAddress());
 
     RESULT result;
     uint32_t transfer;
     alignas(4) struct UsbDescriptorHeader header  = { 0 };
     if (runHeaderCheck) {
         result = co_await driver.HCDSubmitControlMessageIN(
-            device,													// Pipe passed in as is
+            &device,													// Pipe passed in as is
             ioHandle,
             { reinterpret_cast<std::byte*>(&header), sizeof(header) },
             UsbDeviceRequest {							// We will build a request structure
@@ -187,19 +187,19 @@ Async::task<RESULT> HCDGetDescriptor (UsbDevice* device,
         if ((result == RESULT::Ok) && (header.DescriptorType != type))
         {
             LOG("HCD: Descriptor type mismatch, expected %#x got %#x for device:%i.\n",
-                type, header.DescriptorType, device->GetAddress());	// Log error
+                type, header.DescriptorType, device.GetAddress());	// Log error
             result = RESULT::ErrorGeneral;									// For some strange reason descriptor type is not right
         }
         if (result != RESULT::Ok) {											// RESULT in error
             LOG("HCD: Fail to get descriptor header %#x:%#x recepient: %#x, device:%i. RESULT %#x.\n",
-                type, index, recipient, device->GetAddress(), result);		// Log any error
+                type, index, recipient, device.GetAddress(), result);		// Log any error
             co_return result;
         }
         if (length > header.DescriptorLength)						// Check descriptor length vs buffer space
             length = header.DescriptorLength;						// The descriptor is shorter than buffer space provided
     }
     result = co_await driver.HCDSubmitControlMessageIN(
-        device,														// Pipe passed in as is
+        &device,														// Pipe passed in as is
         ioHandle,
         { reinterpret_cast<std::byte*>(buffer), length },
         UsbDeviceRequest {								// We will build a request structure
@@ -214,7 +214,7 @@ Async::task<RESULT> HCDGetDescriptor (UsbDevice* device,
     if (length != transfer) result = RESULT::ErrorTransmission; 			// The requested length does not match read length
     if (result != RESULT::Ok) {
         LOG("HCD: Failed to get descriptor %#x:%#x recepient: %#x, device:%i. RESULT %#x.\n",
-            type, index, recipient, device->GetAddress(), result);
+            type, index, recipient, device.GetAddress(), result);
     }
     if (bytesTransferred) *bytesTransferred = transfer;
     co_return result;
@@ -233,7 +233,7 @@ Async::task<RESULT> UsbDriver::HCDReadStringDescriptor (UsbDevice& device,
     bool NoEnglishSupport = false;									// Preset no english support false
 
     if (buffer == nullptr || stringIndex == 0) co_return RESULT::ErrorArgument;
-    result = co_await HCDGetDescriptor(&device, USB_DESCRIPTOR_TYPE_STRING, 0, 0, &langIds, 2,
+    result = co_await HCDGetDescriptor(device, USB_DESCRIPTOR_TYPE_STRING, 0, 0, &langIds, 2,
         bmREQ_GET_DEVICE_DESCRIPTOR, &transfer, true);				// Get language support header
     if ((result != RESULT::Ok) && (transfer < 2)) {							// Could not read language support data
         LOG("HCD: Could not read language support for device: %i\n",
@@ -248,7 +248,7 @@ Async::task<RESULT> UsbDriver::HCDReadStringDescriptor (UsbDevice& device,
         co_return RESULT::ErrorArgument;										// I am lost what is going on bail
     }
     // So we have size to read for all the language support pairs
-    result = co_await HCDGetDescriptor(&device, USB_DESCRIPTOR_TYPE_STRING, 0, 0, &langIds, langIds[0] & 0xFF,
+    result = co_await HCDGetDescriptor(device, USB_DESCRIPTOR_TYPE_STRING, 0, 0, &langIds, langIds[0] & 0xFF,
         bmREQ_GET_DEVICE_DESCRIPTOR, &transfer, true);				// Get all language support pair data
     if ((result != RESULT::Ok) && (transfer < (langIds[0] & 0xFF))) {		// We failed to read all the support data
         LOG("HCD: Could not read all the language support data on device: %i\n",
@@ -271,7 +271,7 @@ Async::task<RESULT> UsbDriver::HCDReadStringDescriptor (UsbDevice& device,
 
     // Pull header of string descriptor so we get size. If no english available use lang pair at position 1
     // We have to read string descriptor for enumeration .. but we don't have to put it in buffer
-    result = co_await HCDGetDescriptor(&device, USB_DESCRIPTOR_TYPE_STRING, stringIndex,
+    result = co_await HCDGetDescriptor(device, USB_DESCRIPTOR_TYPE_STRING, stringIndex,
         NoEnglishSupport ? langIds[1] : 0x409, &Header,
         sizeof(struct UsbDescriptorHeader), bmREQ_GET_DEVICE_DESCRIPTOR, 
         &transfer, true);											// Read string descriptor header only
@@ -282,7 +282,7 @@ Async::task<RESULT> UsbDriver::HCDReadStringDescriptor (UsbDevice& device,
     }
 
     // Okay we got the size of the string so now read the entire size
-    result = co_await HCDGetDescriptor(&device, USB_DESCRIPTOR_TYPE_STRING, stringIndex,
+    result = co_await HCDGetDescriptor(device, USB_DESCRIPTOR_TYPE_STRING, stringIndex,
         NoEnglishSupport ? langIds[1] : 0x409, &descBuffer,
         Header.DescriptorLength, bmREQ_GET_DEVICE_DESCRIPTOR, 
         &transfer, true);											// Read the full string 	
@@ -392,7 +392,7 @@ Async::task<RESULT> UsbDriver::HubPortReset(UsbDevice& device, uint8_t port)
         do {
             co_await Async::DelayInMicroseconds(20000);
             if ((result = co_await HCDReadHubPortStatus(&device, port + 1, portStatus.Raw32)) != RESULT::Ok) {
-                LOG("HUB: Hub failed to get status (4) for %s.Port%d.\n", UsbGetDescription(&device), port + 1);
+                LOG("HUB: Hub failed to get status (4) for %s.Port%d.\n", UsbGetDescription(device), port + 1);
                 co_return result;
             }
             timeout++;
@@ -400,7 +400,7 @@ Async::task<RESULT> UsbDriver::HubPortReset(UsbDevice& device, uint8_t port)
 
         if (timeout == 10) continue;
 
-        LOG_DEBUG("HUB: %s.Port%d Status %x:%x.\n", UsbGetDescription(&device), port + 1, portStatus.RawStatus, portStatus.RawChange);
+        LOG_DEBUG("HUB: %s.Port%d Status %x:%x.\n", UsbGetDescription(device), port + 1, portStatus.RawStatus, portStatus.RawChange);
 
         if (portStatus.Change.ConnectedChanged || !portStatus.Status.Connected)
             co_return RESULT::ErrorDevice;
@@ -410,23 +410,25 @@ Async::task<RESULT> UsbDriver::HubPortReset(UsbDevice& device, uint8_t port)
     }
 
     if (retry == 3) {
-        LOG("HUB: Cannot enable %s.Port%d. Please verify the hardware is working.\n", UsbGetDescription(&device), port + 1);
+        LOG("HUB: Cannot enable %s.Port%d. Please verify the hardware is working.\n", UsbGetDescription(device), port + 1);
         co_return RESULT::ErrorDevice;
     }
 
     if ((result = co_await HCDChangeHubPortFeature(&device, FeatureResetChange, port + 1, false)) != RESULT::Ok) {
-        LOG("HUB: Failed to clear reset on %s.Port%d.\n", UsbGetDescription(&device), port + 1);
+        LOG("HUB: Failed to clear reset on %s.Port%d.\n", UsbGetDescription(device), port + 1);
     }
     co_return RESULT::Ok;
 }
 
 // Sets the address of the device with control endpoint given by the pipe. Zero
 // is a restricted address for the rootHub and will return if attempted.
-Async::task<RESULT> UsbDriver::HCDSetAddress(UsbDevice* device, IoHandle const& ioHandle, uint8_t address)
+Async::task<RESULT> UsbDriver::HCDSetAddress(UsbDevice& device, IoHandle const& ioHandle)
 {
+    auto const address = device.GetAddress();
+    device.Pipe0.Number = 0;
     if (address == 0) co_return RESULT::ErrorArgument;							// You can't set address zero that is strictly reserved for roothub
-    co_return co_await HCDSubmitControlMessageOUT(
-        device,
+    auto result = co_await HCDSubmitControlMessageOUT(
+        &device,
         ioHandle,
         {},													// No data
         UsbDeviceRequest {
@@ -436,6 +438,8 @@ Async::task<RESULT> UsbDriver::HCDSetAddress(UsbDevice* device, IoHandle const& 
         },
         ControlMessageTimeout,
         nullptr);
+    device.Pipe0.Number = address;
+    co_return result;
 }
 
 // Sets a given USB device configuration to the config index number requested.
@@ -471,73 +475,131 @@ RESULT AddHidPayload(UsbDevice& device)
     return RESULT::Ok;
 }
 
+// Returns a description for a device. This is not read from the device, this
+// is just generated given by the driver.
+const char* UsbDriver::UsbGetDescription(UsbDevice& device)
+{
+    if (device.Config.Status == USB_STATUS_ATTACHED)
+        return "New Device (Not Ready)";
+    else if (device.Config.Status == USB_STATUS_POWERED)
+        return "Unknown Device (Not Ready)";
+    else if (!device.ParentHub.Device)
+        return "USB Root device (Hub?)";
+
+    switch (device.Descriptor.bDeviceClass) {
+    case DeviceClassHub:
+        if (device.Descriptor.bcdUSB == 0x210)
+            return "USB 2.1 Hub";
+        else if (device.Descriptor.bcdUSB == 0x200)
+            return "USB 2.0 Hub";
+        else if (device.Descriptor.bcdUSB == 0x110)
+            return "USB 1.1 Hub";
+        else if (device.Descriptor.bcdUSB == 0x100)
+            return "USB 1.0 Hub";
+        else
+            return "USB Hub";
+    case DeviceClassVendorSpecific:
+        if (device.Descriptor.idVendor == 0x424 &&
+            device.Descriptor.idProduct == 0xec00)
+            return "SMSC LAN9512";
+    case DeviceClassInInterface:
+        if (device.Config.Status == USB_STATUS_CONFIGURED) {
+            switch (device.Interfaces[0].Class) {
+            case InterfaceClass::Audio:
+                return "USB Audio Device";
+            case InterfaceClass::Communications:
+                return "USB CDC Device";
+            case InterfaceClass::Hid:
+                switch (device.Interfaces[0].Protocol) {
+                case 1:
+                    return "USB Keyboard";
+                case 2:
+                    return "USB Mouse";
+                default:
+                    return "USB HID";
+                }
+            case InterfaceClass::Physical:
+                return "USB Physical Device";
+            case InterfaceClass::Image:
+                return "USB Imaging Device";
+            case InterfaceClass::Printer:
+                return "USB Printer";
+            case InterfaceClass::MassStorage:
+                return "USB Mass Storage Device";
+            case InterfaceClass::Hub:
+                if (device.Descriptor.bcdUSB == 0x210)
+                    return "USB 2.1 Hub";
+                else if (device.Descriptor.bcdUSB == 0x200)
+                    return "USB 2.0 Hub";
+                else if (device.Descriptor.bcdUSB == 0x110)
+                    return "USB 1.1 Hub";
+                else if (device.Descriptor.bcdUSB == 0x100)
+                    return "USB 1.0 Hub";
+                else
+                    return "USB Hub";
+            case InterfaceClass::CdcData:
+                return "USB CDC-Data Device";
+            case InterfaceClass::SmartCard:
+                return "USB Smart Card";
+            case InterfaceClass::ContentSecurity:
+                return "USB Content Secuity Device";
+            case InterfaceClass::Video:
+                return "USB Video Device";
+            case InterfaceClass::PersonalHealthcare:
+                return "USB Healthcare Device";
+            case InterfaceClass::AudioVideo:
+                return "USB AV Device";
+            case InterfaceClass::DiagnosticDevice:
+                return "USB Diagnostic Device";
+            case InterfaceClass::WirelessController:
+                return "USB Wireless Controller";
+            case InterfaceClass::Miscellaneous:
+                return "USB Miscellaneous Device";
+            case InterfaceClass::VendorSpecific:
+                return "Vendor Specific";
+            default:
+                return "Generic Device";
+            }
+        }
+        else if (device.Descriptor.bDeviceClass == DeviceClassVendorSpecific)
+            return "Vendor Specific";
+        else
+            return "Unconfigured Device";
+    default:
+        return "Generic Device";
+    }
+}
+
 // All detected devices start enumeration here. We recover critical information
 // of every USB device and hold those details in the device data block. Finally 
 // if the device is recognized as any of the sepcial specific class then it will
 // call extended enumeration for those specific classes.
-Async::task<RESULT> UsbDriver::EnumerateDevice(struct UsbDevice *device, struct UsbDevice* ParentHub, uint8_t PortNum)
+Async::task<RESULT> UsbDriver::EnumerateDevice(UsbDevice& device)
 {
     RESULT result;
-    uint8_t address;
     uint32_t transferred;
-    DeviceDescriptor desc = { 0 };
     char buffer[256] __attribute__((aligned(4)));					// Text buffer
 
-    auto const ioHandle = GetIoHandle(device->GetAddress());
-
-    /* Store the unique address until it is actually assigned. */
-    address = device->GetAddress();									// Hold unique address we will set device to
-    device->Pipe0.Number = 0;										// Initially it starts as zero
-    LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 1 = Read first 8 Bytes of Device Descriptor\n");
-    device->Pipe0.MaxPacketSizeInBytes = 8;							// Set max packet size to 8 ( So exchange will be exactly 1 packet)
-
-// For XHCI, this needs to be done after addressing is completed.
-// TODO: Abstract early initialization, since it seems to be HW-flavor-specific.
-//
-//    result = co_await HCDSubmitControlMessageIN(
-//        device,
-//        ioHandle,
-//        { reinterpret_cast<std::byte*>(&desc), 8 }, // Ask for first 8 bytes as per USB specification
-//        UsbDeviceRequest {								// We will build a request structure
-//            .Type = bmREQ_GET_DEVICE_DESCRIPTOR,					// Recipient is a flag usually 0x0 for normal device, 0x20 for a hub
-//            .Request = GetDescriptor,								// We want a descriptor obviously
-//            .Value = (uint16_t)USB_DESCRIPTOR_TYPE_DEVICE << 8,		// Type and the index (0) get compacted as the value
-//            .Index = 0,												// We want descriptor 0
-//            .Length = 8,											// 8 bytes as per USB enumeration by the book
-//        },
-//        ControlMessageTimeout,										// The standard timeout for any control message
-//        &transferred);												// Pass in pointer to get bytes transferred back
-//    if ((result != RESULT::Ok) || (transferred != 8)) {						// This should pass on any valid device
-//        LOG("Enumeration: Step 1 on device %i failed, Result: %#x, transferred: %u.\n",
-//            address, result, transferred);										// Log any error
-//        //co_return result != RESULT::Ok ? result : RESULT::ErrorTransmission;	// Fatal enumeration error of this device
-//    }
-//    else
-//    {
-//        LOG_DEBUG("Max packet size: %u\n", desc.bMaxPacketSize0);
-//        device->Pipe0.MaxPacketSizeInBytes = desc.bMaxPacketSize0;	    // Set the maximum endpoint packet size to pipe from response
-//        device->Config.Status = USB_STATUS_DEFAULT;						// Move device enumeration to default
-//    }
+    auto const ioHandle = co_await InitializeDevice(device);
 
     LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 2 = Reset Port (old device support)\n");
-    if (ParentHub != nullptr) {
+    if (device.ParentHub.Device && device.ParentHub.PortNumber > 0)
+    {
         // Reset the port for what will be the second time.
-        if ((result = co_await HubPortReset(*ParentHub, PortNum)) != RESULT::Ok) {
+        if ((result = co_await HubPortReset(*device.ParentHub.Device, device.ParentHub.PortNumber - 1)) != RESULT::Ok) {
             LOG("HCD: Failed to reset port again for new device %s.\n", UsbGetDescription(device));
-            device->Pipe0.Number = address;
             co_return result;
         }
     }
-    
-    LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 3 = Set Device Address %u\n", address);
-    if ((result = co_await HCDSetAddress(device, ioHandle, address)) != RESULT::Ok) {
-        LOG("Enumeration: Failed to assign address to %#x.\n", address);// Log the error
-        device->Pipe0.Number = address;								// Set device number just so it stays valid
+
+    LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 3 = Set Device Address %u\n", device.GetAddress());
+    if ((result = co_await HCDSetAddress(device, ioHandle)) != RESULT::Ok)
+    {
+        LOG("Enumeration: Failed to assign address to %#x.\n", device.GetAddress());// Log the error
         co_return result;												// Fatal enumeration error of this device
     }
-    device->Pipe0.Number = address;									// Device successfully addressed so put it back to control pipe								
     co_await Async::DelayInMicroseconds(10000);												// Allows time for address to propagate.
-    device->Config.Status = USB_STATUS_ADDRESSED;					// Our enumeration status in now addressed
+    device.Config.Status = USB_STATUS_ADDRESSED;					// Our enumeration status in now addressed
 
     LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 4 = Read Device Descriptor At Address\n");
     result = co_await HCDGetDescriptor(
@@ -545,25 +607,24 @@ Async::task<RESULT> UsbDriver::EnumerateDevice(struct UsbDevice *device, struct 
         USB_DESCRIPTOR_TYPE_DEVICE,							        // Fetch device descriptor 
         0,															// Index 0
         0,															// Language 0
-        &device->Descriptor,										// Pointer to buffer in device structure 
-        sizeof(device->Descriptor),									// Ask for entire descriptor
+        &device.Descriptor,										// Pointer to buffer in device structure 
+        sizeof(device.Descriptor),									// Ask for entire descriptor
         bmREQ_GET_DEVICE_DESCRIPTOR,								// Recipient device
         &transferred, true);										// Pass in pointer to get bytes transferred back
-    if (result == RESULT::Ok && transferred != sizeof(device->Descriptor))
+    if (result == RESULT::Ok && transferred != sizeof(device.Descriptor))
     {
         // This should pass on any valid device
         LOG("Enumeration: Step 4 on device %i failed, Got %u bytes != %u.\n",
-            device->GetAddress(), transferred, (uint32_t)sizeof(device->Descriptor));
+            device.GetAddress(), transferred, (uint32_t)sizeof(device.Descriptor));
         co_return RESULT::ErrorTransmission;
     }
     if (result != RESULT::Ok)
     {
         LOG("Enumeration: Step 4 on device %i failed, Result: %#x.\n",
-            device->GetAddress(), result);						// Log any error
+            device.GetAddress(), result);						// Log any error
         co_return result;
     }
-    LOG_DEBUG("Device: %u, Class: %u, Subclass: %u\n", device->GetAddress(), device->Descriptor.bDeviceClass, device->Descriptor.bDeviceSubClass);
-    device->Pipe0.MaxPacketSizeInBytes = desc.bMaxPacketSize0;	    // Set the maximum endpoint packet size to pipe from response
+    LOG_DEBUG("Device: %u, Class: %u, Subclass: %u\n", device.GetAddress(), device.Descriptor.bDeviceClass, device.Descriptor.bDeviceSubClass);
 
 
     LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 5 = Read Device Configurations\n");
@@ -576,15 +637,15 @@ Async::task<RESULT> UsbDriver::EnumerateDevice(struct UsbDevice *device, struct 
     if (result == RESULT::Ok && transfer != sizeof(configDesc))
     {
         LOG("HCD: Got %u bytes != %u reading configuration descriptor for device: %i\n",
-            transfer, (uint32_t)sizeof(device->Descriptor), device->GetAddress());
+            transfer, (uint32_t)sizeof(device.Descriptor), device.GetAddress());
         co_return RESULT::ErrorTransmission;
     }
     if (result != RESULT::Ok) {
         LOG("HCD: Error: %i, reading configuration descriptor for device: %i\n",
-            result, device->GetAddress());
+            result, device.GetAddress());
         co_return RESULT::ErrorDevice;											// No idea what problem is so bail
     }
-    device->Config.ConfigStringIndex = configDesc.iConfiguration;	// Grab string index while here
+    device.Config.ConfigStringIndex = configDesc.iConfiguration;	// Grab string index while here
 
     // Most devices I played with only have 1 config .. regardless we will take first
     // The index to call is given as at offset 5 bConfigurationValue
@@ -593,7 +654,7 @@ Async::task<RESULT> UsbDriver::EnumerateDevice(struct UsbDevice *device, struct 
     // Okay we have the total length of config so we will read it in entirity
     std::byte configBuffer[1024];										// Largest config I have ever seen is few hundred bytes this is 1K buffer
     result = co_await HCDSubmitControlMessageIN(
-        device,												// Device 
+        &device,												// Device 
         ioHandle,
         { configBuffer, configDesc.wTotalLength },
         UsbDeviceRequest {								// We will build a request structure
@@ -607,13 +668,13 @@ Async::task<RESULT> UsbDriver::EnumerateDevice(struct UsbDevice *device, struct 
         &transfer);													// Set pointer to fetch transfer bytes
     if ((result != RESULT::Ok) || (transfer != configDesc.wTotalLength)) {	// Check if anything went wrong
         LOG("HCD: Failed to read configuration descriptor for device %i, %u bytes read, Error: %i.\n",
-            device->GetAddress(), (unsigned int)transfer, result);				// Log error
+            device.GetAddress(), (unsigned int)transfer, result);				// Log error
         if (result != RESULT::Ok) co_return result;							// Return error result
         co_return RESULT::ErrorDevice;											// Something went badly wrong .. bail
     }
 
-    device->Interfaces.clear();
-    device->Endpoints.clear();
+    device.Interfaces.clear();
+    device.Endpoints.clear();
 
     uint8_t hidCount = 0;
     std::optional<uint8_t> currentInterfaceIndex;
@@ -623,9 +684,9 @@ Async::task<RESULT> UsbDriver::EnumerateDevice(struct UsbDevice *device, struct 
         case USB_DESCRIPTOR_TYPE_INTERFACE: {
             UsbInterfaceDescriptor interfaceDescriptor{};
             memcpy(&interfaceDescriptor, &configBuffer[i], sizeof(interfaceDescriptor));
-            device->Interfaces.push_back(interfaceDescriptor);
-            device->Endpoints.emplace_back();
-            currentInterfaceIndex = static_cast<uint8_t>(device->Interfaces.size() - 1);
+            device.Interfaces.push_back(interfaceDescriptor);
+            device.Endpoints.emplace_back();
+            currentInterfaceIndex = static_cast<uint8_t>(device.Interfaces.size() - 1);
             break;
         }
         case USB_DESCRIPTOR_TYPE_ENDPOINT: {
@@ -634,7 +695,7 @@ Async::task<RESULT> UsbDriver::EnumerateDevice(struct UsbDevice *device, struct 
             }
             UsbEndpointDescriptor endpointDescriptor{};
             memcpy(&endpointDescriptor, &configBuffer[i], sizeof(endpointDescriptor));
-            device->Endpoints[*currentInterfaceIndex].push_back(endpointDescriptor);
+            device.Endpoints[*currentInterfaceIndex].push_back(endpointDescriptor);
             break;
         }
         case USB_DESCRIPTOR_TYPE_HID: {
@@ -642,12 +703,12 @@ Async::task<RESULT> UsbDriver::EnumerateDevice(struct UsbDevice *device, struct 
                 break;
             }
             if (hidCount == 0) {
-                if ((result = AddHidPayload(*device)) != RESULT::Ok) {
+                if ((result = AddHidPayload(device)) != RESULT::Ok) {
                     LOG("Could not allocate hid payload, Error ID %i\n", result);
                     co_return result;
                 }
             }
-            if (SetHidDescriptor(device->HidPayload, hidCount, *currentInterfaceIndex, &configBuffer[i], static_cast<uint8_t>(configBuffer[i]))) {
+            if (SetHidDescriptor(device.HidPayload, hidCount, *currentInterfaceIndex, &configBuffer[i], static_cast<uint8_t>(configBuffer[i]))) {
                 hidCount++;
             }
             break;
@@ -659,45 +720,45 @@ Async::task<RESULT> UsbDriver::EnumerateDevice(struct UsbDevice *device, struct 
     }
 
     LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 6 = Set Configuration to Device\n");
-    if (auto const thisResult = co_await HCDSetConfiguration(device, ioHandle, configNum); thisResult != RESULT::Ok) {
+    if (auto const thisResult = co_await HCDSetConfiguration(&device, ioHandle, configNum); thisResult != RESULT::Ok) {
         LOG("HCD: Failed to set configuration %#x for device %i.\n",
-            configNum, device->GetAddress());
+            configNum, device.GetAddress());
         co_return thisResult;
     }
-    device->Config.ConfigIndex = configNum;							// Hold the configuration index
-    device->Config.Status = USB_STATUS_CONFIGURED;					// Set device status to configured
+    device.Config.ConfigIndex = configNum;							// Hold the configuration index
+    device.Config.Status = USB_STATUS_CONFIGURED;					// Set device status to configured
 
     LOG("HCD: Attach Device %s. Address:%d Class:%d USB:%x.%x, %d configuration(s), %d interface(s).\n",
-        UsbGetDescription(device), address, device->Descriptor.bDeviceClass, (device->Descriptor.bcdUSB >> 8) & 0xFF,
-        device->Descriptor.bcdUSB & 0xFF, device->Descriptor.bNumConfigurations, device->Interfaces.size());
+        UsbGetDescription(device), device.GetAddress(), device.Descriptor.bDeviceClass, (device.Descriptor.bcdUSB >> 8) & 0xFF,
+        device.Descriptor.bcdUSB & 0xFF, device.Descriptor.bNumConfigurations, device.Interfaces.size());
     
-    if (device->Descriptor.iProduct != 0) {
+    if (device.Descriptor.iProduct != 0) {
         size_t length = sizeof(buffer);
-        if (co_await HCDReadStringDescriptor(*device, device->Descriptor.iProduct, &buffer[0], length) == RESULT::Ok)
+        if (co_await HCDReadStringDescriptor(device, device.Descriptor.iProduct, &buffer[0], length) == RESULT::Ok)
         {
             LOG("HCD:  -Product:       %s.\n", buffer);
         }
     }
     
-    if (device->Descriptor.iManufacturer != 0) {
+    if (device.Descriptor.iManufacturer != 0) {
         size_t length = sizeof(buffer);
-        if (co_await HCDReadStringDescriptor(*device, device->Descriptor.iManufacturer, &buffer[0], length) == RESULT::Ok)
+        if (co_await HCDReadStringDescriptor(device, device.Descriptor.iManufacturer, &buffer[0], length) == RESULT::Ok)
         {
             LOG("HCD:  -Manufacturer:  %s.\n", buffer);
         }
     }
-    if (device->Descriptor.iSerialNumber != 0) {
+    if (device.Descriptor.iSerialNumber != 0) {
         size_t length = sizeof(buffer);
-        if (co_await HCDReadStringDescriptor(*device, device->Descriptor.iSerialNumber, &buffer[0], length) == RESULT::Ok)
+        if (co_await HCDReadStringDescriptor(device, device.Descriptor.iSerialNumber, &buffer[0], length) == RESULT::Ok)
         {
             LOG("HCD:  -SerialNumber:  %s.\n", buffer);
         }
     }
 
 
-    if (device->Config.ConfigStringIndex != 0) {
+    if (device.Config.ConfigStringIndex != 0) {
         size_t length = sizeof(buffer);
-        if (co_await HCDReadStringDescriptor(*device, device->Config.ConfigStringIndex, &buffer[0], length) == RESULT::Ok)
+        if (co_await HCDReadStringDescriptor(device, device.Config.ConfigStringIndex, &buffer[0], length) == RESULT::Ok)
         {
             LOG("HCD:  -Configuration: %s.\n", buffer);
         }
@@ -705,18 +766,18 @@ Async::task<RESULT> UsbDriver::EnumerateDevice(struct UsbDevice *device, struct 
 
 
     LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 7 = ENUMERATE SPECIAL DEVICES\n");
-    if (device->Descriptor.bDeviceClass == DeviceClassHub) {		// If device is a hub then enumerate it
+    if (device.Descriptor.bDeviceClass == DeviceClassHub) {		// If device is a hub then enumerate it
         LOG_DEBUG("Device is a hub, enumerating ports.\n");
-        if ((result = co_await EnumerateHub(*device)) != RESULT::Ok) {
+        if ((result = co_await EnumerateHub(device)) != RESULT::Ok) {
             LOG("Could not enumerate HUB device %i, Error ID %i\n",
-                device->GetAddress(), result);						// Log error
+                device.GetAddress(), result);						// Log error
             co_return result;											// Return the error
         }
     } else if (hidCount > 0) {										// HID interface on the device
         LOG_DEBUG("Device hidCount: %u, enumerating ports.\n", hidCount);
-        if ((result = co_await EnumerateHID(*device)) != RESULT::Ok) {	// RESULT::Ok so enumerate the HID device
+        if ((result = co_await EnumerateHID(device)) != RESULT::Ok) {	// RESULT::Ok so enumerate the HID device
             LOG("Could not enumerate HID device %i, Error ID %i\n",
-                device->GetAddress(), result);
+                device.GetAddress(), result);
             co_return result;											// return the error
         }
     }
@@ -756,67 +817,68 @@ __attribute__((noinline)) Async::task<RESULT> HubPortConnectionChanged(UsbDevice
     auto& driver = device.GetDriver();
 
     if ((result = co_await driver.HCDReadHubPortStatus(&device, port + 1, portStatus.Raw32)) != RESULT::Ok) {
-        LOG("HUB: Hub failed to get status (2) for %s.Port%d.\n", driver.UsbGetDescription(&device), port + 1);
+        LOG("HUB: Hub failed to get status (2) for %s.Port%d.\n", driver.UsbGetDescription(device), port + 1);
         co_return result;
     }
-    LOG_DEBUG("HUB: %s.Port%d Status %x:%x.\n", driver.UsbGetDescription(&device), port + 1, portStatus.RawStatus, portStatus.RawChange);
+    LOG_DEBUG("HUB: %s.Port%d Status %x:%x.\n", driver.UsbGetDescription(device), port + 1, portStatus.RawStatus, portStatus.RawChange);
 
     if ((result = co_await HCDChangeHubPortFeature(&device, FeatureConnectionChange, port + 1, false)) != RESULT::Ok) {
-        LOG("HUB: Failed to clear change on %s.Port%d.\n", driver.UsbGetDescription(&device), port + 1);
+        LOG("HUB: Failed to clear change on %s.Port%d.\n", driver.UsbGetDescription(device), port + 1);
     }
 
     if ((!portStatus.Status.Connected && !portStatus.Status.Enabled) || data->Children[port] != nullptr) {
-        LOG("HUB: Disconnected %s.Port%d - %s.\n", driver.UsbGetDescription(&device), port + 1, driver.UsbGetDescription(data->Children[port]));
+        LOG("HUB: Disconnected %s.Port%d - %s.\n", driver.UsbGetDescription(device), port + 1, driver.UsbGetDescription(*data->Children[port]));
         driver.UsbDeallocateDevice(data->Children[port]);
         data->Children[port] = nullptr;
         if (!portStatus.Status.Connected) co_return RESULT::Ok;
     }
 
     if ((result = co_await driver.HubPortReset(device, port)) != RESULT::Ok) {
-        LOG("HUB: Could not reset %s.Port%d for new device.\n", driver.UsbGetDescription(&device), port + 1);
+        LOG("HUB: Could not reset %s.Port%d for new device.\n", driver.UsbGetDescription(device), port + 1);
         co_return result;
     }
 
     auto childEx = driver.UsbAllocateDevice(&device, port + 1);
     if (!childEx.has_value()) {
-        LOG("HUB: Could not allocate a new device entry for %s.Port%d.\n", driver.UsbGetDescription(&device), port + 1);
+        LOG("HUB: Could not allocate a new device entry for %s.Port%d.\n", driver.UsbGetDescription(device), port + 1);
         co_return childEx.error();
     }
 
-    auto& child = data->Children[port];
-
-    child = childEx.value().get();
+    auto& child = *childEx.value();
+    
+    data->Children[port] = &child;
 
     if ((result = co_await driver.HCDReadHubPortStatus(&device, port + 1, portStatus.Raw32)) != RESULT::Ok) {
-        LOG("HUB: Hub failed to get status (3) for %s.Port%d.\n", driver.UsbGetDescription(&device), port + 1);
+        LOG("HUB: Hub failed to get status (3) for %s.Port%d.\n", driver.UsbGetDescription(device), port + 1);
         co_return result;
     }
 
-    LOG("HUB: %s. Device:%i Port:%d Status %04x:%04x.\n", driver.UsbGetDescription(&device), device.GetAddress(), port, portStatus.RawStatus, portStatus.RawChange);
+    LOG("HUB: %s. Device:%i Port:%d Status %04x:%04x.\n", driver.UsbGetDescription(device), device.GetAddress(), port, portStatus.RawStatus, portStatus.RawChange);
 
     if (portStatus.Status.HighSpeedAttatched)
     {
-        child->Pipe0.Speed = USB_SPEED_HIGH;
+        child.Pipe0.Speed = USB_SPEED_HIGH;
     }
     else if (portStatus.Status.LowSpeedAttatched)
     {
-        child->Pipe0.Speed = USB_SPEED_LOW;
-        child->Pipe0.splitNodePoint = device.GetAddress();
-        child->Pipe0.splitNodePort = port;
+        child.Pipe0.Speed = USB_SPEED_LOW;
+        child.Pipe0.splitNodePoint = device.GetAddress();
+        child.Pipe0.splitNodePort = port;
     }
     else
     {
-        child->Pipe0.Speed = USB_SPEED_FULL;
-        child->Pipe0.splitNodePoint = device.GetAddress();
-        child->Pipe0.splitNodePort = port;
+        child.Pipe0.Speed = USB_SPEED_FULL;
+        child.Pipe0.splitNodePoint = device.GetAddress();
+        child.Pipe0.splitNodePort = port;
     }
-    child->RootHubPort = device.RootHubPort;
-    if ((result = co_await driver.EnumerateDevice(child, &device, port)) != RESULT::Ok)
+    child.RootHubPort = device.RootHubPort;
+    if ((result = co_await driver.EnumerateDevice(child)) != RESULT::Ok)
     {
-        LOG("HUB: Could not connect to new device in %s.Port%d. Disabling.\n", driver.UsbGetDescription(&device), port + 1);
-        driver.UsbDeallocateDevice(std::exchange(child, nullptr));
+        LOG("HUB: Could not connect to new device in %s.Port%d. Disabling.\n", driver.UsbGetDescription(device), port + 1);
+        driver.UsbDeallocateDevice(&child);
+        data->Children[port] = nullptr;
         if (co_await HCDChangeHubPortFeature(&device, FeatureEnable, port + 1, false) != RESULT::Ok) {
-            LOG("HUB: Failed to disable %s.Port%d.\n", driver.UsbGetDescription(&device), port + 1);
+            LOG("HUB: Failed to disable %s.Port%d.\n", driver.UsbGetDescription(device), port + 1);
         }
         co_return result;
     }
@@ -842,7 +904,7 @@ Async::task<RESULT> HubCheckConnection(UsbDevice& device, uint8_t port)
 
     if ((result = co_await driver.HCDReadHubPortStatus(&device, port + 1, portStatus.Raw32)) != RESULT::Ok) {
         if (result != RESULT::ErrorDisconnected)
-            LOG("HUB: Failed to get hub port status (1) for %s.Port%d.\n", driver.UsbGetDescription(&device), port + 1);
+            LOG("HUB: Failed to get hub port status (1) for %s.Port%d.\n", driver.UsbGetDescription(device), port + 1);
         co_return result;
     }
 
@@ -857,31 +919,31 @@ Async::task<RESULT> HubCheckConnection(UsbDevice& device, uint8_t port)
 
     if (portStatus.Change.EnabledChanged) {
         if (co_await HCDChangeHubPortFeature(&device, FeatureEnableChange, port + 1, false) != RESULT::Ok) {
-            LOG("HUB: Failed to clear enable change %s.Port%d.\n", driver.UsbGetDescription(&device), port + 1);
+            LOG("HUB: Failed to clear enable change %s.Port%d.\n", driver.UsbGetDescription(device), port + 1);
         }
 
         // This may indicate EM interference.
         if (!portStatus.Status.Enabled && portStatus.Status.Connected && data->Children[port] != nullptr) {
-            LOG("HUB: %s.Port%d has been disabled, but is connected. This can be cause by interference. Reenabling!\n", driver.UsbGetDescription(&device), port + 1);
+            LOG("HUB: %s.Port%d has been disabled, but is connected. This can be cause by interference. Reenabling!\n", driver.UsbGetDescription(device), port + 1);
             co_await HubPortConnectionChanged(device, port);
         }
     }
 
     if (portStatus.Status.Suspended) {
         if (co_await HCDChangeHubPortFeature(&device, FeatureSuspend, port + 1, false) != RESULT::Ok) {
-            LOG("HUB: Failed to clear suspended port - %s.Port%d.\n", driver.UsbGetDescription(&device), port + 1);
+            LOG("HUB: Failed to clear suspended port - %s.Port%d.\n", driver.UsbGetDescription(device), port + 1);
         }
     }
 
     if (portStatus.Change.OverCurrentChanged) {
         if (co_await HCDChangeHubPortFeature(&device, FeatureOverCurrentChange, port + 1, false) != RESULT::Ok) {
-            LOG("HUB: Failed to clear over current port - %s.Port%d.\n", driver.UsbGetDescription(&device), port + 1);
+            LOG("HUB: Failed to clear over current port - %s.Port%d.\n", driver.UsbGetDescription(device), port + 1);
         }
     }
 
     if (portStatus.Change.ResetChanged) {
         if (co_await HCDChangeHubPortFeature(&device, FeatureResetChange, port + 1, false) != RESULT::Ok) {
-            LOG("HUB: Failed to clear reset port - %s.Port%d.\n", driver.UsbGetDescription(&device), port + 1);
+            LOG("HUB: Failed to clear reset port - %s.Port%d.\n", driver.UsbGetDescription(device), port + 1);
         }
     }
 
@@ -931,7 +993,7 @@ Async::task<RESULT> UsbDriver::EnumerateHub(UsbDevice& device)
 
     data = device.HubPayload;
 
-    result = co_await HCDGetDescriptor(&device, USB_DESCRIPTOR_TYPE_HUB,
+    result = co_await HCDGetDescriptor(device, USB_DESCRIPTOR_TYPE_HUB,
         0, 0, &data->Descriptor, sizeof(HubDescriptor),
         bmREQ_GET_HUB_DESCRIPTOR, &transfer, true);
     if ((result != RESULT::Ok) || (transfer != sizeof(HubDescriptor)))
@@ -1030,7 +1092,7 @@ static void UsbShowTree(UsbDevice *root, const int level, const char tee)
     }
     
     printf(" %c-%s id: %u port: %u speed: %s packetsize: %u %s\n",
-        tee, root->GetDriver().UsbGetDescription(root),
+        tee, root->GetDriver().UsbGetDescription(*root),
         root->GetAddress(),
         root->ParentHub.PortNumber,
         SpeedString[root->Pipe0.Speed],
