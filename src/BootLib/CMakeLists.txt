@@ -4,6 +4,7 @@ cmake_minimum_required(VERSION 3.24)
 # It is designed to be usable in a minimal bootloader, with minimal dependencies.
 add_library(BootLib STATIC
     Cpu.cpp             inc/BootLib/Cpu.h
+    DeviceTree.cpp      inc/BootLib/DeviceTree.h
     Gpio.cpp            inc/BootLib/Gpio.h
     Uart.cpp            inc/BootLib/Uart.h
     Mmio.cpp            inc/BootLib/Mmio.h

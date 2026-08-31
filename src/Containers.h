@@ -1,12 +1,16 @@
 
 #pragma once
 
-#include "Cpu.h"
+//#include "Cpu.h"
 
 #include <stdint.h>
 
+#include <algorithm>
 #include <atomic>
 #include <bit>
+#include <utility>
+
+namespace Cpu { [[noreturn]] void Panic(char const* fmt, ...); }
 
 namespace Containers
 {

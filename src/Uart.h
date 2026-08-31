@@ -10,9 +10,11 @@
 namespace Uart
 {
 
+using BootLib::PL011Uart;
+
 extern bool useMutex;
 
-void Init();
+void Init(PL011Uart* uart);
 
 namespace Raw
 {

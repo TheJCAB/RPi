@@ -1,11 +1,15 @@
 #include "Heap.h"
 
-#include "Mmu.h"
+//#include "Mmu.h"
 #include "Containers.h"
-#include "Cpu.h"
+//#include "Cpu.h"
 #include "emb-stdio.h"
 
 #include <atomic>
+
+namespace Cpu { [[noreturn]] void Panic(char const* fmt, ...); }
+namespace Mmu { [[nodiscard]] void* AllocateAndCommitPages(uint32_t pageCount); }
+
 
 namespace Heap
 {
@@ -86,6 +90,7 @@ Heap* CreateHeap()
     void* heapMemory = Mmu::AllocateAndCommitPages((sizeof(Heap) + PageSize - 1) / PageSize);
     if (!heapMemory)
     {
+        Cpu::Panic("Heap::CreateHeap: failed to allocate memory for heap structure");
         return nullptr;
     }
     
@@ -117,11 +122,10 @@ void* Allocate(Heap* heap, size_t size)
 
 void* AllocateAligned(Heap* heap, size_t size, size_t alignment)
 {
-    if (!heap || size == 0 || alignment == 0)
-    {
-        Cpu::Panic("Heap::AllocateAligned: invalid parameters");
-    }
-    
+    if (!heap)          Cpu::Panic("Heap::AllocateAligned: invalid `heap` parameter");
+    if (size == 0)      Cpu::Panic("Heap::AllocateAligned: invalid `size` parameter");
+    if (alignment == 0) Cpu::Panic("Heap::AllocateAligned: invalid `alignment` parameter");
+
     // Calculate number of allocation units needed
     uint32_t const unitsNeeded = (size + AllocationGranularity - 1) / AllocationGranularity;
     uint32_t const alignmentUnits = (alignment + AllocationGranularity - 1) / AllocationGranularity;

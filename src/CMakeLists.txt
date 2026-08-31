@@ -5,54 +5,83 @@ add_subdirectory(HelloBoot)
 add_subdirectory(Playground)
 add_subdirectory(KernelLoader)
 
-add_kernel_image(kernel8
-    Boot.S
-    Main.cpp
-    Crt.cpp
+add_library(CppCrt STATIC
+    # Compilery stuff, to make C++ work.
+    ClangBuiltins.cpp
     CppException.cpp
     CppTypeInfo.cpp
-    ClangBuiltins.cpp
+    Crt.cpp
+    emb-stdio.cpp       emb-stdio.h
+    Heap.cpp            Heap.h
+)
+target_link_libraries(CppCrt PUBLIC KernelRuntime)
 
+set(KernelSources
+    Boot.S
+
+    # Figuring out the machine we're running on.
     DeviceTree.cpp
 
-    Syscall.cpp
-    UsbXhci.cpp
-
+    # Kernel OS.
     Cpu.cpp             Cpu.h
-    Gpio.cpp            Gpio.h
-    Uart.cpp            Uart.h
-    SdCard.cpp          SdCard.h
-    Mailbox.cpp         Mailbox.h
-    Framebuffer.cpp     Framebuffer.h
+    Syscall.cpp
     Exception.cpp       Exception.h
-    Run.cpp             Run.h
     Mmio.cpp            Mmio.h
     Mmu.cpp             Mmu.h
-    Heap.cpp            Heap.h
     Scheduler.cpp       Scheduler.h
     Debugger.cpp        Debugger.h
-    TimerExample.cpp    TimerExample.h
     Timer.cpp           Timer.h
+    Interrupts.cpp      Interrupts.h
+    Processor.h
+    Task.h
+
+    # Generic devices.
+    Uart.cpp            Uart.h
+
+    # Generic USB devices.
+    Usb.h
     UsbDriver.cpp       UsbDriver.h
     HidUsbDevices.cpp   HidUsbDevices.h
     Keyboard.cpp        Keyboard.h
     Gamepad.cpp         Gamepad.h
+
+    # Raspberry Pi devices.
+    Gpio.cpp            Gpio.h
+    SdCard.cpp          SdCard.h
+    Mailbox.cpp         Mailbox.h
+    Framebuffer.cpp     Framebuffer.h
+
+    # PCIe bus.
     PCIe.cpp            PCIe.h
 
-    emb-stdio.cpp       emb-stdio.h
+    # Raspberry Pi 3 (and 4, connected to the power socket) USB controller.
     DesignWareUsb.cpp   DesignWareUsb.h
     DesignWareUsbHost.cpp
     DesignWareUsbChannel.cpp DesignWareUsbChannel.h
-    Interrupts.cpp      Interrupts.h
-
     DesignWareUsbDriver.cpp
 
-    Usb.h
-    Processor.h
-    Task.h
+    # Generic XHCI driver.
+    UsbXhci.cpp
+
+
+    # The program we're running (Snake game).
+    Main.cpp
+    TimerExample.cpp    TimerExample.h
+    Run.cpp             Run.h
 )
 
-target_link_libraries(kernel8 PRIVATE BootLib)
+add_kernel_image(kernel8 RPI ${KernelSources})
+
+target_link_libraries(kernel8 PRIVATE BootLib CppCrt)
+
+
+# QEMU kernel. Start with:
+#   qemu-system-aarch64.exe -machine virt,virtualization=on -cpu cortex-a72 -m 2G -kernel build\clang\bin\kernelvirt.elf -d guest_errors
+# add "-S -s" for debugging.
+add_kernel_image(kernelvirt VIRT ${KernelSources})
+
+target_link_libraries(kernelvirt PRIVATE BootLib CppCrt)
+
 
 #set_target_properties(kernel8 PROPERTIES
 #    SUFFIX ".elf"

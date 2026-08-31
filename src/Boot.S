@@ -23,13 +23,20 @@ _start:
     mov fp, #0
     mov lr, #0
 
-    // Enable the Floating point and SIMD unit for EL2
+    // Enable the Floating point and SIMD unit for EL2 or EL1
     // We're about to dive straight into C++,
     // and the compiler might decide to use all those handy registers right away.
-    mrs x4, cptr_el2
-    orr x4, x4, #0x300000
-    msr cptr_el2, x4
-    isb // Make it stick immediately
+    mrs x4, CurrentEL
+    and x4, x4, #0x08
+    cbz x4, 1f
+     mrs x4, cptr_el2
+     orr x4, x4, #0x300000
+     msr cptr_el2, x4
+    b 2f
+1:   mrs x4, cpacr_el1
+     orr x4, x4, #0x300000
+     msr cpacr_el1, x4
+2:  isb // Make it stick immediately
 
     // All cores start here, so find out which one is running
     mrs x4, mpidr_el1

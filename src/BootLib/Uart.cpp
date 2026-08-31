@@ -27,7 +27,8 @@ union PL011Uart::PL011Registers
     Register<uint32_t, 0x48> DMACR; // DMA Control Register
 };
 
-void PL011Uart::Init()
+PL011Uart::PL011Uart(uintptr_t registersBase)
+    : Registers(*reinterpret_cast<PL011Registers*>(registersBase))
 {
     // Clear pending interrupts
     Registers.ICR = 0x7FF;
@@ -43,7 +44,7 @@ void PL011Uart::Init()
 
     // Mask all interrupts
     Registers.IMSC = (1 << 1) | (1 << 4) | (1 << 5) | (1 << 6) |
-                 (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10);
+                    (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10);
 
     // Enable UART0, receive & transmit
     Registers.CR = (1 << 0) | (1 << 8) | (1 << 9);

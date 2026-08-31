@@ -16,8 +16,6 @@ extern "C" [[noreturn]] void KernelMain()
 
     BootLib::PL011Uart uart0{ peripheralsBase + BootLib::PL011Uart::Uart0RegistersOffset };
 
-    uart0.Init();
-
     uart0.Puts("\r\n\nHello from the kernel!\r\n\n");
     if (BootLib::Cpu::IsRpi4())
     {

@@ -3,14 +3,15 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#include <string_view>
-#include <array>
+#include <type_traits>
+#include <compare>
 #include <concepts>
 
 namespace BootLib::Cpu
 {
 
 bool IsRpi4();
+bool IsQemu();
 
 enum class PerformanceTime     : uint64_t {};
 enum class PerformanceTimeDiff : int64_t  {};
@@ -54,14 +55,7 @@ inline void DelayInMilliseconds(uint64_t ms) { DelayUntilPerformanceTime(GetPerf
 
 inline void Yield() { asm volatile("yield"); }
 
-[[noreturn]] inline void Halt()
-{
-    // Halt the CPU by entering an infinite loop
-    while (true)
-    {
-        asm volatile("wfe"); // Wait for event (low power state)
-    }
-}
+[[noreturn]] void Halt();
 
 template < typename T, char const* RegisterName >
 struct SystemRegisterProxy
@@ -288,6 +282,12 @@ inline void FullDataSynchronizationBarrier()
 {
     // Ensure that all previous memory accesses are completed and visible everywhere (GPU? DRAM?) before continuing
     asm volatile ("dsb sy");
+}
+
+inline void Breakpoint()
+{
+    // Break into the debugger.
+    asm volatile ("brk #0");
 }
 
 }

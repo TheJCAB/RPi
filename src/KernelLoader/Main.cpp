@@ -61,8 +61,6 @@ extern "C" [[noreturn]] void KernelMain(void* p0, void* p1, void* dtb, void* p3)
 
     BootLib::PL011Uart uart0{ peripheralsBase + BootLib::PL011Uart::Uart0RegistersOffset };
 
-    uart0.Init();
-
     uart0.Puts("\n\nRelocating...\n");
 
     uint32_t const offsetInBytes = 0x4000; // Relocate to 16K bytes before the start address;

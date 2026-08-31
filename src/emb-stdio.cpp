@@ -10,8 +10,6 @@
 
 #include <charconv>
 
-#include "Uart.h"
-
 /*--------------------------------------------------------------------------}
 { EMBEDDED SYSTEMS DO NOT HAVE M/SOFT BUFFER OVERRUN SAFE STRING FUNCTIONS  }
 {    ALL WE CAN DO IS MACRO THE SAFE CALLS TO NORMAL C STANDARD CALLS		} 
@@ -29,7 +27,7 @@
 
 #include <stdio.h>
 
-CHAR_OUTPUT_HANDLER Console_WriteChar = [](char Ch, uintptr_t) { Uart::Putc(Ch); };
+CHAR_OUTPUT_HANDLER Console_WriteChar = [](char, uintptr_t) {};
 
 /* Number of bits in an 'unsigned long'.  */
 #define LONG_BITS (8 * sizeof(unsigned long))
@@ -608,6 +606,17 @@ static constexpr unsigned char base_to_nbits[17] = {
  * converting numbers to a a string with power-of-two base.  */
 /*#define ALWAYS_USE_DIVISION*/
 
+__attribute__((noinline)) void Reverse(char* str, char const* temp, int i)
+{
+    do
+    {
+        // This gets optimized using vector registers, which crashes in early boot.
+        *str = temp[i];
+        ++str;
+        --i;
+    } while (i >= 0);
+}
+
 /**
  * Convert an unsigned long integer to a string.
  *
@@ -668,10 +677,14 @@ static void ulong_to_string(unsigned long long num, char *str,
     }
 
     /* Reverse string and copy it to @str.  */
-    do
-    {
-        *str++ = temp[i--];
-    } while (i >= 0);
+    Reverse(str, temp, i);
+//    do
+//    {
+//        // This gets optimized using vector registers, which crashes in early boot.
+//        *str = temp[i];
+//        ++str;
+//        --i;
+//    } while (i >= 0);
 }
 
 

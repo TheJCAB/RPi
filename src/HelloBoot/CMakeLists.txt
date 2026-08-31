@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-add_kernel_image(HelloBoot
+add_kernel_image(HelloBoot RPI
     Boot.S
     Main.cpp
 )

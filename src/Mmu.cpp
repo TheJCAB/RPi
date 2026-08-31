@@ -305,10 +305,10 @@ alignas(0x1000) static constinit L2PageTable l2_page_table = []() constexpr
 
 alignas(0x1000) static constinit L1PageTable Rpi3_l1_page_table
 {{
-    L1NormalMem(0),             // 0x0000'0000 - 0x3FFF'FFFF: 1 GB RAM (normal memory)
-    L1DeviceMem(0),             // 0x4000'0000 - 0x7FFF'FFFF: 1 GB RAM, including the MMIO (device)
-    L1DeviceMem(0x4000'0000),   // 0x8000'0000 - 0xBFFF'FFFF: (unused)
-    L1GpuMem(0),                // 0xC000'0000 - 0xFFFF'FFFF: 1 GB RAM (transient, WT memory for GPU (and devices) data)
+    L1NormalMem(0),                 //   0x0000'0000 -   0x3FFF'FFFF: 1 GB RAM (normal memory)
+    L1DeviceMem(0),                 //   0x4000'0000 -   0x7FFF'FFFF: 1 GB RAM, including the MMIO (device)
+    L1DeviceMem(0x4000'0000),       //   0x8000'0000 -   0xBFFF'FFFF: (unused)
+    L1GpuMem(0),                    //   0xC000'0000 -   0xFFFF'FFFF: 1 GB RAM (transient, WT memory for GPU (and devices) data)
     {},                             // 0x1'0000'0000 - 0x1'3FFF'FFFF: (unused)
     {},                             // 0x1'4000'0000 - 0x1'7FFF'FFFF: (unused)
     {},                             // 0x1'8000'0000 - 0x1'BFFF'FFFF: (unused)
@@ -385,17 +385,61 @@ alignas(0x1000) static constinit L1PageTable Rpi4_l1_page_table
     // Remaining entries are invalid
 }};
 
-constexpr uintptr_t PhysicalMemoryApertureBase = 0x7'0000'0000;
+alignas(0x1000) static constinit L1PageTable Qemu_l1_page_table
+{{
+    L1DeviceMem(0),                 //   0x0000'0000 -   0x3FFF'FFFF: 1 GB RAM including the MMIO (device)
+    L1NormalMem(0x4000'0000),       //   0x4000'0000 -   0x7FFF'FFFF: 1 GB RAM (normal memory)
+    L1NormalMem(0x8000'0000),       //   0x8000'0000 -   0xBFFF'FFFF: 1 GB RAM (normal memory)
+    {},                             //   0xC000'0000 -   0xFFFF'FFFF: (unused)
+    {},                             // 0x1'0000'0000 - 0x1'3FFF'FFFF: (unused)
+    {},                             // 0x1'4000'0000 - 0x1'7FFF'FFFF: (unused)
+    {},                             // 0x1'8000'0000 - 0x1'BFFF'FFFF: (unused)
+    {},                             // 0x1'C000'0000 - 0x1'FFFF'FFFF: (unused)
+    {},                             // 0x2'0000'0000 - 0x2'3FFF'FFFF: (unused)
+    {},                             // 0x2'4000'0000 - 0x2'7FFF'FFFF: (unused)
+    {},                             // 0x2'8000'0000 - 0x2'BFFF'FFFF: (unused)
+    {},                             // 0x2'C000'0000 - 0x2'FFFF'FFFF: (unused)
+    {},                             // 0x3'0000'0000 - 0x3'3FFF'FFFF: (unused)
+    {},                             // 0x3'4000'0000 - 0x3'7FFF'FFFF: (unused)
+    {},                             // 0x3'8000'0000 - 0x3'BFFF'FFFF: (unused)
+    {},                             // 0x3'C000'0000 - 0x3'FFFF'FFFF: (unused)
+    {},                             // 0x4'0000'0000 - 0x4'3FFF'FFFF: (unused)
+    {},                             // 0x4'4000'0000 - 0x4'7FFF'FFFF: (unused)
+    {},                             // 0x4'8000'0000 - 0x4'BFFF'FFFF: (unused)
+    {},                             // 0x4'C000'0000 - 0x4'FFFF'FFFF: (unused)
+    {},                             // 0x5'0000'0000 - 0x5'3FFF'FFFF: (unused)
+    {},                             // 0x5'4000'0000 - 0x5'7FFF'FFFF: (unused)
+    {},                             // 0x5'8000'0000 - 0x5'BFFF'FFFF: (unused)
+    {},                             // 0x5'C000'0000 - 0x5'FFFF'FFFF: (unused)
+    {},                             // 0x6'0000'0000 - 0x6'3FFF'FFFF: (unused)
+    {},                             // 0x6'4000'0000 - 0x6'7FFF'FFFF: (unused)
+    {},                             // 0x6'8000'0000 - 0x6'BFFF'FFFF: (unused)
+    {},                             // 0x6'C000'0000 - 0x6'FFFF'FFFF: (unused)
+    {},                             // 0x7'0000'0000 - 0x7'3FFF'FFFF: (unused)
+    {},                             // 0x7'4000'0000 - 0x7'7FFF'FFFF: (unused)
+    {},                             // 0x7'8000'0000 - 0x7'BFFF'FFFF: (unused)
+    {},                             // 0x7'C000'0000 - 0x7'FFFF'FFFF: (unused)
+    {},                             // 0x8'0000'0000 - 0x8'3FFF'FFFF: (unused)
+    {},                             // 0x8'4000'0000 - 0x8'7FFF'FFFF: (unused)
+    {},                             // 0x8'8000'0000 - 0x8'BFFF'FFFF: (unused)
+    {},                             // 0x8'C000'0000 - 0x8'FFFF'FFFF: (unused)
+    // Remaining entries are invalid
+}};
 
-L1PageTable* l1_page_table = reinterpret_cast<L1PageTable*>(reinterpret_cast<uintptr_t>(Cpu::IsRpi4() ? &Rpi4_l1_page_table : &Rpi3_l1_page_table) + PhysicalMemoryApertureBase);
+uintptr_t PhysicalMemoryApertureBase = Cpu::IsQemu() ? 0 : 0x7'0000'0000;
+
+L1PageTable* l1_page_table = reinterpret_cast<L1PageTable*>(
+    Cpu::IsQemu() ? reinterpret_cast<uintptr_t>(&Qemu_l1_page_table) :
+    Cpu::IsRpi4() ? reinterpret_cast<uintptr_t>(&Rpi4_l1_page_table) + PhysicalMemoryApertureBase :
+                    reinterpret_cast<uintptr_t>(&Rpi3_l1_page_table) + PhysicalMemoryApertureBase
+);
 
 constexpr char PhysicalMemory[] = "Physical Memory";
 constexpr char VirtualMemory [] = "Virtual Memory";
 
 // Manages 256 MB of physical 4 KB memory pages.
 Containers::PoolAllocator<256 * 1024 / 4, PhysicalMemory> PhysicalMemoryAllocator;
-constexpr uintptr_t PhysicalMemoryAllocatorOffset = 0x2000'0000; // 256 MB of physical memory, starting at 0x200'0000
-constexpr uintptr_t PhysicalMemoryAllocatorPageOffset = PhysicalMemoryAllocatorOffset >> 12;
+uintptr_t PhysicalMemoryAllocatorPageOffset;
 
 // Manages 1 GB of virtual 4 KB memory pages.
 Containers::PoolAllocator<1024 * 1024 / 4, VirtualMemory> VirtualMemoryAllocator;
@@ -491,7 +535,7 @@ void* AllocatePages(uint32_t pageCount)
     return reinterpret_cast<void*>(VirtualMemoryAllocator.Allocate(pageCount) * 0x1000 + VirtualMemoryAllocatorOffset);
 }
 
-void* AllocateAndCommitPages(uint32_t pageCount)
+[[nodiscard]] void* AllocateAndCommitPages(uint32_t pageCount)
 {
     auto const result = AllocatePages(pageCount);
     CommitPages(result, pageCount);
@@ -520,7 +564,7 @@ void* AllocateGpuMemory(uint32_t pageCount)
 //
 //uint64_t const MairEl1 = GetMairEl1();
 
-static void DumpMMUState()
+__attribute__((noinline)) static void DumpMMUState()
 {
     Uart::Puts("MMU State:\n");
     Uart::Puts("  TTBR0_EL1: ");
@@ -552,7 +596,7 @@ static void DumpMMUState()
     Uart::Puts("\n");
 }
 
-static void InitPageTables()
+__attribute__((noinline)) static void InitPageTables()
 {
     // Set MAIR_EL1: Attr0 = 0xFF (normal memory, inner/outer write-back, write-allocate)
     asm volatile ("msr mair_el1, %0" : : "r"(MAIR_ATTR));
@@ -578,7 +622,19 @@ static void InitPageTables()
     //               (1ULL << 32); // IPS = 64GB (36 bits) of physical address space
     asm volatile ("msr tcr_el1, %0" : : "r"(tcr));
 
-    if (Cpu::IsRpi4())
+    if (Cpu::IsQemu())
+    {
+        Mmio::Base    = 0x0000'0000u; // Update MMIO base to the new aperture.
+        Mmio::QA7Base = 0x0000'0000u; // Update ARM cores' MMIO base to the new aperture.
+        GpuMemBase    = 0x4000'0000u; // Update the GPU memory base to the new aperture.
+
+        constexpr uintptr_t PhysicalMemoryAllocatorOffset = 0x8000'0000; // 256 MB of physical memory, starting at 0x200'0000
+        PhysicalMemoryAllocatorPageOffset = PhysicalMemoryAllocatorOffset >> 12;
+
+        // Set TTBR0_EL1 to point to our L1 table
+        asm volatile ("msr ttbr0_el1, %0" : : "r"((uint64_t)&Qemu_l1_page_table + 1)); // +1 == CnP
+    }
+    else if (Cpu::IsRpi4())
     {
         if (Mmio::Rpi4Base == Mmio::Rpi4BaseLo)
         {
@@ -587,6 +643,8 @@ static void InitPageTables()
         }
         GpuMemBase    = 0xC000'0000u; // Update the GPU memory base to the new aperture.
 
+        constexpr uintptr_t PhysicalMemoryAllocatorOffset = 0x2000'0000; // 256 MB of physical memory, starting at 0x200'0000
+        PhysicalMemoryAllocatorPageOffset = PhysicalMemoryAllocatorOffset >> 12;
 
         // Set TTBR0_EL1 to point to our L1 table
         asm volatile ("msr ttbr0_el1, %0" : : "r"((uint64_t)&Rpi4_l1_page_table + 1)); // +1 == CnP
@@ -597,6 +655,9 @@ static void InitPageTables()
         Mmio::QA7Base = 0x8000'0000u; // Update ARM cores' MMIO base to the new aperture.
         GpuMemBase    = 0xC000'0000u; // Update the GPU memory base to the new aperture.
 
+        constexpr uintptr_t PhysicalMemoryAllocatorOffset = 0x2000'0000; // 256 MB of physical memory, starting at 0x200'0000
+        PhysicalMemoryAllocatorPageOffset = PhysicalMemoryAllocatorOffset >> 12;
+
         // Set TTBR0_EL1 to point to our L1 table
         asm volatile ("msr ttbr0_el1, %0" : : "r"((uint64_t)&Rpi3_l1_page_table + 1)); // +1 == CnP
     }
@@ -605,7 +666,7 @@ static void InitPageTables()
     asm volatile ("isb");
 }
 
-void EnableCachesAndMMU()
+__attribute__((noinline)) void EnableCachesAndMMU()
 {
     uint64_t sctlr;
     asm volatile ("mrs %0, sctlr_el1" : "=r"(sctlr));
@@ -626,6 +687,7 @@ void Init()
     InitPageTables();
 
     // Enable caches and MMU
+    Uart::Puts("Enabling caches and MMU\n");
     EnableCachesAndMMU();
 
     // Now the MMU is enabled and caches are active

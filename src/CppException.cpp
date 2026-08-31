@@ -1,6 +1,6 @@
 
 
-#include "Cpu.h"
+//#include <BootLib/Cpu.h>
 
 #include <stddef.h>
 #include <stdlib.h>
@@ -13,6 +13,8 @@
 #include <exception>
 #include <expected>
 #include <typeinfo>
+
+namespace Cpu { [[noreturn]] void Panic(char const* fmt, ...); }
 
 extern "C"
 {

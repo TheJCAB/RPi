@@ -373,12 +373,12 @@ Async::task<RESULT> HCDChangeHubPortFeature (UsbDevice* device,
 }
 
 
-Async::task<RESULT> UsbDriver::HubPortReset(UsbDevice& device, uint8_t port)
+Async::task<std::expected<HubPortFullStatus, RESULT>> UsbDriver::HubPortReset(UsbDevice& device, uint8_t port)
 {
     RESULT result;
     struct HubPortFullStatus portStatus;
     uint32_t retry, timeout;
-    if (!device.IsHub()) co_return RESULT::ErrorDevice;
+    if (!device.IsHub()) co_return std::unexpected(RESULT::ErrorDevice);
     LOG_DEBUG("HUB: Reseting device: %u Port: %u. source: %i\n", device.GetAddress(), port, 0/*source*/);
     for (retry = 0; retry < 3; retry++) {
         if ((result = co_await HCDChangeHubPortFeature(&device,
@@ -386,14 +386,14 @@ Async::task<RESULT> UsbDriver::HubPortReset(UsbDevice& device, uint8_t port)
         {
             LOG("HUB: Device %i Failed to reset Port%d.\n",
                 device.GetAddress(), port + 1);
-            co_return result;											// Return result that is causing failure
+            co_return std::unexpected(result);											// Return result that is causing failure
         }
         timeout = 0;
         do {
-            co_await Async::DelayInMicroseconds(20000);
+            co_await Async::DelayInMilliseconds(20);
             if ((result = co_await HCDReadHubPortStatus(&device, port + 1, portStatus.Raw32)) != RESULT::Ok) {
                 LOG("HUB: Hub failed to get status (4) for %s.Port%d.\n", UsbGetDescription(device), port + 1);
-                co_return result;
+                co_return std::unexpected(result);
             }
             timeout++;
         } while (!portStatus.Change.ResetChanged && !portStatus.Status.Enabled && timeout < 10);
@@ -403,7 +403,7 @@ Async::task<RESULT> UsbDriver::HubPortReset(UsbDevice& device, uint8_t port)
         LOG_DEBUG("HUB: %s.Port%d Status %x:%x.\n", UsbGetDescription(device), port + 1, portStatus.RawStatus, portStatus.RawChange);
 
         if (portStatus.Change.ConnectedChanged || !portStatus.Status.Connected)
-            co_return RESULT::ErrorDevice;
+            co_return std::unexpected(RESULT::ErrorDevice);
 
         if (portStatus.Status.Enabled)
             break;
@@ -411,13 +411,13 @@ Async::task<RESULT> UsbDriver::HubPortReset(UsbDevice& device, uint8_t port)
 
     if (retry == 3) {
         LOG("HUB: Cannot enable %s.Port%d. Please verify the hardware is working.\n", UsbGetDescription(device), port + 1);
-        co_return RESULT::ErrorDevice;
+        co_return std::unexpected(RESULT::ErrorDevice);
     }
 
     if ((result = co_await HCDChangeHubPortFeature(&device, FeatureResetChange, port + 1, false)) != RESULT::Ok) {
         LOG("HUB: Failed to clear reset on %s.Port%d.\n", UsbGetDescription(device), port + 1);
     }
-    co_return RESULT::Ok;
+    co_return portStatus;
 }
 
 // Sets the address of the device with control endpoint given by the pipe. Zero
@@ -580,16 +580,22 @@ Async::task<RESULT> UsbDriver::EnumerateDevice(UsbDevice& device)
     uint32_t transferred;
     char buffer[256] __attribute__((aligned(4)));					// Text buffer
 
-    auto const ioHandle = co_await InitializeDevice(device);
-
-    LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 2 = Reset Port (old device support)\n");
-    if (device.ParentHub.Device && device.ParentHub.PortNumber > 0)
+    if (device.ParentHub.Device)
     {
-        // Reset the port for what will be the second time.
-        if ((result = co_await HubPortReset(*device.ParentHub.Device, device.ParentHub.PortNumber - 1)) != RESULT::Ok) {
-            LOG("HCD: Failed to reset port again for new device %s.\n", UsbGetDescription(device));
-            co_return result;
-        }
+        LOG_DEBUG("\n---\nUSB ENUMERATION of device on port %u of hub %u (off of root port %u)\n", device.ParentHub.PortNumber, device.ParentHub.Device->GetAddress(), device.ParentHub.Device->RootHubPort);
+    }
+    else
+    {
+        LOG_DEBUG("\n---\nUSB ENUMERATION of device on root port %u\n", device.RootHubPort);
+    }
+
+    LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 1 & 2 = initialize the device\n");
+
+    auto const ioHandle = co_await InitializeDevice(device);
+    if (!ioHandle)
+    {
+        LOG("Enumeration: Failed to initialize device %i.\n", device.GetAddress());
+        co_return RESULT::ErrorGeneral;
     }
 
     LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 3 = Set Device Address %u\n", device.GetAddress());
@@ -833,9 +839,9 @@ __attribute__((noinline)) Async::task<RESULT> HubPortConnectionChanged(UsbDevice
         if (!portStatus.Status.Connected) co_return RESULT::Ok;
     }
 
-    if ((result = co_await driver.HubPortReset(device, port)) != RESULT::Ok) {
+    if (auto resetResult = co_await driver.HubPortReset(device, port); !resetResult.has_value()) {
         LOG("HUB: Could not reset %s.Port%d for new device.\n", driver.UsbGetDescription(device), port + 1);
-        co_return result;
+        co_return resetResult.error();
     }
 
     auto childEx = driver.UsbAllocateDevice(&device, port + 1);

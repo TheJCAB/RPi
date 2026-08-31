@@ -7,6 +7,8 @@
 
 #include <atomic>
 
+#include <BootLib/DeviceTree.h>
+
 #include "Cpu.h"
 #include "Mmio.h"
 #include "Uart.h"
@@ -54,8 +56,8 @@ void InitCore()
 {
     // Enable the Floating point and SIMD unit for EL0 and EL1
     Cpu::cpacr_el1.modify([](auto& reg){ reg.FPEN = 3; });
-    // Enable Stack alignment checks. For Hygiene.
-    Cpu::sctlr_el1.modify([](auto& reg){ reg.SA = true; });
+    // Enable Stack alignment checks. For Hygiene. But allow unaligned SIMD accesses.
+    Cpu::sctlr_el1.modify([](auto& reg){ reg.SA = true; reg.A = false; });
     Cpu::InstructionSynchronizationBarrier();
 
     el2_to_el1_return();
@@ -220,17 +222,72 @@ inline uint32_t AtomicAdd(uint32_t volatile& value, uint32_t increment)
 
 void Core0(void* dtb)
 {
+    // Clear the BSS soonest.
+    for (auto p = &_bss_start; p < &_bss_end; ++p)
+    {
+        *p = 0; // Clear BSS
+    }
+
+    bool const isQemu = reinterpret_cast<uintptr_t>(&Mmio::Base) >= 0x4000'0000u;
+
     {
         // Without MMU, we need to use physical addresses to access peripherals.
         // It is handy to have a UART for log-debugging.
-        BootLib::PL011Uart uart{ BootLib::Mmio::GetPeripheralsPhysicalBase() + BootLib::PL011Uart::Uart0RegistersOffset };
-        uart.Puts("Core 0 starting\n");
+        // TODO: Basic machine detection and less hardcoding would be grand here.
+        BootLib::PL011Uart uart = [&]()
+            {
+                if (!isQemu)
+                {
+                    // Some Raspberry Pi.
+                    return BootLib::PL011Uart{ BootLib::Mmio::GetPeripheralsPhysicalBase() + BootLib::PL011Uart::Uart0RegistersOffset };
+                }
+                else
+                {
+                    // QEMU's "virt" machine.
+                    return BootLib::PL011Uart{ 0x900'0000u };
+                }
+            }();
 
-        // Clear the BSS soonest.
-        for (auto p = &_bss_start; p < &_bss_end; ++p)
+        uart.Puts("Core ");
+        uart.PutDec(BootLib::Cpu::mpidr_el1->CoreId);
+        uart.Puts(" starting\n");
+
+        uart.Puts("CurrentEL (may be 2): ");
+        uart.PutDec(Cpu::CurrentEL->EL);
+        uart.Puts("\n");
+
+        // Enable the Floating point and SIMD unit for EL0 and EL1
+        Cpu::cpacr_el1.modify([](auto& reg){ reg.FPEN = 3; });
+        // Enable Stack alignment checks. For Hygiene. But allow unaligned accesses.
+        Cpu::sctlr_el1.modify([](auto& reg){ reg.SA = true; reg.A = false; });
+        Cpu::InstructionSynchronizationBarrier();
+
+        if (Cpu::CurrentEL->EL == 2)
         {
-            *p = 0; // Clear BSS
+            // None of this seems to work. The exception vector doesn't get invoked.
+            //Exception::InitEL2();
+            //// Configure HCR_EL2 to route exceptions to EL2
+            //asm volatile("mrs x0, hcr_el2");
+            //asm volatile("orr x0, x0, #0x8");  // Set AMO bit to route SError to EL2
+            //asm volatile("msr hcr_el2, x0");
+            //asm volatile("isb");
+            //Cpu::daifclr = 4; // Clear the SError mask bit to enable synchronous exceptions
+            //asm volatile ("svc #0");
+            //*(volatile int32_t*)(0x1234567890123456) = 0; // Clear the mailbox status register
+
+            el2_to_el1_return();
+
+            uart.Puts("Lowered to EL1\n");
+
+            uart.Puts("CurrentEL: ");
+            uart.PutDec(Cpu::CurrentEL->EL);
+            uart.Puts("\n");
         }
+
+        Uart::Init(&uart);
+        Uart::Puts("This is a test\n");
+
+        Init_EmbStdio([](char Ch, uintptr_t) { Uart::Putc(Ch); });
 
         if (Cpu::IsRpi4())
         {
@@ -245,36 +302,22 @@ void Core0(void* dtb)
         uart.PutDec(Cpu::GetPerformanceFrequency());
         uart.Puts("\n");
 
-        // None of this seems to work. The exception vector doesn't get invoked.
-        //Exception::InitEL2();
-        //// Configure HCR_EL2 to route exceptions to EL2
-        //asm volatile("mrs x0, hcr_el2");
-        //asm volatile("orr x0, x0, #0x8");  // Set AMO bit to route SError to EL2
-        //asm volatile("msr hcr_el2, x0");
-        //asm volatile("isb");
-        //Cpu::daifclr = 4; // Clear the SError mask bit to enable synchronous exceptions
-        //asm volatile ("svc #0");
-        //*(volatile int32_t*)(0x1234567890123456) = 0; // Clear the mailbox status register
-
         uart.Puts("\r\n\nHello!\n");
 
-        uart.Puts("CurrentEL (should be 2): ");
-        uart.PutDec(Cpu::CurrentEL->EL);
+        Exception::Init();
+
+        uart.Puts("DTB pointer: ");
+        uart.PutHex(reinterpret_cast<uintptr_t>(dtb));
         uart.Puts("\n");
 
-        // Enable the Floating point and SIMD unit for EL0 and EL1
-        Cpu::cpacr_el1.modify([](auto& reg){ reg.FPEN = 3; });
-        // Enable Stack alignment checks. For Hygiene.
-        Cpu::sctlr_el1.modify([](auto& reg){ reg.SA = true; });
-        Cpu::InstructionSynchronizationBarrier();
+        BootLib::DeviceTree::ParseDeviceTree(dtb, &uart);
 
-        el2_to_el1_return();
+        printf("Device tree complete.\n");
 
-        uart.Puts("Lowered to EL1\n");
+        uint64_t midr = 0;
+        asm volatile ("mrs %0, midr_el1" : "=r"(midr));
 
-        uart.Puts("CurrentEL: ");
-        uart.PutDec(Cpu::CurrentEL->EL);
-        uart.Puts("\n");
+        printf("midr_el1: 0x%016llX\n", midr);
 
         // Any further I/O operations will be done once the MMU is active.
         if (Cpu::IsRpi4())
@@ -284,18 +327,27 @@ void Core0(void* dtb)
         }
 
         // Initialize the MMU, and so all addresses will be virtual after this.
+        printf("Initializing MMU...\n");
         Mmu::Init();
-    }
-
-    Uart::Puts("MMU enabled\n");
-
-    // Call all global initializers.
-    for (auto ctor = _init_array_start; ctor < _init_array_end; ++ctor) {
-        if (ctor != nullptr)
-        {
-            (*ctor)();
+    
+        uart.Puts("MMU enabled\n");
+    
+        // Call all global initializers.
+        for (auto ctor = _init_array_start; ctor < _init_array_end; ++ctor) {
+            if (ctor != nullptr)
+            {
+                (*ctor)();
+            }
         }
     }
+
+    InitGlobalHeap();
+
+    // TODO: We should get addresses from the MM now.
+    Uart::Init(new Uart::PL011Uart{ 
+        isQemu ? 0x900'0000u
+               : Mmio::Base + Uart::PL011Uart::Uart0RegistersOffset
+    });
 
     Uart::Puts("Performance Frequency from the global: ");
     Uart::PutDec(Cpu::PerformanceFrequency);
@@ -303,13 +355,11 @@ void Core0(void* dtb)
 
     Uart::Puts("\n\n\n");
 
-    Exception::Init();
+//    Exception::Init();
     Interrupts::Init();
 
-    InitGlobalHeap();
-
     parse_dtb(dtb);
-    
+
     Uart::useMutex = true;
 
     Uart::Puts("Spinning up the cores...\n");

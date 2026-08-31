@@ -1,8 +1,10 @@
 
-#include <BootLib/Cpu.h>
+//#include <BootLib/Cpu.h>
 
 #include <stdint.h>
 #include <limits.h>
+
+namespace Cpu { [[noreturn]] void Panic(char const* fmt, ...); }
 
 #define COMPILER_RT_ABI extern "C" __attribute__((visibility("default")))
 
@@ -424,7 +426,7 @@ using fp_t = long double;
 using CMP_RESULT = int;
 
 COMPILER_RT_ABI CMP_RESULT __unordtf2(fp_t a, fp_t b) {
-    BootLib::Cpu::Halt();
+    Cpu::Panic("unordtf2 not implemented");
 //  if (a == b) return 0;
 //  return (a < b) ? -1 : 1;
 }

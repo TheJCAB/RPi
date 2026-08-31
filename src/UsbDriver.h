@@ -273,7 +273,7 @@ public:
                                 uint8_t port,							// Port to get status  OR  0 = Gateway node
                                 uint32_t& Status);						// HubPortFullStatus or HubFullStatus .. use Raw union  
 
-    Async::task<RESULT> HubPortReset(UsbDevice& device, uint8_t port);
+    Async::task<std::expected<HubPortFullStatus, RESULT>> HubPortReset(UsbDevice& device, uint8_t port);
 
     // Sets the address of the device with control endpoint given by the pipe.
     virtual Async::task<RESULT> HCDSetAddress (UsbDevice&, IoHandle const&);

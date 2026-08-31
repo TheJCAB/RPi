@@ -1,8 +1,8 @@
 
-#include "Cpu.h"
-#include "Uart.h"
+//#include "Cpu.h"
+//#include "Uart.h"
 #include "Heap.h"
-#include "Debugger.h"
+//#include "Debugger.h"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -15,6 +15,7 @@
 #include <atomic>
 #include <string>
 
+namespace Cpu { [[noreturn]] void Panic(char const* fmt, ...); }
 
 extern "C"
 {
@@ -196,6 +197,8 @@ int strncmp(char const* s1, char const* s2, size_t n)
     return static_cast<uint8_t>(*s1) - static_cast<uint8_t>(*s2);
 }
 
+void* __dso_handle = nullptr;
+
 int __cxa_atexit(void (*func)(void*), void* arg, void* dso_handle)
 {
     // Simple implementation that ignores atexit functions
@@ -223,8 +226,7 @@ void InitGlobalHeap()
     g_globalHeap = Heap::CreateHeap();
     if (!g_globalHeap)
     {
-        Uart::Raw::Puts("Failed to create global heap\n");
-        Cpu::Halt();
+        Cpu::Panic("Failed to create global heap");
     }
 }
 
@@ -328,14 +330,12 @@ void operator delete[](void* ptr) noexcept { HeapFree(ptr, 0); }
 
 extern "C" void abort()
 {
-    Uart::Raw::Puts("abort called\n");
-    Cpu::Halt();
+    Cpu::Panic("abort called");
 }
 
 extern "C" void __cxa_pure_virtual()
 {
-    Uart::Raw::Puts("Pure virtual function called\n");
-    Cpu::Halt();
+    Cpu::Panic("Pure virtual function called");
 }
 
 
@@ -345,8 +345,7 @@ namespace std
 
 void terminate()
 {
-    Uart::Raw::Puts("std::terminate called\n");
-    Cpu::Halt();
+    Cpu::Panic("std::terminate called");
 }
 
 

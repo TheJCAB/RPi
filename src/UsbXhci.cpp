@@ -16,6 +16,7 @@
 #include <cstring>
 #include <algorithm>
 #include <array>
+#include <expected>
 #include <vector>
 
 extern uintptr_t GpuMemBase;
@@ -184,6 +185,29 @@ union RuntimeRegisters
 
 
 // TRB (Transfer Request Block) types
+enum class TrbType : uint8_t
+{
+    Invalid            =  0,
+    // Transfers
+    Normal             =  1,
+    Setup              =  2,
+    Data               =  3,
+    Status             =  4,
+    Isoch              =  5,
+    Link               =  6, // Note: also command
+    EventData          =  7,
+    NoOp               =  8,
+    // Commands
+    EnableSlot         =  9,
+    DisableSlot        = 10,
+    AddressDev         = 11,
+    NoopCmd            = 23,
+    // Events
+    TransferEvent      = 32,
+    CmdCompletionEvent = 33,
+    PortStatusChange   = 34,
+};
+
 constexpr uint32_t TRB_TYPE_NORMAL        = 1;
 constexpr uint32_t TRB_TYPE_SETUP         = 2;
 constexpr uint32_t TRB_TYPE_DATA          = 3;
@@ -205,6 +229,16 @@ constexpr uint32_t TRB_CTRL_DIR_IN = (1u << 16);
 constexpr uint32_t TRB_CTRL_TC    = (1u << 1);
 
 // TRB completion codes
+enum class CompletionCode : uint8_t
+{
+    Invalid            =  0,
+    Success            =  1,
+    TrbError           =  5,
+    BandwidthError     =  8,
+    ShortPacket        = 13,
+    EndpointNotEnabled = 12,
+};
+
 constexpr uint32_t TRB_CC_SUCCESS         = 1;
 constexpr uint32_t TRB_CC_SHORT_PACKET    = 13;
 
@@ -408,6 +442,55 @@ public:
         return controller_hccparams1.ContextSize ? 64u : 32u;
     }
 
+    void dump_input_context(void const* input_context, uint32_t context_words) {
+        auto const* const dwords = static_cast<uint32_t const*>(input_context);
+        bool printed = false;
+
+        for (uint32_t i = 0; i < context_words && i < (context_size_bytes() / 4); ++i) {
+            if (dwords[i] == 0u) {
+                continue;
+            }
+
+            if (!printed) {
+                printf("XHCI: input context nonzero DWORDs:\n");
+                printed = true;
+            }
+
+            printf("XHCI:   [%u] = 0x%08X\n", i, dwords[i]);
+        }
+
+        if (!printed) {
+            printf("XHCI: input context is all-zero\n");
+        }
+
+        if (context_words > context_size_bytes() / 4)
+        {
+            dump_device_context(dwords + context_size_bytes() / 4, context_words - context_size_bytes() / 4);
+        }
+    }
+
+    void dump_device_context(void const* input_context, uint32_t context_words) {
+        auto const* const dwords = static_cast<uint32_t const*>(input_context);
+        bool printed = false;
+
+        for (uint32_t i = 0; i < context_words; ++i) {
+            if (dwords[i] == 0u) {
+                continue;
+            }
+
+            if (!printed) {
+                printf("XHCI: device context nonzero DWORDs:\n");
+                printed = true;
+            }
+
+            printf("XHCI:   [%u] = 0x%08X\n", i, dwords[i]);
+        }
+
+        if (!printed) {
+            printf("XHCI: device context is all-zero\n");
+        }
+    }
+
     bool address_device(uint32_t const slotId, uint32_t port, uint32_t port_speed, uint32_t route, uint32_t parentHubSlotId, uint32_t parentHubPort, bool bsr)
     {
         printf("XHCI: Addressing device on slot %u, port %u, speed %u\n", slotId, port, port_speed);
@@ -487,6 +570,8 @@ public:
         // Average TRB Length in DW4 lower 16 bits.
         ep0_ctx[4] = 8;
 
+        dump_input_context(input_context, 3u * (ctx_size / sizeof(uint32_t)));
+
         uint64_t const device_context_phys = get_physical_address(device_context);
         device_context_base_array[slotId] = device_context_phys;
 
@@ -511,6 +596,9 @@ public:
         }
 
         printf("XHCI: Address Device completed for slot %u (port %u speed %u MPS %u)\n", slotId, port, port_speed, mps);
+
+        dump_device_context(device_context, 2u * (ctx_size / sizeof(uint32_t)));
+
         return true;
     }
 
@@ -723,6 +811,182 @@ public:
         return true;
     }
 
+    static char const* GetTrbTypeName(uint32_t trbType) {
+        switch (trbType) {
+            case TRB_TYPE_NORMAL: return "Normal";
+            case TRB_TYPE_SETUP: return "Setup";
+            case TRB_TYPE_DATA: return "Data";
+            case TRB_TYPE_STATUS: return "Status";
+            case TRB_TYPE_LINK: return "Link";
+            case TRB_TYPE_EVENT_DATA: return "Event Data";
+            case TRB_TYPE_NOOP_CMD: return "NoOp Command";
+            case TRB_TYPE_ENABLE_SLOT: return "Enable Slot";
+            case TRB_TYPE_DISABLE_SLOT: return "Disable Slot";
+            case TRB_TYPE_ADDRESS_DEV: return "Address Device";
+            case TRB_TYPE_TRANSFER_EVENT: return "Transfer Event";
+            case TRB_TYPE_CMD_COMPLETION_EVENT: return "Command Completion Event";
+            default: return "Unknown";
+        }
+    }
+
+    static char const* GetCompletionCodeName(uint32_t completionCode) {
+        switch (completionCode) {
+            case 0x00: return "Invalid";
+            case 0x01: return "Success";
+            case 0x02: return "Data Buffer Error";
+            case 0x03: return "Babble Detected Error";
+            case 0x04: return "USB Transaction Error";
+            case 0x05: return "TRB Error";
+            case 0x06: return "Stall Error";
+            case 0x07: return "Resource Error";
+            case 0x08: return "Bandwidth Error";
+            case 0x09: return "No Slots Error";
+            case 0x0A: return "Invalid Stream Type Error";
+            case 0x0B: return "Slot Not Enabled Error";
+            case 0x0C: return "Endpoint Not Enabled";
+            case 0x0D: return "Short Packet";
+            case 0x0E: return "Ring Underrun";
+            case 0x0F: return "Ring Overrun";
+            case 0x10: return "VF Event Ring Full Error";
+            case 0x11: return "Parameter Error";
+            case 0x12: return "Bandwidth Overrun";
+            case 0x13: return "Context State Error";
+            case 0x14: return "No Ping Response Error";
+            case 0x15: return "Event Ring Full";
+            case 0x16: return "Incompatible Device Error";
+            case 0x17: return "Missing Device";
+            case 0x18: return "Command Ring Stopped";
+            case 0x19: return "Command Aborted";
+            case 0x1A: return "Stopped";
+            case 0x1B: return "Stopped";
+            case 0x1C: return "Stopped";
+            case 0x1D: return "Control Error";
+            case 0x1E: return "Not Enough Bandwidth";
+            case 0x1F: return "Isoc Burst Error";
+            default: return "Unknown";
+        }
+    }
+
+    static char const* GetBooleanName(bool value) {
+        return value ? "true" : "false";
+    }
+
+    void PrintEventTrb(TRB const& event, char const* name = "")
+    {
+        uint32_t const trbType = (event.control >> 10) & 0x3Fu;
+        uint32_t const slotId = (event.control >> 24) & 0xFFu;
+        uint32_t const completionCode = (event.status >> 24) & 0xFFu;
+        
+        switch (trbType) {
+            case TRB_TYPE_TRANSFER_EVENT: {
+                bool const ioc = (event.control & TRB_CTRL_IOC) != 0;
+                bool const chain = (event.control & TRB_CTRL_CHAIN) != 0;
+                bool const idt = (event.control & TRB_CTRL_IDT) != 0;
+                bool const dirIn = (event.control & TRB_CTRL_DIR_IN) != 0;
+                uint32_t const endpointId = (event.control >> 16) & 0x1Fu;
+                uint32_t const residualLength = event.status & 0x00FF'FFFFu;
+                printf(
+                    "XHCI: Transfer Event: type=%s (%u), slot=%u, endpoint=%u, completion=%s (%u), residualLength=%u, IOC=%s, chain=%s, IDT=%s, direction=%s, status=0x%08X, parameter=0x%016llX, control=0x%08X\n",
+                    GetTrbTypeName(trbType), trbType,
+                    slotId, endpointId,
+                    GetCompletionCodeName(completionCode), completionCode,
+                    residualLength,
+                    GetBooleanName(ioc), GetBooleanName(chain), GetBooleanName(idt),
+                    dirIn ? "IN" : "OUT",
+                    event.status, event.parameter, event.control);
+                return;
+            }
+
+            case TRB_TYPE_CMD_COMPLETION_EVENT: {
+                uint64_t const commandTrbPointer = event.parameter;
+                uint32_t const completionFlags = event.status & 0x00FF'FFFFu;
+                printf(
+                    "XHCI: Command Completion Event: type=%s (%u), slot=%u, completion=%s (%u), completionFlags=0x%06X, commandTRB=0x%016llX, status=0x%08X, control=0x%08X\n",
+                    GetTrbTypeName(trbType), trbType,
+                    slotId,
+                    GetCompletionCodeName(completionCode), completionCode,
+                    completionFlags,
+                    commandTrbPointer,
+                    event.status, event.control);
+                return;
+            }
+
+            case 34u: { // Port Status Change Event
+                uint32_t const portId = (event.control >> 24) & 0xFFu;
+                printf(
+                    "XHCI: Port Status Change Event: type=%s (%u), port=%u, completion=%s (%u), status=0x%08X, parameter=0x%016llX, control=0x%08X\n",
+                    GetTrbTypeName(trbType), trbType,
+                    portId,
+                    GetCompletionCodeName(completionCode), completionCode,
+                    event.status, event.parameter, event.control);
+                return;
+            }
+
+            default: {
+                printf(
+                    "XHCI: %s TRB: type=%s (%u), status=0x%08X, parameter=0x%016llX, control=0x%08X\n",
+                    name,
+                    GetTrbTypeName(trbType), trbType,
+                    event.status, event.parameter, event.control);
+                return;
+            }
+        }
+    }
+
+    void PrintTrb(TRB const& event)
+    {
+        PrintEventTrb(event);
+    }
+
+    struct EventResult
+    {
+        Status         Result     = Status::Error;
+        uint8_t        SlotId     = 0;
+        TrbType        Type       = TrbType::Invalid;
+        CompletionCode Completion = CompletionCode::Invalid;
+    };
+
+    EventResult GetNextEvent()
+    {
+        uint32_t const usbsts = operationalRegisters_.UsbStatus;
+        if (usbsts & XHCI_STS_HSE) {
+            printf("XHCI: Host system error while waiting for transfer event\n");
+            printf("XHCI: USBCMD=0x%08X USBSTS=0x%08X CRCR=0x%016llX ERSTBA=0x%016llX ERDP=0x%016llX\n",
+                    operationalRegisters_.UsbCommand.get(),
+                    usbsts,
+                    get_command_ring_control(),
+                    get_erstba(),
+                    get_erdp());
+            return EventResult{ .Result = Status::Error };
+        }
+
+        TRB* event = &event_ring[event_ring_dequeue.load()];
+        Processor::InvalidateDataCache(event, sizeof(TRB));
+        bool const cycle_bit = (event->control & TRB_CTRL_CYCLE) != 0;
+        if (cycle_bit != event_ring_cycle_state) {
+            return EventResult{ .Result = Status::NotFound };
+        }
+
+        PrintEventTrb(*event);
+
+        EventResult result{
+            .Result      = Status::Success,
+            .SlotId      = static_cast<uint8_t>((event->control >> 24) & 0xFF),
+            .Type        = static_cast<TrbType>((event->control >> 10) & 0x3F),
+            .Completion  = static_cast<CompletionCode>((event->status >> 24) & 0xFF),
+        };
+
+        uint32_t const new_dequeue = advance_ring_pointer(event_ring_dequeue.load(), EVENT_RING_SIZE);
+        event_ring_dequeue.store(new_dequeue);
+        if (new_dequeue == 0) {
+            event_ring_cycle_state = !event_ring_cycle_state;
+        }
+        set_erdp(get_physical_address(&event_ring[event_ring_dequeue.load()]) | (1ull << 3));
+
+        return result;
+    }
+
+
     Status wait_for_transfer_event(uint32_t slotId, uint32_t timeout_ms = 1000) {
         if (event_ring.empty())
         {
@@ -734,66 +998,43 @@ public:
         auto const timeout_ticks = Cpu::GetPerformanceTicksForMs(timeout_ms);
 
         while ((Cpu::GetPerformanceCounter() - start_time) < timeout_ticks) {
-            uint32_t const usbsts = operationalRegisters_.UsbStatus;
-            if (usbsts & XHCI_STS_HSE) {
-                printf("XHCI: Host system error while waiting for transfer event\n");
-                printf("XHCI: USBCMD=0x%08X USBSTS=0x%08X CRCR=0x%016llX ERSTBA=0x%016llX ERDP=0x%016llX\n",
-                       operationalRegisters_.UsbCommand.get(),
-                       usbsts,
-                       get_command_ring_control(),
-                       get_erstba(),
-                       get_erdp());
-                return Status::Error;
+            EventResult event = GetNextEvent();
+            if (event.Result != Status::Success) {
+                if (event.Result == Status::NotFound) {
+                    Cpu::DelayInMicroseconds(50);
+                    continue;
+                }
+
+                return event.Result;
             }
 
-            TRB* event = &event_ring[event_ring_dequeue.load()];
-            Processor::InvalidateDataCache(event, sizeof(TRB));
-            bool const cycle_bit = (event->control & TRB_CTRL_CYCLE) != 0;
-            if (cycle_bit != event_ring_cycle_state) {
-                Cpu::DelayInMicroseconds(50);
+            if (event.SlotId != 0 && slotId != 0 && event.SlotId != slotId)
+            {
                 continue;
             }
 
-            printf("XHCI: Event received: Control=0x%08X Status=0x%08X Parameter=0x%016llX\n", event->control, event->status, event->parameter);
-
-            uint32_t const trb_type        = (event->control >> 10) & 0x3F;
-            uint32_t const completion_code = (event->status >> 24) & 0xFF;
-            uint32_t const event_slot_id   = (event->control >> 24) & 0xFF;
-
-            uint32_t const new_dequeue = advance_ring_pointer(event_ring_dequeue.load(), EVENT_RING_SIZE);
-            event_ring_dequeue.store(new_dequeue);
-            if (new_dequeue == 0) {
-                event_ring_cycle_state = !event_ring_cycle_state;
-            }
-
-            set_erdp(get_physical_address(&event_ring[event_ring_dequeue.load()]) | (1ull << 3));
-
-            if (event_slot_id != 0 && slotId != 0 && event_slot_id != slotId) {
-                continue;
-            }
-
-            if (trb_type == TRB_TYPE_TRANSFER_EVENT) {
-                if (completion_code == TRB_CC_SUCCESS || completion_code == TRB_CC_SHORT_PACKET) {
+            if (event.Type == TrbType::TransferEvent) {
+                if (event.Completion == CompletionCode::Success || event.Completion == CompletionCode::ShortPacket) {
                     return Status::Success;
                 }
 
-                if (completion_code == TRB_CC_ENDPOINT_NOT_ENABLED) {
-                    printf("XHCI: Transfer event failed, completion=%u (endpoint not enabled)\n", completion_code);
+                if (event.Completion == CompletionCode::EndpointNotEnabled) {
+                    printf("XHCI: Transfer event failed, completion=%u (endpoint not enabled)\n", event.Completion);
                     return Status::Error;
                 }
 
-                printf("XHCI: Transfer event failed, completion=%u\n", completion_code);
+                printf("XHCI: Transfer event failed, completion=%u\n", event.Completion);
                 return Status::Error;
             }
 
-            if (trb_type == TRB_TYPE_CMD_COMPLETION_EVENT) {
-                if (completion_code != TRB_CC_SUCCESS) {
-                    printf("XHCI: Command completion failed, completion=%u\n", completion_code);
+            if (event.Type == TrbType::CmdCompletionEvent) {
+                if (event.Completion != CompletionCode::Success) {
+                    printf("XHCI: Command completion failed, completion=%u\n", event.Completion);
                 }
                 continue;
             }
 
-            printf("XHCI: Ignoring event type=%u completion=%u\n", trb_type, completion_code);
+            printf("XHCI: Ignoring event type=%u completion=%u\n", event.Type, event.Completion);
         }
 
         printf("XHCI: Timed out waiting for transfer completion event\n");
@@ -812,50 +1053,26 @@ public:
         auto const timeout_ticks = Cpu::GetPerformanceTicksForMs(timeout_ms);
 
         while ((Cpu::GetPerformanceCounter() - start_time) < timeout_ticks) {
-            uint32_t const usbsts = operationalRegisters_.UsbStatus;
-            if (usbsts & XHCI_STS_HSE) {
-                printf("XHCI: Host system error while waiting for command completion\n");
-                printf("XHCI: USBCMD=0x%08X USBSTS=0x%08X CRCR=0x%016llX ERSTBA=0x%016llX ERDP=0x%016llX\n",
-                       operationalRegisters_.UsbCommand.get(),
-                       usbsts,
-                       get_command_ring_control(),
-                       get_erstba(),
-                       get_erdp());
+            EventResult event = GetNextEvent();
+            if (event.Result != Status::Success) {
+                if (event.Result == Status::NotFound) {
+                    Cpu::DelayInMicroseconds(50);
+                    continue;
+                }
+
                 return false;
             }
 
-            TRB* event = &event_ring[event_ring_dequeue.load()];
-            Processor::InvalidateDataCache(event, sizeof(TRB));
-
-            bool const cycle_bit = (event->control & TRB_CTRL_CYCLE) != 0;
-            if (cycle_bit != event_ring_cycle_state) {
-                Cpu::DelayInMicroseconds(50);
+            if (event.Type != TrbType::CmdCompletionEvent) {
                 continue;
             }
 
-            printf("XHCI: Event received: Control=0x%08X Status=0x%08X Parameter=0x%016llX\n", event->control, event->status, event->parameter);
-
-            uint32_t const trb_type        = (event->control >> 10) & 0x3F;
-            uint32_t const completion_code = (event->status >> 24) & 0xFF;
-            uint32_t const event_slot_id   = (event->control >> 24) & 0xFF;
-
-            uint32_t const new_dequeue = advance_ring_pointer(event_ring_dequeue.load(), EVENT_RING_SIZE);
-            event_ring_dequeue.store(new_dequeue);
-            if (new_dequeue == 0) {
-                event_ring_cycle_state = !event_ring_cycle_state;
-            }
-            set_erdp(get_physical_address(&event_ring[event_ring_dequeue.load()]) | (1ull << 3));
-
-            if (trb_type != TRB_TYPE_CMD_COMPLETION_EVENT) {
-                continue;
-            }
-
-            if (completion_code != TRB_CC_SUCCESS) {
-                printf("XHCI: Command completion failed, completion=%u\n", completion_code);
+            if (event.Completion != CompletionCode::Success) {
+                printf("XHCI: Command completion failed, completion=%u\n", event.Completion);
                 return false;
             }
 
-            slotId = event_slot_id;
+            slotId = event.SlotId;
             return true;
         }
 
@@ -1269,12 +1486,14 @@ public:
                 TRB_CTRL_CHAIN |
                 TRB_CTRL_IDT |
                 (slot->transfer_ring_cycle_state ? TRB_CTRL_CYCLE : 0);
-            printf("XHCI: Setup TRB - 0x%016X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n", &setup_trb,
-                reinterpret_cast<uint8_t*>(&setup_trb)[0], reinterpret_cast<uint8_t*>(&setup_trb)[1], reinterpret_cast<uint8_t*>(&setup_trb)[2], reinterpret_cast<uint8_t*>(&setup_trb)[3],
-                reinterpret_cast<uint8_t*>(&setup_trb)[4], reinterpret_cast<uint8_t*>(&setup_trb)[5], reinterpret_cast<uint8_t*>(&setup_trb)[6], reinterpret_cast<uint8_t*>(&setup_trb)[7],
-                reinterpret_cast<uint8_t*>(&setup_trb)[8], reinterpret_cast<uint8_t*>(&setup_trb)[9], reinterpret_cast<uint8_t*>(&setup_trb)[10], reinterpret_cast<uint8_t*>(&setup_trb)[11],
-                reinterpret_cast<uint8_t*>(&setup_trb)[12], reinterpret_cast<uint8_t*>(&setup_trb)[13], reinterpret_cast<uint8_t*>(&setup_trb)[14], reinterpret_cast<uint8_t*>(&setup_trb)[15]
-            );
+            printf("XHCI: Setup TRB - ");
+            PrintTrb(setup_trb);
+            //printf("XHCI: Setup TRB - 0x%016X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n", &setup_trb,
+            //    reinterpret_cast<uint8_t*>(&setup_trb)[0], reinterpret_cast<uint8_t*>(&setup_trb)[1], reinterpret_cast<uint8_t*>(&setup_trb)[2], reinterpret_cast<uint8_t*>(&setup_trb)[3],
+            //    reinterpret_cast<uint8_t*>(&setup_trb)[4], reinterpret_cast<uint8_t*>(&setup_trb)[5], reinterpret_cast<uint8_t*>(&setup_trb)[6], reinterpret_cast<uint8_t*>(&setup_trb)[7],
+            //    reinterpret_cast<uint8_t*>(&setup_trb)[8], reinterpret_cast<uint8_t*>(&setup_trb)[9], reinterpret_cast<uint8_t*>(&setup_trb)[10], reinterpret_cast<uint8_t*>(&setup_trb)[11],
+            //    reinterpret_cast<uint8_t*>(&setup_trb)[12], reinterpret_cast<uint8_t*>(&setup_trb)[13], reinterpret_cast<uint8_t*>(&setup_trb)[14], reinterpret_cast<uint8_t*>(&setup_trb)[15]
+            //);
             Processor::FlushDataCache(&setup_trb, sizeof(TRB));
 
             uint32_t next_pos = advance_transfer_ring_pointer(setup_pos);
@@ -1292,12 +1511,14 @@ public:
                 if (data_stage_in) {
                     data_trb.control |= TRB_CTRL_DIR_IN;
                 }
-                printf("XHCI: Data TRB - 0x%016X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n", &data_trb,
-                    reinterpret_cast<uint8_t*>(&data_trb)[0], reinterpret_cast<uint8_t*>(&data_trb)[1], reinterpret_cast<uint8_t*>(&data_trb)[2], reinterpret_cast<uint8_t*>(&data_trb)[3],
-                    reinterpret_cast<uint8_t*>(&data_trb)[4], reinterpret_cast<uint8_t*>(&data_trb)[5], reinterpret_cast<uint8_t*>(&data_trb)[6], reinterpret_cast<uint8_t*>(&data_trb)[7],
-                    reinterpret_cast<uint8_t*>(&data_trb)[8], reinterpret_cast<uint8_t*>(&data_trb)[9], reinterpret_cast<uint8_t*>(&data_trb)[10], reinterpret_cast<uint8_t*>(&data_trb)[11],
-                    reinterpret_cast<uint8_t*>(&data_trb)[12], reinterpret_cast<uint8_t*>(&data_trb)[13], reinterpret_cast<uint8_t*>(&data_trb)[14], reinterpret_cast<uint8_t*>(&data_trb)[15]
-                );
+                printf("XHCI: Data TRB - ");
+                PrintTrb(data_trb);
+                //printf("XHCI: Data TRB - 0x%016X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n", &data_trb,
+                //    reinterpret_cast<uint8_t*>(&data_trb)[0], reinterpret_cast<uint8_t*>(&data_trb)[1], reinterpret_cast<uint8_t*>(&data_trb)[2], reinterpret_cast<uint8_t*>(&data_trb)[3],
+                //    reinterpret_cast<uint8_t*>(&data_trb)[4], reinterpret_cast<uint8_t*>(&data_trb)[5], reinterpret_cast<uint8_t*>(&data_trb)[6], reinterpret_cast<uint8_t*>(&data_trb)[7],
+                //    reinterpret_cast<uint8_t*>(&data_trb)[8], reinterpret_cast<uint8_t*>(&data_trb)[9], reinterpret_cast<uint8_t*>(&data_trb)[10], reinterpret_cast<uint8_t*>(&data_trb)[11],
+                //    reinterpret_cast<uint8_t*>(&data_trb)[12], reinterpret_cast<uint8_t*>(&data_trb)[13], reinterpret_cast<uint8_t*>(&data_trb)[14], reinterpret_cast<uint8_t*>(&data_trb)[15]
+                //);
 
                 Processor::FlushDataCache(&data_trb, sizeof(TRB));
 
@@ -1317,12 +1538,14 @@ public:
             TRB_CTRL_IOC |
             ((!data_stage_present || !data_stage_in) ? TRB_CTRL_DIR_IN : 0) |
             (slot->transfer_ring_cycle_state ? TRB_CTRL_CYCLE : 0);
-            printf("XHCI: Status TRB - 0x%016X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n", &status_trb,
-                reinterpret_cast<uint8_t*>(&status_trb)[0], reinterpret_cast<uint8_t*>(&status_trb)[1], reinterpret_cast<uint8_t*>(&status_trb)[2], reinterpret_cast<uint8_t*>(&status_trb)[3],
-                reinterpret_cast<uint8_t*>(&status_trb)[4], reinterpret_cast<uint8_t*>(&status_trb)[5], reinterpret_cast<uint8_t*>(&status_trb)[6], reinterpret_cast<uint8_t*>(&status_trb)[7],
-                reinterpret_cast<uint8_t*>(&status_trb)[8], reinterpret_cast<uint8_t*>(&status_trb)[9], reinterpret_cast<uint8_t*>(&status_trb)[10], reinterpret_cast<uint8_t*>(&status_trb)[11],
-                reinterpret_cast<uint8_t*>(&status_trb)[12], reinterpret_cast<uint8_t*>(&status_trb)[13], reinterpret_cast<uint8_t*>(&status_trb)[14], reinterpret_cast<uint8_t*>(&status_trb)[15]
-            );
+            printf("XHCI: Status TRB - ");
+            PrintTrb(status_trb);
+            //printf("XHCI: Status TRB - 0x%016X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n", &status_trb,
+            //    reinterpret_cast<uint8_t*>(&status_trb)[0], reinterpret_cast<uint8_t*>(&status_trb)[1], reinterpret_cast<uint8_t*>(&status_trb)[2], reinterpret_cast<uint8_t*>(&status_trb)[3],
+            //    reinterpret_cast<uint8_t*>(&status_trb)[4], reinterpret_cast<uint8_t*>(&status_trb)[5], reinterpret_cast<uint8_t*>(&status_trb)[6], reinterpret_cast<uint8_t*>(&status_trb)[7],
+            //    reinterpret_cast<uint8_t*>(&status_trb)[8], reinterpret_cast<uint8_t*>(&status_trb)[9], reinterpret_cast<uint8_t*>(&status_trb)[10], reinterpret_cast<uint8_t*>(&status_trb)[11],
+            //    reinterpret_cast<uint8_t*>(&status_trb)[12], reinterpret_cast<uint8_t*>(&status_trb)[13], reinterpret_cast<uint8_t*>(&status_trb)[14], reinterpret_cast<uint8_t*>(&status_trb)[15]
+            //);
             Processor::FlushDataCache(&status_trb, sizeof(TRB));
 
             next_pos = advance_transfer_ring_pointer(status_pos);
@@ -1490,7 +1713,7 @@ public:
         return true;
     }
 
-    bool initialize_device_at_port(uint32_t slotId, uint32_t rootPort, uint32_t hubSlotId, uint32_t hubPort)
+    bool initialize_device_at_port(uint32_t slotId, uint32_t rootPort, uint32_t speed, uint32_t hubSlotId, uint32_t hubPort)
     {
         if (hubSlotId == 0)
         {
@@ -1501,16 +1724,14 @@ public:
             printf("XHCI: Enumerating device in hub at slot %u port %u using root port %u\n", hubSlotId, hubPort, rootPort);
         }
 
-        uint32_t const post_reset_portsc = get_port_status(rootPort);
-        uint32_t const post_reset_speed = (post_reset_portsc >> 10) & 0x0F;
-        if (!address_device(slotId, rootPort, post_reset_speed, 0, 0, 0, true))
+        if (!address_device(slotId, rootPort, speed, 0, 0, 0, true))
         {
             printf("XHCI: Failed to address device on root port %u (slot %u)\n", rootPort, slotId);
             free_device_slot(slotId);
             return false;
         }
 
-//        remember_discovered_device(slotId, hubPort, rootPort, post_reset_speed, {}, {});
+//        remember_discovered_device(slotId, hubPort, rootPort, speed, {}, {});
         //print_device_summary(hubPort, slotId, {}, {});
 
         std::array<uint8_t, 64> device_descriptor{};
@@ -1522,14 +1743,14 @@ public:
         std::array<uint8_t, 64> config_descriptor{};
         //DeviceInfo deviceInfo{};
 //        if (controlTransfer(slotId, 0x80, 0x06, 0x0200, 0, config_descriptor) == Status::Success) {
-//            //deviceInfo = remember_discovered_device(slotId, hubPort, rootPort, post_reset_speed, device_descriptor, config_descriptor);
+//            //deviceInfo = remember_discovered_device(slotId, hubPort, rootPort, speed, device_descriptor, config_descriptor);
 //            print_device_summary(hubPort, slotId, device_descriptor, config_descriptor);
 //
 //            //controlTransfer(slotId, 0x00, 0x09, config_descriptor[5], 0, {});
 //        }
 //        else
         {
-            //deviceInfo = remember_discovered_device(slotId, hubPort, rootPort, post_reset_speed, device_descriptor, {});
+            //deviceInfo = remember_discovered_device(slotId, hubPort, rootPort, speed, device_descriptor, {});
             print_device_summary(hubPort, slotId, device_descriptor, {});
 
             //controlTransfer(slotId, 0x00, 0x09, 1, 0, {});
@@ -1644,15 +1865,77 @@ public:
         return std::shared_ptr<UsbDriver>(this, [](UsbDriver*) {});
     }
 
-    std::expected<std::shared_ptr<UsbDevice>, RESULT> UsbAllocateDevice(uint32_t slotId, UsbDevice* parentHubDevice, uint8_t parentHubPort)
+    std::expected<std::shared_ptr<UsbDevice>, RESULT> UsbAllocateDevice(UsbDevice* parentHubDevice, uint8_t parentHubPort) override
     {
+        auto const slotId = allocate_device_slot();
+
+        printf("XHCI: UsbAllocateDevice: allocate slot completion returned slot ID %u\n", slotId);
+        if (slotId == 0)
+        {
+            return std::unexpected(RESULT::ErrorMemory);
+        }
+
+        uint32_t route           = 0;
+        uint32_t parentHubSlotId = 0;
+        uint32_t rootPort        = parentHubPort;
+        uint32_t speed = 0;
+        
+        if (parentHubDevice != nullptr && parentHubPort > 0)
+        {
+            route           = parentHubPort;
+            parentHubSlotId = parentHubDevice->GetAddress();
+            rootPort        = parentHubDevice->RootHubPort;
+
+            LOG_DEBUG("Reset port %u of hub %u\n",  parentHubPort, parentHubSlotId);
+
+            // Reset the port for what will be the second time.
+            if (auto const result = Async::WaitOnTask(HubPortReset(*parentHubDevice, parentHubPort - 1)); !result.has_value()) {
+                LOG("HCD: Failed to reset port again for new device at port %u of hub %u.\n", parentHubPort, parentHubSlotId);
+                return std::unexpected(result.error());
+            }
+            else
+            {
+                if (result.value().Status.HighSpeedAttatched)
+                {
+                    speed = 3;
+                }
+                else if (result.value().Status.LowSpeedAttatched)
+                {
+                    speed = 2;
+                }
+                else
+                {
+                    speed = 1;
+                }
+            }
+
+            auto parentHub = parentHubDevice;
+            for (uint32_t i = 0; i < 4 && parentHub->ParentHub.Device; ++i)
+            {
+                route = (route << 4) | (parentHub->ParentHub.PortNumber & 0x0F);
+                parentHub = parentHub->ParentHub.Device.get();
+            }
+        }
+        else
+        {
+            uint32_t const post_reset_portsc = get_port_status(rootPort);
+            speed = (post_reset_portsc >> 10) & 0x0F;
+        }
+
+        if (!address_device(slotId, rootPort, speed, route, parentHubSlotId, parentHubPort, false))
+        {
+            printf("XHCI: Failed to address device on root port %u (slot %u) route %05X parentHubSlotId %u parentHubPort %u\n", rootPort, slotId, route, parentHubSlotId, parentHubPort);
+            return std::unexpected(RESULT::ErrorDevice);
+        }
+
         std::shared_ptr<UsbDevice> device = std::make_shared<UsbDevice>(slotId, DriverRef());
         if (!device)
         {
             return std::unexpected(RESULT::ErrorMemory);
         }
 
-        device->Config.Status = USB_STATUS_ATTACHED;
+        device->RootHubPort = rootPort;
+        device->Config.Status = USB_STATUS_ADDRESSED;
         device->ParentHub.PortNumber = parentHubPort;
         device->ParentHub.Device = parentHubDevice ? deviceTable_[parentHubDevice->GetAddress() - 1] : nullptr;
         device->PayLoadId = PayLoadType::None;
@@ -1663,19 +1946,10 @@ public:
         }
 
         deviceTable_[slotId - 1] = device;
+
+        Cpu::DelayInMilliseconds(20);
+
         return std::move(device);
-    }
-
-    std::expected<std::shared_ptr<UsbDevice>, RESULT> UsbAllocateDevice(UsbDevice* parentHubDevice, uint8_t parentHubPort) override
-    {
-        auto const slotId = allocate_device_slot();
-        printf("XHCI: UsbAllocateDevice: allocate slot completion returned slot ID %u\n", slotId);
-        if (slotId == 0)
-        {
-            return std::unexpected(RESULT::ErrorMemory);
-        }
-
-        return UsbAllocateDevice(slotId, parentHubDevice, parentHubPort);
     }
 
     void UsbDeallocateDevice (struct UsbDevice *device) override
@@ -1711,34 +1985,34 @@ public:
     // is a restricted address for the rootHub and will return if attempted.
     Async::task<RESULT> HCDSetAddress(UsbDevice& device, IoHandle const& ioHandle) override
     {
-        auto slot = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(ioHandle.get()));
-        if (slot == 0 || slot != LookupSlot(&device)) {
-            co_return RESULT::ErrorDevice;
-        }
-        uint32_t route = device.ParentHub.PortNumber;
-        uint32_t parentHubSlotId = 0;
-        uint32_t parentHubPort = device.ParentHub.PortNumber;
-
-        if (device.ParentHub.Device)
-        {
-            route = device.ParentHub.PortNumber;
-            auto parentHub = device.ParentHub.Device.get();
-            parentHubSlotId = parentHub->GetAddress();
-            for (uint32_t i = 1; i <= 5 && parentHub->ParentHub.Device; ++i)
-            {
-                route = (route << 5) | (parentHub->ParentHub.PortNumber & 0x1F);
-                parentHub = parentHub->ParentHub.Device.get();
-            }
-        }
-
-        uint32_t const address_port = device.RootHubPort;
-        uint32_t const post_reset_portsc = get_port_status(address_port);
-        uint32_t const post_reset_speed = (post_reset_portsc >> 10) & 0x0F;
-        if (!address_device(slot, address_port, post_reset_speed, route, 0, 0 /*parentHubSlotId, parentHubPort*/, false))
-        {
-            printf("XHCI: Failed to address device on root port %u (slot %u) route %05X parentHubSlotId %u parentHubPort %u\n", address_port, slot, route, parentHubSlotId, parentHubPort);
-            co_return RESULT::ErrorDevice;
-        }
+//        auto slot = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(ioHandle.get()));
+//        if (slot == 0 || slot != LookupSlot(&device)) {
+//            co_return RESULT::ErrorDevice;
+//        }
+//        uint32_t route = device.ParentHub.PortNumber;
+//        uint32_t parentHubSlotId = 0;
+//        uint32_t parentHubPort = device.ParentHub.PortNumber;
+//
+//        if (device.ParentHub.Device)
+//        {
+//            route = device.ParentHub.PortNumber;
+//            auto parentHub = device.ParentHub.Device.get();
+//            parentHubSlotId = parentHub->GetAddress();
+//            for (uint32_t i = 1; i <= 5 && parentHub->ParentHub.Device; ++i)
+//            {
+//                route = (route << 5) | (parentHub->ParentHub.PortNumber & 0x1F);
+//                parentHub = parentHub->ParentHub.Device.get();
+//            }
+//        }
+//
+//        uint32_t const address_port = device.RootHubPort;
+//        uint32_t const post_reset_portsc = get_port_status(address_port);
+//        uint32_t const post_reset_speed = (post_reset_portsc >> 10) & 0x0F;
+//        if (!address_device(slot, address_port, post_reset_speed, route, parentHubSlotId, parentHubPort, false))
+//        {
+//            printf("XHCI: Failed to address device on root port %u (slot %u) route %05X parentHubSlotId %u parentHubPort %u\n", address_port, slot, route, parentHubSlotId, parentHubPort);
+//            co_return RESULT::ErrorDevice;
+//        }
         co_return RESULT::Ok;
     }
 
@@ -1873,17 +2147,16 @@ public:
                 continue;
             }
 
-            auto deviceEx = UsbAllocateDevice(/*info.SlotId,*/ nullptr, 0);
+            auto deviceEx = UsbAllocateDevice(nullptr, port);
             if (!deviceEx) {
                 error_ = deviceEx.error();
                 co_return;
             }
             auto& device = *deviceEx.value();
-            device.RootHubPort = port;
             //device.Descriptor = info.Descriptor;
             //device.Interfaces = info.Interfaces;
             //device.Endpoints = info.Endpoints;
-            device.Config.Status = USB_STATUS_ATTACHED;
+            //device.Config.Status = USB_STATUS_ATTACHED;
             //if (info.Descriptor.bDeviceClass == DeviceClassHub) {
             //    device.PayLoadId = PayLoadType::Hub;
             //}
@@ -1913,15 +2186,15 @@ public:
 
     Async::task<IoHandle> InitializeDevice(UsbDevice& device) override
     {
-        if (device.ParentHub.Device)
-        {
-            initialize_device_at_port(device.GetAddress(), device.RootHubPort, device.ParentHub.Device->GetAddress(), device.ParentHub.PortNumber);
-        }
-        else
-        {
-            // Root device.
-            initialize_device_at_port(device.GetAddress(), device.RootHubPort, 0, 0);
-        }
+        //if (device.ParentHub.Device)
+        //{
+        //    initialize_device_at_port(device.GetAddress(), device.RootHubPort, device.ParentHub.Device->GetAddress(), device.ParentHub.PortNumber);
+        //}
+        //else
+        //{
+        //    // Root device.
+        //    initialize_device_at_port(device.GetAddress(), device.RootHubPort, 0, 0);
+        //}
         co_return GetIoHandle(device.GetAddress());
     }
 

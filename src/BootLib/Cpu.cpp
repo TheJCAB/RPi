@@ -26,6 +26,11 @@ bool IsRpi4()
     return isRpi4;
 }
 
+bool IsQemu()
+{
+    return reinterpret_cast<uintptr_t>(&IsQemu) >= 0x4000'0000u;
+}
+
 uint64_t GetPerformanceFrequency()
 {
     uint64_t freq = 0;
@@ -46,6 +51,15 @@ void DelayUntilPerformanceTime(PerformanceTime time)
     {
         //asm volatile ("wfe"); // This is bad unless we know there will be some event.
         asm volatile ("yield");
+    }
+}
+
+[[noreturn]] void Halt()
+{
+    // Halt the CPU by entering an infinite loop
+    while (true)
+    {
+        asm volatile("wfe"); // Wait for event (low power state)
     }
 }
 

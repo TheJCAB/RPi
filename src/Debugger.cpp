@@ -2,6 +2,8 @@
 
 #include "Scheduler.h"
 
+#include <array>
+
 namespace Debugger
 {
 

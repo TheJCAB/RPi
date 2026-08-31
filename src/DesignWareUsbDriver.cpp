@@ -386,10 +386,11 @@ class DesignWareUsbDriver : public UsbDriver
 
         auto ioHandle = GetIoHandle(device.GetAddress());
 
+        LOG_DEBUG("Read first 8 Bytes of Device Descriptor using address 0 to obtain MaxPacketSizeInBytes\n");
+
         /* Store the unique address until it is actually assigned. */
         address = device.GetAddress();									// Hold unique address we will set device to
         device.Pipe0.Number = 0;										// Initially it starts as zero
-        LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 1 = Read first 8 Bytes of Device Descriptor\n");
         device.Pipe0.MaxPacketSizeInBytes = 8;							// Set max packet size to 8 ( So exchange will be exactly 1 packet)
 
         result = co_await HCDSubmitControlMessageIN(
@@ -409,6 +410,7 @@ class DesignWareUsbDriver : public UsbDriver
             LOG("Enumeration: Step 1 on device %i failed, Result: %#x, transferred: %u.\n",
                 address, result, transferred);										// Log any error
             //co_return result != RESULT::Ok ? result : RESULT::ErrorTransmission;	// Fatal enumeration error of this device
+            co_return IoHandle{nullptr};
         }
         else
         {
@@ -418,6 +420,17 @@ class DesignWareUsbDriver : public UsbDriver
         }
 
         device.Pipe0.Number = address;
+
+        if (device.ParentHub.Device && device.ParentHub.PortNumber > 0)
+        {
+            LOG_DEBUG("Reset port %u of hub %u (old device support)\n",  device.ParentHub.PortNumber, device.ParentHub.Device->GetAddress());
+
+            // Reset the port for what will be the second time.
+            if (auto resetResult = co_await HubPortReset(*device.ParentHub.Device, device.ParentHub.PortNumber - 1); !resetResult.has_value()) {
+                LOG("HCD: Failed to reset port again for new device %s.\n", UsbGetDescription(device));
+                co_return IoHandle{nullptr}; //result.error();
+            }
+        }
 
         // Nothing to do except get a channel to communicate.
         co_return std::move(ioHandle);

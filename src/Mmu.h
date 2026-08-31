@@ -12,8 +12,8 @@ void Init();
 
 void EnableCachesAndMMU();
 
-void* AllocatePages         (uint32_t pageCount);
-void* AllocateAndCommitPages(uint32_t pageCount);
+[[nodiscard]] void* AllocatePages         (uint32_t pageCount);
+[[nodiscard]] void* AllocateAndCommitPages(uint32_t pageCount);
 
 void CommitPages(void const* address, uint32_t pageCount);
 
