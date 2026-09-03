@@ -162,16 +162,15 @@ class PoolAllocator
 
 public:
     // If we have a partial word at the end, we need to "allocate" it to simplify the allocation logic.
-    PoolAllocator()
+    PoolAllocator() requires(PoolSize % 64 != 0)
     {
-        if constexpr (PoolSize % 64 != 0)
-        {
-            Words[PoolSize / 64] = Word{
-                .bitmap = UINT64_MAX << (PoolSize % 64),
-                .starts = 1ull << (PoolSize % 64)
-            };
-        }
+        Words[PoolSize / 64] = Word{
+            .bitmap = UINT64_MAX << (PoolSize % 64),
+            .starts = 1ull << (PoolSize % 64)
+        };
     }
+
+    constexpr PoolAllocator() requires(PoolSize % 64 == 0) {}
 
     uint32_t Allocate(uint32_t count, uint32_t alignment = 1)
     {

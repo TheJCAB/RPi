@@ -7,7 +7,7 @@
 namespace Debugger
 {
 
-void RawPrintCallstack(Uart::LockedStream& stream, ThreadContext* context)
+void PrintCallstack(Uart::LockedStream& stream, ThreadContext* context)
 {
     stream.Puts("Call Stack:\n");
 
@@ -95,7 +95,7 @@ Scheduler::ThreadInfo* DebuggerThread = nullptr;
     stream.Puts("Debugger thread started\n");
     stream.Puts("Debugging thread context:\n");
     PrintThreadContext(stream, context);
-    RawPrintCallstack(stream, context);
+    PrintCallstack(stream, context);
 
     // Here you can add code to handle debugging tasks, like printing thread contexts.
     while (true)
@@ -136,15 +136,15 @@ Scheduler::ThreadInfo* Init()
     return &debuggerThread;
 }
 
-void RawPrintCallstack()
+void PrintCurrentCallstack()
 {
     Uart::LockedStream stream;
-    stream.Puts("Call Stack:\n");
     uint64_t fp;
     asm volatile (
         "mov %0, x29\n" // Frame pointer
         : "=r"(fp)
     );
+    stream.Puts("Call Stack:\n");
     for (;;)
     {
         auto frame = *(std::array<uint64_t, 2>*)fp;

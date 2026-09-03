@@ -137,6 +137,11 @@ std::logic_error::~logic_error() noexcept
     // Default destructor implementation
 }
 
+std::out_of_range::~out_of_range() noexcept
+{
+    // Default destructor implementation
+}
+
 std::exception::~exception() noexcept
 {
     // Default destructor implementation

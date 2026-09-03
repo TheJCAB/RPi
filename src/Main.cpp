@@ -6,6 +6,7 @@
 //#include <format>
 
 #include <atomic>
+#include <bit>
 
 #include <BootLib/DeviceTree.h>
 
@@ -33,8 +34,6 @@
 
 #include "emb-stdio.h"
 
-void parse_dtb(void* dtb);
-
 void InitGlobalHeap();
 
 extern "C"
@@ -56,12 +55,20 @@ void InitCore()
 {
     // Enable the Floating point and SIMD unit for EL0 and EL1
     Cpu::cpacr_el1.modify([](auto& reg){ reg.FPEN = 3; });
-    // Enable Stack alignment checks. For Hygiene. But allow unaligned SIMD accesses.
+
+    // Enable Stack alignment checks. For Hygiene.
+    // But make sure to allow unaligned SIMD accesses.
     Cpu::sctlr_el1.modify([](auto& reg){ reg.SA = true; reg.A = false; });
     Cpu::InstructionSynchronizationBarrier();
 
-    el2_to_el1_return();
-    Mmu::Init();
+    if (Cpu::CurrentEL->EL > 1)
+    {
+        el2_to_el1_return();
+    }
+
+    Mmu::EnableCachesAndMMU();
+    Mmu::DumpMMUState();
+
     Exception::Init();
     Interrupts::Init();
     Scheduler::Init();
@@ -220,7 +227,7 @@ inline uint32_t AtomicAdd(uint32_t volatile& value, uint32_t increment)
     return old_value;
 }
 
-void Core0(void* dtb)
+void Core0(uintptr_t dtb)
 {
     // Clear the BSS soonest.
     for (auto p = &_bss_start; p < &_bss_end; ++p)
@@ -284,6 +291,14 @@ void Core0(void* dtb)
             uart.Puts("\n");
         }
 
+        uart.Puts("cpacr_el1 = ");
+        uart.PutHex(std::bit_cast<uint64_t>(Cpu::cpacr_el1.get()));
+        uart.Puts("\n");
+
+        uart.Puts("sctlr_el1 = ");
+        uart.PutHex(std::bit_cast<uint64_t>(Cpu::sctlr_el1.get()));
+        uart.Puts("\n");
+
         Uart::Init(&uart);
         Uart::Puts("This is a test\n");
 
@@ -307,12 +322,23 @@ void Core0(void* dtb)
         Exception::Init();
 
         uart.Puts("DTB pointer: ");
-        uart.PutHex(reinterpret_cast<uintptr_t>(dtb));
+        uart.PutHex(dtb);
         uart.Puts("\n");
 
         BootLib::DeviceTree::ParseDeviceTree(dtb, &uart);
 
         printf("Device tree complete.\n");
+
+        for (uintptr_t addr = 0xA00'0000u; addr < 0xA004000u; addr += 0x200u)
+        {
+            printf("virtio-mmio at 0x%08llX: 0x%08X 0x%08X 0x%08X 0x%08X\n",
+                addr,
+                reinterpret_cast<uint32_t const volatile*>(addr)[0],
+                reinterpret_cast<uint32_t const volatile*>(addr)[1],
+                reinterpret_cast<uint32_t const volatile*>(addr)[2],
+                reinterpret_cast<uint32_t const volatile*>(addr)[3]
+            );
+        }
 
         uint64_t midr = 0;
         asm volatile ("mrs %0, midr_el1" : "=r"(midr));
@@ -327,21 +353,36 @@ void Core0(void* dtb)
         }
 
         // Initialize the MMU, and so all addresses will be virtual after this.
-        printf("Initializing MMU...\n");
-        Mmu::Init();
-    
+        printf("Initializing page tables...\n");
+        Mmu::InitPageTables();
+
+        printf("Page tables initialized... Initializing MMU...\n");
+        Mmu::EnableCachesAndMMU();
+
+        if (Cpu::IsRpi4())
+        {
+            // The MMIO address changes on Raspberry Pi 4, so we need to recreate the UART before it gets used again.
+            uart.~PL011Uart();
+            new(&uart) Uart::PL011Uart{ Mmio::Base + Uart::PL011Uart::Uart0RegistersOffset };
+        }
+
+        Mmu::DumpMMUState();
         uart.Puts("MMU enabled\n");
-    
+        
+        uart.Puts("Initializing heap...\n");
+        InitGlobalHeap();
+        uart.Puts("Heap initialized.\n");
+        
         // Call all global initializers.
+        uart.Puts("Calling global initializers...\n");
         for (auto ctor = _init_array_start; ctor < _init_array_end; ++ctor) {
             if (ctor != nullptr)
             {
                 (*ctor)();
             }
         }
+        uart.Puts("Global initializers complete.\n");
     }
-
-    InitGlobalHeap();
 
     // TODO: We should get addresses from the MM now.
     Uart::Init(new Uart::PL011Uart{ 
@@ -358,9 +399,7 @@ void Core0(void* dtb)
 //    Exception::Init();
     Interrupts::Init();
 
-    parse_dtb(dtb);
-
-    Uart::useMutex = true;
+    //Uart::useMutex = true;
 
     Uart::Puts("Spinning up the cores...\n");
 

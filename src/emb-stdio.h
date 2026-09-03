@@ -1,6 +1,9 @@
 #ifndef _EMB_STDIO_
 #define _EMB_STDIO_
 
+#include <stdlib.h>				// Define size_t
+#include <stdarg.h>				// Standard C library needed for varadic arguments
+
 #ifdef __cplusplus								// If we are including to a C++
 extern "C" {									// Put extern C directive wrapper around
 #endif
@@ -26,9 +29,6 @@ extern "C" {									// Put extern C directive wrapper around
 {   easy retargetting of console output to external screen or UART routine  }
 {																            }
 {++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++*/
-
-#include <stdlib.h>				// Define size_t
-#include <stdarg.h>				// Standard C library needed for varadic arguments
 
 /***************************************************************************}
 {                         PUBLIC TYPE DEFINITIONS							}

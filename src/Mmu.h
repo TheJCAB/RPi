@@ -8,9 +8,10 @@ namespace Mmu
 
 constexpr uint32_t PageSize = 4096;
 
-void Init();
+void InitPageTables();
 
 void EnableCachesAndMMU();
+void DumpMMUState();
 
 [[nodiscard]] void* AllocatePages         (uint32_t pageCount);
 [[nodiscard]] void* AllocateAndCommitPages(uint32_t pageCount);

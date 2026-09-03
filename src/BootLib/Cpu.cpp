@@ -3,8 +3,15 @@
 namespace BootLib::Cpu
 {
 
+bool IsQemu()
+{
+    return reinterpret_cast<uintptr_t>(&IsQemu) >= 0x4000'0000u;
+}
+
 bool IsRpi4()
 {
+    if (IsQemu()) return false;
+
     static bool checked = false;
     static bool isRpi4 = false;
 
@@ -24,11 +31,6 @@ bool IsRpi4()
     }
 
     return isRpi4;
-}
-
-bool IsQemu()
-{
-    return reinterpret_cast<uintptr_t>(&IsQemu) >= 0x4000'0000u;
 }
 
 uint64_t GetPerformanceFrequency()

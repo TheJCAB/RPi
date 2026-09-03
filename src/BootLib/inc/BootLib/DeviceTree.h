@@ -14,6 +14,12 @@ struct MemoryRange
     size_t    size;
 };
 
+enum class CpuWakeupMethod : uint8_t
+{
+    Invalid,
+    Psci,
+};
+
 struct Cpu
 {
     uint8_t id;
@@ -25,7 +31,7 @@ extern size_t      memoryRangeCount;
 extern Cpu      cpus[16];
 extern size_t   cpuCount;
 
-void ParseDeviceTree(void* dtb, Uart::PL011Uart* log);
+void ParseDeviceTree(uintptr_t dtb, Uart::PL011Uart* log);
 
 }
 // namespace BootLib::DeviceTree

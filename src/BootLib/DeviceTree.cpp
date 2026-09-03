@@ -4,13 +4,23 @@
 #include <BootLib/Uart.h>
 
 #include <concepts>
+#include <span>
+#include <string_view>
 
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
 
+#pragma GCC optimize("no-tree-vectorize,no-tree-slp-vectorize")
+
 namespace BootLib::DeviceTree
 {
+
+MemoryRange memoryRanges[16]{};
+size_t      memoryRangeCount = 0;
+
+Cpu      cpus[16]{};
+size_t   cpuCount = 0;
 
 uint16_t FromBE(uint16_t x)
 {
@@ -63,14 +73,206 @@ struct Header
     BE<uint32_t> size_dt_struct;
 };
 
-void ParseDeviceTree(void* dtb, Uart::PL011Uart* log)
+struct ParseState
 {
-    if (dtb == nullptr)
+    Uart::PL011Uart*    log;
+    char const*         strings;
+    BE<uint32_t> const* struct_block;
+    uint32_t            addressCells[4]{ 1 };
+    uint32_t            sizeCells   [4]{ 1 };
+    uint32_t            currentCells = 0;
+
+    void PushCells(uint32_t address, uint32_t size)
+    {
+        if (currentCells < 3)
+        {
+            ++currentCells;
+            addressCells[currentCells] = address;
+            sizeCells   [currentCells] = size;
+        }
+    }
+
+    void PopCells()
+    {
+        if (currentCells > 0)
+        {
+            --currentCells;
+        }
+    }
+
+    void SetCurrentAddressCells(uint32_t value) { addressCells[currentCells] = value; }
+    void SetCurrentSizeCells   (uint32_t value) { sizeCells   [currentCells] = value; }
+
+    uint32_t GetCurrentAddressCells() const { return addressCells[currentCells]; }
+    uint32_t GetCurrentSizeCells   () const { return sizeCells   [currentCells]; }
+};
+
+template < typename F > concept NodeFunction     = std::predicate<F, ParseState&, std::string_view /* name */, std::string_view /* address */>;
+template < typename F > concept PropertyFunction = std::predicate<F, ParseState&, std::string_view /* name */, std::span<BE<uint32_t> const>>;
+
+bool ParseNode(ParseState& state, NodeFunction auto&& node, PropertyFunction auto&& property)
+{
+    for (;;)
+    {
+        uint32_t const token = *state.struct_block++;
+        switch (token)
+        {
+        case FDT_BEGIN_NODE: {
+            std::string_view name{ reinterpret_cast<char const*>(state.struct_block) };
+            state.struct_block += (name.size() + 4) / 4;
+            auto const atSeparator = name.find_first_of('@');
+            std::string_view address{};
+            if (atSeparator != name.npos)
+            {
+                address = name.substr(atSeparator + 1);
+                name    = name.substr(0, atSeparator);
+            }
+            //printf("Begin node name: '%s'\n", name.data());
+            state.PushCells(state.GetCurrentAddressCells(), state.GetCurrentSizeCells());
+            if (!node(state, name, address))
+            {
+                return false;
+            }
+            state.PopCells();
+            break;
+        }
+        case FDT_PROP: {
+            uint32_t         const len = *state.struct_block++;
+            std::string_view const name = state.strings + *state.struct_block++;
+            std::span value{ state.struct_block, (len + 3) / 4 };
+            state.struct_block += value.size();
+            if (name == "#address-cells")
+            {
+                state.SetCurrentAddressCells(value[0]);
+            }
+            else if (name == "#size-cells")
+            {
+                state.SetCurrentSizeCells(value[0]);
+            }
+            else if (!property(state, name, value))
+            {
+                return false;
+            }
+            break;
+        }
+        case FDT_END_NODE: return true;
+        case FDT_END:      return false;
+        case FDT_NOP:      break;
+        default:
+            Uart::Puts(state.log, "Unknown token\n");
+            Uart::PutDec(state.log, token);
+            return false;
+        }
+    }
+}
+
+bool PrintProperty(ParseState& state, std::string_view name, std::span<BE<uint32_t> const> value)
+{
+    Uart::Puts(state.log, "  Property: ");
+    Uart::Puts(state.log, name.data());
+    Uart::Puts(state.log, "\n");
+    return true;
+}
+
+bool SkipNode(ParseState& state)
+{
+    return ParseNode(state,
+        [](ParseState& state, std::string_view name, std::string_view address)
+        {
+            return SkipNode(state);
+        },
+        [](ParseState& state, std::string_view name, std::span<BE<uint32_t> const> value)
+        {
+            return true;
+        }
+    );
+}
+
+bool ParseMemoryNode(ParseState& state)
+{
+    std::span<BE<uint32_t> const> reg;
+    if (!ParseNode(state,
+            [](ParseState& state, std::string_view name, std::string_view address)
+            {
+                return SkipNode(state);
+            },
+            [&](ParseState& state, std::string_view name, std::span<BE<uint32_t> const> value)
+            {
+                if (name == "reg")
+                {
+                    // Handle memory region
+                    Uart::Puts(state.log, "  Memory region found\n");
+                    reg = value;
+                }
+                return true;
+            }
+        ))
+    {
+        return false;
+    }
+    if (!reg.empty())
+    {
+        for (size_t i = 0; i < reg.size(); i += state.GetCurrentAddressCells() + state.GetCurrentSizeCells())
+        {
+            uintptr_t base = 0;
+            uintptr_t size = 0;
+            for (size_t j = 0; j < state.GetCurrentAddressCells(); ++j, ++i)
+            {
+                base = (base << 32) + reg[i];
+            }
+            for (size_t j = 0; j < state.GetCurrentSizeCells(); ++j, ++i)
+            {
+                size = (size << 32) + reg[i];
+            }
+            if (size > 0)
+            {
+                memoryRanges[memoryRangeCount++] = { base, size };
+                Uart::Puts(state.log, "  Memory range added\n");
+                Uart::Puts(state.log, "    Base: "); Uart::PutHex(state.log, base); Uart::Puts(state.log, " Size: "); Uart::PutHex(state.log, size); Uart::Puts(state.log, "\n");
+            }
+        }
+        
+    }
+    return true;
+}
+
+bool ParseRootNode(ParseState& state)
+{
+    return ParseNode(state,
+        [](ParseState& state, std::string_view name, std::string_view address)
+        {
+            if (name == "memory")
+            {
+                // Handle memory node
+                Uart::Puts(state.log, "Memory node found\n");
+                return ParseMemoryNode(state);
+            }
+            else
+            {
+                Uart::Puts(state.log, "Unknown node: ");
+                Uart::Puts(state.log, name.data());
+                Uart::Puts(state.log, "\n");
+                return SkipNode(state);
+            }
+        },
+        [](ParseState& state, std::string_view name, std::span<BE<uint32_t> const> value)
+        {
+            Uart::Puts(state.log, "  Property: ");
+            Uart::Puts(state.log, name.data());
+            Uart::Puts(state.log, "\n");
+            return true;
+        }
+    );
+}
+
+void ParseDeviceTree(uintptr_t dtb, Uart::PL011Uart* log)
+{
+    if (dtb == 0)
     {
         Uart::Puts(log, "No DeviceTree found\n");
         return;
     }
-    auto const hdr = static_cast<Header*>(dtb);
+    auto const hdr = reinterpret_cast<Header const*>(dtb);
     if (hdr->magic != FDT_MAGIC)
     {
         Uart::Puts(log, "Invalid DTB magic\n");
@@ -91,7 +293,7 @@ void ParseDeviceTree(void* dtb, Uart::PL011Uart* log)
     if (hdr->off_mem_rsvmap != 0)
     {
         // TODO: Do something with these.
-        BE<uint64_t>* mem_rsvmap = reinterpret_cast<BE<uint64_t>*>(static_cast<char*>(dtb) + hdr->off_mem_rsvmap);
+        BE<uint64_t>* mem_rsvmap = reinterpret_cast<BE<uint64_t>*>(dtb + hdr->off_mem_rsvmap);
         while (mem_rsvmap[0] != 0 && mem_rsvmap[1] != 0) {
             Uart::Puts(log, "Memory reservation: base=");
             Uart::PutHex(log, static_cast<uint64_t>(mem_rsvmap[0]));
@@ -102,80 +304,92 @@ void ParseDeviceTree(void* dtb, Uart::PL011Uart* log)
         }
     }
 
-    auto const strings = static_cast<char const*>(dtb) + hdr->off_dt_strings;
-    BE<uint32_t volatile> const* struct_block = reinterpret_cast<BE<uint32_t volatile> const*>(
-        static_cast<char*>(dtb) + hdr->off_dt_struct);
+    ParseState state
+    {
+        .log          = log,
+        .strings      = reinterpret_cast<char const*>(dtb + hdr->off_dt_strings),
+        .struct_block = reinterpret_cast<BE<uint32_t> const*>(dtb + hdr->off_dt_struct),
+    };
 
-    bool in_root_node = false;
-    bool in_memory_node = false;
-
-    while (true) {
-        uint32_t token = *struct_block++;
+    // Find the root node.
+    for (;;)
+    {
+        uint32_t token = *state.struct_block++;
         if (token == FDT_BEGIN_NODE) {
-            const char* name = reinterpret_cast<const char*>(struct_block);
-            //printf("Begin node name: '%s'\n", name);
-            size_t len = strlen(name);
-            in_root_node = len == 0;
-            in_memory_node = (strncmp(name, "memory", 6) == 0);
-            struct_block += (len + 4) / 4;
-        } else if (token == FDT_END_NODE) {
-            in_root_node = false;
-            in_memory_node = false;
-        } else if (token == FDT_PROP) {
-            uint32_t len = *struct_block++;
-            uint32_t nameoff = *struct_block++;
-            const char* prop_name = strings + nameoff;
-            auto* value = struct_block;
-            //printf(" Property: %s (%u bytes)\n", prop_name, len);
-
-            if (in_root_node || in_memory_node) {
-                if (strcmp(prop_name, "#address-cells") == 0) {
-                    Uart::Puts(log, "Address cells found: ");
-                    Uart::PutDec(log, static_cast<uint32_t>(*value));
-                    Uart::Puts(log, "\n");
-                } else if (strcmp(prop_name, "#size-cells") == 0) {
-                    Uart::Puts(log, "Size cells found: ");
-                    Uart::PutDec(log, static_cast<uint32_t>(*value));
-                    Uart::Puts(log, "\n");
-                } else if (strcmp(prop_name, "memreserve") == 0) {
-                    Uart::Puts(log, "Memory reservation found: ");
-                    Uart::PutHex(log, static_cast<uint32_t>(value[0]));
-                    Uart::Puts(log, " ");
-                    Uart::PutHex(log, static_cast<uint32_t>(value[1]));
-                    Uart::Puts(log, "\n");
-                }
+            std::string_view name{ reinterpret_cast<char const*>(state.struct_block) };
+            if (name == "")
+            {
+                state.struct_block++;
+                ParseRootNode(state);
             }
-
-            if (in_memory_node && strcmp(prop_name, "reg") == 0) {
-                Uart::Puts(log, "Memory reg found. Length: ");
-                Uart::PutDec(log, len);
+            else
+            {
+                Uart::Puts(log, "Root node expected, but found: ");
+                Uart::Puts(log, name.data());
                 Uart::Puts(log, "\n");
-                while (len >= 12) {
-                    uint64_t base = (static_cast<uint64_t>(value[0]) << 32) |
-                                    value[1];
-                    uint64_t size = value[2];
-
-                    Uart::Puts(log, "Memory base: ");
-                    Uart::PutHex(log, base);
-                    Uart::Puts(log, "\nMemory size: ");
-                    Uart::PutHex(log, size);
-                    Uart::Puts(log, "\n");
-
-                    value += 3;
-                    len -= 12;
-                }
                 return;
             }
-
-            struct_block += (len + 3) / 4;
         } else if (token == FDT_END) {
             break;
         } else if (token == FDT_NOP) {
             continue;
         } else {
-            Uart::Puts(log, "Unknown token\n");
+            Uart::Puts(log, "Unknown expected token: ");
+            Uart::PutHex(log, token);
+            Uart::Puts(log, "\n");
             break;
         }
+
+//        } else if (token == FDT_END_NODE) {
+//            in_root_node = false;
+//            in_memory_node = false;
+//        } else if (token == FDT_PROP) {
+//            uint32_t len = *state.struct_block++;
+//            uint32_t nameoff = *state.struct_block++;
+//            char const* prop_name = strings + nameoff;
+//            auto* value = state.struct_block;
+//            //printf(" Property: %s (%u bytes)\n", prop_name, len);
+//
+//            if (in_root_node || in_memory_node) {
+//                if (strcmp(prop_name, "#address-cells") == 0) {
+//                    Uart::Puts(log, "Address cells found: ");
+//                    Uart::PutDec(log, static_cast<uint32_t>(*value));
+//                    Uart::Puts(log, "\n");
+//                } else if (strcmp(prop_name, "#size-cells") == 0) {
+//                    Uart::Puts(log, "Size cells found: ");
+//                    Uart::PutDec(log, static_cast<uint32_t>(*value));
+//                    Uart::Puts(log, "\n");
+//                } else if (strcmp(prop_name, "memreserve") == 0) {
+//                    Uart::Puts(log, "Memory reservation found: ");
+//                    Uart::PutHex(log, static_cast<uint32_t>(value[0]));
+//                    Uart::Puts(log, " ");
+//                    Uart::PutHex(log, static_cast<uint32_t>(value[1]));
+//                    Uart::Puts(log, "\n");
+//                }
+//            }
+//
+//            if (in_memory_node && strcmp(prop_name, "reg") == 0) {
+//                Uart::Puts(log, "Memory reg found. Length: ");
+//                Uart::PutDec(log, len);
+//                Uart::Puts(log, "\n");
+//                while (len >= 12) {
+//                    uint64_t base = (static_cast<uint64_t>(value[0]) << 32) |
+//                                    value[1];
+//                    uint64_t size = value[2];
+//
+//                    Uart::Puts(log, "Memory base: ");
+//                    Uart::PutHex(log, base);
+//                    Uart::Puts(log, "\nMemory size: ");
+//                    Uart::PutHex(log, size);
+//                    Uart::Puts(log, "\n");
+//
+//                    value += 3;
+//                    len -= 12;
+//                }
+//                return;
+//            }
+//
+//            state.struct_block += (len + 3) / 4;
     }
 }
 

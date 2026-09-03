@@ -108,26 +108,6 @@ void PutRawSynchronousExceptionInfo(Uart::LockedStream& stream, uint32_t code, u
     stream.Puts("\n");
 }
 
-void PutThreadContext(Uart::LockedStream& stream, ThreadContext* context)
-{
-    stream.Puts("Thread Context:\n");
-    for (uint32_t i = 0; i < 29; ++i)
-    {
-        stream.PutHex(context->X[i]);
-        stream.Puts(" X");
-        stream.PutDec(i);
-        stream.Puts("\n");
-    }
-    stream.PutHex(context->Fp);
-    stream.Puts(" FP\n");
-    stream.PutHex(context->Lr);
-    stream.Puts(" LR\n");
-    stream.PutHex(context->Sp);
-    stream.Puts(" SP\n");
-    stream.PutHex(context->Pc);
-    stream.Puts(" PC\n");
-}
-
 enum class SynchronousExceptionClass : uint8_t
 {
     Unknown                    = 0b00'0000,
@@ -149,6 +129,7 @@ enum class SynchronousExceptionClass : uint8_t
 
 extern "C" Spark MainExceptionHandler(ThreadContext* context, uint32_t code)
 {
+    Uart::Puts("Starting MainExceptionHandler\n");
     Uart::LockedStream stream(true);
 
     uint64_t core = 0;
@@ -238,7 +219,6 @@ extern "C" Spark MainExceptionHandler(ThreadContext* context, uint32_t code)
 
     if (Debugger::DebuggerThread != nullptr)
     {
-        PutThreadContext(stream, context);
         stream.Puts("Entering debugger.\n\n");
         stream.Unlock();
 
@@ -248,7 +228,8 @@ extern "C" Spark MainExceptionHandler(ThreadContext* context, uint32_t code)
     else
     {
         stream.Puts("No debugger thread available.\n");
-        PutThreadContext(stream, context);
+        Debugger::PrintThreadContext(stream, context);
+        Debugger::PrintCallstack    (stream, context);
     }
 
     Processor::Halt();
@@ -260,12 +241,16 @@ void Init()
 {
     if (Cpu::CurrentEL->EL == 1)
     {
+        Uart::Puts("Initializing exception vectors for EL1...\n");
+
         // If we are in EL1, we need to set the exception vector base address register (VBAR_EL1)
         // to point to our exception vectors.
         asm volatile ("msr vbar_el1, %0" :: "r"((uint64_t)&ExceptionVectors));
     }
     else if (Cpu::CurrentEL->EL == 2)
     {
+        Uart::Puts("Initializing exception vectors for EL2...\n");
+
         // If we are in EL2, we need to set the exception vector base address register (VBAR_EL2)
         // to point to our exception vectors.
         asm volatile ("msr vbar_el2, %0" :: "r"((uint64_t)&ExceptionVectors));
@@ -275,10 +260,14 @@ void Init()
         Cpu::Panic("Exception vectors initialized in an unsupported exception level.\n");
     }
 
+    Uart::Puts("Exception vectors initialized.\n");
+
     // Enable IRQ and FIQ.
     // Note: Synchronous exceptions like system calls, memory faults, etc...
     // are always enabled by definition, all caused by the executing code.
     Cpu::daifclr.set<3>();
+
+    Uart::Puts("Exception vectors enabled.\n");
 
     Cpu::InstructionSynchronizationBarrier();
 }

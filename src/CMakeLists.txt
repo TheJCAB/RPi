@@ -19,9 +19,6 @@ target_link_libraries(CppCrt PUBLIC KernelRuntime)
 set(KernelSources
     Boot.S
 
-    # Figuring out the machine we're running on.
-    DeviceTree.cpp
-
     # Kernel OS.
     Cpu.cpp             Cpu.h
     Syscall.cpp

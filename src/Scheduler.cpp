@@ -58,6 +58,8 @@ Spark TimerSpark(uintptr_t)
 
 void Init()
 {
+    printf("Initializing scheduler\n");
+
     auto const coreId = Cpu::mpidr_el1->CoreId;
     auto& coreInfo = CoreSchedulingInfos[coreId];
     coreInfo.CoreId = coreId;
@@ -66,8 +68,10 @@ void Init()
         .StackBuffer{ reinterpret_cast<std::byte*>(0x8'0000 - coreId * 0x1'0000), 0x1'0000 },
         .Core   = &coreInfo,
     };
+    Uart::Puts("Swapping ThreadInfo\n");
     SwapCurrentThreadInfo(threadInfo);
-    printf("Scheduler initialized. Main thread ThreadInfo: 0x%0X 0x%0X\n", reinterpret_cast<uintptr_t>(&Scheduler::GetCurrentThreadInfo()), threadInfo);
+    Uart::Puts("Scheduler initialized\n");
+    //printf("Scheduler initialized. Main thread ThreadInfo: 0x%0X 0x%0X\n", reinterpret_cast<uintptr_t>(&Scheduler::GetCurrentThreadInfo()), threadInfo);
 
     Timer::ScheduleSpark(
         Cpu::GetPerformanceTicksForMs(50),

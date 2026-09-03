@@ -291,6 +291,10 @@ struct alignas(0x1000) L3PageTable
     L3Entry entries[512]{}; // 512 entries, each 8 bytes
 };
 
+// NOTE: `constexpr` or `constinit` when initializing globals here is critical!
+// MMU initialization needs to be complete before we initialize the heap,
+// and the heap must be initialized before running the global initializers, so they can use the heap.
+
 alignas(0x1000) static constinit L2PageTable l2_page_table = []() constexpr
 {
     L2PageTable table = {};
@@ -363,7 +367,7 @@ alignas(0x1000) static constinit L1PageTable Rpi4_l1_page_table
     {},                             // 0x3'8000'0000 - 0x3'BFFF'FFFF: (unused)
     {},                             // 0x3'C000'0000 - 0x3'FFFF'FFFF: (unused)
     {},                             // 0x4'0000'0000 - 0x4'3FFF'FFFF: (unused)
-    L1DeviceMem(0x4'4000'0000ull),  // 0x4'4000'0000 - 0x4'7FFF'FFFF: (unused)
+    L1DeviceMem(0x4'4000'0000ull),  // 0x4'4000'0000 - 0x4'7FFF'FFFF: MMIO
     {},                             // 0x4'8000'0000 - 0x4'BFFF'FFFF: (unused)
     L1DeviceMem(0x4'C000'0000ull),  // 0x4'C000'0000 - 0x4'FFFF'FFFF: MMIO
     {},                             // 0x5'0000'0000 - 0x5'3FFF'FFFF: (unused)
@@ -426,23 +430,20 @@ alignas(0x1000) static constinit L1PageTable Qemu_l1_page_table
     // Remaining entries are invalid
 }};
 
-uintptr_t PhysicalMemoryApertureBase = Cpu::IsQemu() ? 0 : 0x7'0000'0000;
+constinit uintptr_t PhysicalMemoryApertureBase = 0;
 
-L1PageTable* l1_page_table = reinterpret_cast<L1PageTable*>(
-    Cpu::IsQemu() ? reinterpret_cast<uintptr_t>(&Qemu_l1_page_table) :
-    Cpu::IsRpi4() ? reinterpret_cast<uintptr_t>(&Rpi4_l1_page_table) + PhysicalMemoryApertureBase :
-                    reinterpret_cast<uintptr_t>(&Rpi3_l1_page_table) + PhysicalMemoryApertureBase
-);
+constinit L1PageTable* l1_page_table_physical = nullptr;
+constinit L1PageTable* l1_page_table          = nullptr;
 
 constexpr char PhysicalMemory[] = "Physical Memory";
 constexpr char VirtualMemory [] = "Virtual Memory";
 
 // Manages 256 MB of physical 4 KB memory pages.
-Containers::PoolAllocator<256 * 1024 / 4, PhysicalMemory> PhysicalMemoryAllocator;
-uintptr_t PhysicalMemoryAllocatorPageOffset;
+constinit Containers::PoolAllocator<256 * 1024 / 4, PhysicalMemory> PhysicalMemoryAllocator;
+constinit uintptr_t PhysicalMemoryAllocatorPageOffset = 0;
 
 // Manages 1 GB of virtual 4 KB memory pages.
-Containers::PoolAllocator<1024 * 1024 / 4, VirtualMemory> VirtualMemoryAllocator;
+constinit Containers::PoolAllocator<1024 * 1024 / 4, VirtualMemory> VirtualMemoryAllocator;
 constexpr uintptr_t VirtualMemoryAllocatorOffset = 0x1'0000'0000; // 1 GB of virtual memory, starting at 0x1'0000'0000
 constexpr uintptr_t VirtualMemoryAllocatorPageOffset = VirtualMemoryAllocatorOffset >> 12;
 
@@ -564,7 +565,7 @@ void* AllocateGpuMemory(uint32_t pageCount)
 //
 //uint64_t const MairEl1 = GetMairEl1();
 
-__attribute__((noinline)) static void DumpMMUState()
+__attribute__((noinline)) void DumpMMUState()
 {
     Uart::Puts("MMU State:\n");
     Uart::Puts("  TTBR0_EL1: ");
@@ -596,8 +597,58 @@ __attribute__((noinline)) static void DumpMMUState()
     Uart::Puts("\n");
 }
 
-__attribute__((noinline)) static void InitPageTables()
+__attribute__((noinline)) void InitPageTables()
 {
+    if (Cpu::IsQemu())
+    {
+        Mmio::Base    = 0x0000'0000u; // Update MMIO base to the new aperture.
+        Mmio::QA7Base = 0x0000'0000u; // Update ARM cores' MMIO base to the new aperture.
+        GpuMemBase    = 0x4000'0000u; // Update the GPU memory base to the new aperture.
+
+        PhysicalMemoryApertureBase = 0;
+
+        constexpr uintptr_t PhysicalMemoryAllocatorOffset = 0x8000'0000; // 256 MB of physical memory, starting at 2 GB
+        PhysicalMemoryAllocatorPageOffset = PhysicalMemoryAllocatorOffset >> 12;
+        
+        l1_page_table_physical = &Qemu_l1_page_table;
+        l1_page_table          = &Qemu_l1_page_table;
+    }
+    else if (Cpu::IsRpi4())
+    {
+        if (Mmio::Rpi4Base == Mmio::Rpi4BaseLo)
+        {
+            Mmio::Base    = 0xBE00'0000u; // Update MMIO base to the new aperture.
+            Mmio::QA7Base = 0xBF80'0000u; // Update ARM cores' MMIO base to the new aperture.
+        }
+        GpuMemBase    = 0xC000'0000u; // Update the GPU memory base to the new aperture.
+
+        PhysicalMemoryApertureBase = 0x7'0000'0000;
+        
+        constexpr uintptr_t PhysicalMemoryAllocatorOffset = 0x2000'0000; // 256 MB of physical memory, starting at 0x200'0000
+        PhysicalMemoryAllocatorPageOffset = PhysicalMemoryAllocatorOffset >> 12;
+        
+        l1_page_table_physical = &Rpi4_l1_page_table;
+        l1_page_table          = reinterpret_cast<L1PageTable*>(reinterpret_cast<uintptr_t>(&Rpi4_l1_page_table) + PhysicalMemoryApertureBase);
+    }
+    else
+    {
+        Mmio::Base    = 0x7F00'0000u; // Update MMIO base to the new aperture.
+        Mmio::QA7Base = 0x8000'0000u; // Update ARM cores' MMIO base to the new aperture.
+        GpuMemBase    = 0xC000'0000u; // Update the GPU memory base to the new aperture.
+        
+        PhysicalMemoryApertureBase = 0x7'0000'0000;
+
+        constexpr uintptr_t PhysicalMemoryAllocatorOffset = 0x2000'0000; // 256 MB of physical memory, starting at 0x200'0000
+        PhysicalMemoryAllocatorPageOffset = PhysicalMemoryAllocatorOffset >> 12;
+
+        l1_page_table_physical = &Rpi3_l1_page_table;
+        l1_page_table          = reinterpret_cast<L1PageTable*>(reinterpret_cast<uintptr_t>(&Rpi3_l1_page_table) + PhysicalMemoryApertureBase);
+    }
+}
+
+__attribute__((noinline)) void EnableCachesAndMMU()
+{
+
     // Set MAIR_EL1: Attr0 = 0xFF (normal memory, inner/outer write-back, write-allocate)
     asm volatile ("msr mair_el1, %0" : : "r"(MAIR_ATTR));
 
@@ -622,52 +673,12 @@ __attribute__((noinline)) static void InitPageTables()
     //               (1ULL << 32); // IPS = 64GB (36 bits) of physical address space
     asm volatile ("msr tcr_el1, %0" : : "r"(tcr));
 
-    if (Cpu::IsQemu())
-    {
-        Mmio::Base    = 0x0000'0000u; // Update MMIO base to the new aperture.
-        Mmio::QA7Base = 0x0000'0000u; // Update ARM cores' MMIO base to the new aperture.
-        GpuMemBase    = 0x4000'0000u; // Update the GPU memory base to the new aperture.
-
-        constexpr uintptr_t PhysicalMemoryAllocatorOffset = 0x8000'0000; // 256 MB of physical memory, starting at 0x200'0000
-        PhysicalMemoryAllocatorPageOffset = PhysicalMemoryAllocatorOffset >> 12;
-
-        // Set TTBR0_EL1 to point to our L1 table
-        asm volatile ("msr ttbr0_el1, %0" : : "r"((uint64_t)&Qemu_l1_page_table + 1)); // +1 == CnP
-    }
-    else if (Cpu::IsRpi4())
-    {
-        if (Mmio::Rpi4Base == Mmio::Rpi4BaseLo)
-        {
-            Mmio::Base    = 0xBE00'0000u; // Update MMIO base to the new aperture.
-            Mmio::QA7Base = 0xBF80'0000u; // Update ARM cores' MMIO base to the new aperture.
-        }
-        GpuMemBase    = 0xC000'0000u; // Update the GPU memory base to the new aperture.
-
-        constexpr uintptr_t PhysicalMemoryAllocatorOffset = 0x2000'0000; // 256 MB of physical memory, starting at 0x200'0000
-        PhysicalMemoryAllocatorPageOffset = PhysicalMemoryAllocatorOffset >> 12;
-
-        // Set TTBR0_EL1 to point to our L1 table
-        asm volatile ("msr ttbr0_el1, %0" : : "r"((uint64_t)&Rpi4_l1_page_table + 1)); // +1 == CnP
-    }
-    else
-    {
-        Mmio::Base    = 0x7F00'0000u; // Update MMIO base to the new aperture.
-        Mmio::QA7Base = 0x8000'0000u; // Update ARM cores' MMIO base to the new aperture.
-        GpuMemBase    = 0xC000'0000u; // Update the GPU memory base to the new aperture.
-
-        constexpr uintptr_t PhysicalMemoryAllocatorOffset = 0x2000'0000; // 256 MB of physical memory, starting at 0x200'0000
-        PhysicalMemoryAllocatorPageOffset = PhysicalMemoryAllocatorOffset >> 12;
-
-        // Set TTBR0_EL1 to point to our L1 table
-        asm volatile ("msr ttbr0_el1, %0" : : "r"((uint64_t)&Rpi3_l1_page_table + 1)); // +1 == CnP
-    }
-
+    // Set TTBR0_EL1 to point to our L1 table
+    asm volatile ("msr ttbr0_el1, %0" : : "r"((uint64_t)l1_page_table_physical + 1)); // +1 == CnP
+    
     // ISB to synchronize context
     asm volatile ("isb");
-}
 
-__attribute__((noinline)) void EnableCachesAndMMU()
-{
     uint64_t sctlr;
     asm volatile ("mrs %0, sctlr_el1" : "=r"(sctlr));
     // Set I (bit 12, instruction cache), C (bit 2, data cache), M (bit 0, MMU)
@@ -677,21 +688,6 @@ __attribute__((noinline)) void EnableCachesAndMMU()
     //asm volatile ("tlbi alle1"); This one can only be done at EL2 or EL3
     asm volatile ("dsb ish; isb" ::: "memory");
     // L2 cache is enabled automatically with L1 on Cortex-A53 (Pi 3B)
-}
-
-void Init()
-{
-    //DumpMMUState();
-
-    // Initialize page tables and MMU
-    InitPageTables();
-
-    // Enable caches and MMU
-    Uart::Puts("Enabling caches and MMU\n");
-    EnableCachesAndMMU();
-
-    // Now the MMU is enabled and caches are active
-    DumpMMUState();
 }
 
 }

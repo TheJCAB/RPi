@@ -17,31 +17,33 @@
 
 namespace Cpu { [[noreturn]] void Panic(char const* fmt, ...); }
 
+#pragma GCC optimize("no-tree-vectorize,no-tree-slp-vectorize")
+
 extern "C"
 {
 
 void* memset(void* const dst, int val, size_t size)
 {
     uint8_t* p = static_cast<uint8_t*>(dst);
-    size_t firstBytes = (uintptr_t)p & 7;
-    firstBytes = firstBytes > size ? size : firstBytes;
-    size -= firstBytes;
-    for (; firstBytes > 0; --firstBytes)
-    {
-        *p++ = static_cast<uint8_t>(val);
-    }
-    size_t wholeQwords = size / 8;
-    if (wholeQwords > 0)
-    {
-        size -= wholeQwords * 8;
-        uint64_t const val64 = static_cast<uint8_t>(val) * 0x0101'0101'0101'0101u;
-        uint64_t* q = reinterpret_cast<uint64_t*>(p);
-        for (; wholeQwords > 0; --wholeQwords)
-        {
-            *q++ = val64;
-        }
-        p = reinterpret_cast<uint8_t*>(q);
-    }
+    //size_t firstBytes = (uintptr_t)p & 7;
+    //firstBytes = firstBytes > size ? size : firstBytes;
+    //size -= firstBytes;
+    //for (; firstBytes > 0; --firstBytes)
+    //{
+    //    *p++ = static_cast<uint8_t>(val);
+    //}
+    //size_t wholeQwords = size / 8;
+    //if (wholeQwords > 0)
+    //{
+    //    size -= wholeQwords * 8;
+    //    uint64_t const val64 = static_cast<uint8_t>(val) * 0x0101'0101'0101'0101u;
+    //    uint64_t* q = reinterpret_cast<uint64_t*>(p);
+    //    for (; wholeQwords > 0; --wholeQwords)
+    //    {
+    //        *q++ = val64;
+    //    }
+    //    p = reinterpret_cast<uint8_t*>(q);
+    //}
     for (; size > 0; --size)
     {
         *p++ = static_cast<uint8_t>(val);
@@ -53,26 +55,26 @@ void* memcpy(void* restrict s1, void const* restrict s2, size_t n)
 {
     uint8_t* d = static_cast<uint8_t*>(s1);
     uint8_t const* s = static_cast<uint8_t const*>(s2);
-    size_t firstBytes = (uintptr_t)d & 7;
-    firstBytes = firstBytes > n ? n : firstBytes;
-    n -= firstBytes;
-    for (; firstBytes > 0; --firstBytes)
-    {
-        *d++ = *s++;
-    }
-    size_t wholeQwords = n / 8;
-    if (wholeQwords > 0)
-    {
-        n -= wholeQwords * 8;
-        uint64_t* qd = reinterpret_cast<uint64_t*>(d);
-        uint64_t const* qs = reinterpret_cast<uint64_t const*>(s);
-        for (; wholeQwords > 0; --wholeQwords)
-        {
-            *qd++ = *qs++;
-        }
-        d = reinterpret_cast<uint8_t*>(qd);
-        s = reinterpret_cast<uint8_t const*>(qs);
-    }
+    //size_t firstBytes = (uintptr_t)d & 7;
+    //firstBytes = firstBytes > n ? n : firstBytes;
+    //n -= firstBytes;
+    //for (; firstBytes > 0; --firstBytes)
+    //{
+    //    *d++ = *s++;
+    //}
+    //size_t wholeQwords = n / 8;
+    //if (wholeQwords > 0)
+    //{
+    //    n -= wholeQwords * 8;
+    //    uint64_t* qd = reinterpret_cast<uint64_t*>(d);
+    //    uint64_t const* qs = reinterpret_cast<uint64_t const*>(s);
+    //    for (; wholeQwords > 0; --wholeQwords)
+    //    {
+    //        *qd++ = *qs++;
+    //    }
+    //    d = reinterpret_cast<uint8_t*>(qd);
+    //    s = reinterpret_cast<uint8_t const*>(qs);
+    //}
     for (; n > 0; --n)
     {
         *d++ = *s++;
@@ -106,26 +108,26 @@ int memcmp(void const* restrict s1, void const* restrict s2, size_t n)
 {
     uint8_t const* d = static_cast<uint8_t const*>(s1);
     uint8_t const* s = static_cast<uint8_t const*>(s2);
-    size_t firstBytes = (uintptr_t)d & 7;
-    firstBytes = firstBytes > n ? n : firstBytes;
-    n -= firstBytes;
-    for (; firstBytes > 0; --firstBytes)
-    {
-        if (*d++ != *s++) return static_cast<uint8_t>(*(d - 1)) < static_cast<uint8_t>(*(s - 1)) ? -1 : 1;
-    }
-    size_t wholeQwords = n / 8;
-    if (wholeQwords > 0)
-    {
-        n -= wholeQwords * 8;
-        uint64_t const* qd = reinterpret_cast<uint64_t const*>(d);
-        uint64_t const* qs = reinterpret_cast<uint64_t const*>(s);
-        for (; wholeQwords > 0; --wholeQwords)
-        {
-            if (*qd++ != *qs++) return static_cast<uint8_t>(*(qd - 1)) < static_cast<uint8_t>(*(qs - 1)) ? -1 : 1;
-        }
-        d = reinterpret_cast<uint8_t const*>(qd);
-        s = reinterpret_cast<uint8_t const*>(qs);
-    }
+    //size_t firstBytes = (uintptr_t)d & 7;
+    //firstBytes = firstBytes > n ? n : firstBytes;
+    //n -= firstBytes;
+    //for (; firstBytes > 0; --firstBytes)
+    //{
+    //    if (*d++ != *s++) return static_cast<uint8_t>(*(d - 1)) < static_cast<uint8_t>(*(s - 1)) ? -1 : 1;
+    //}
+    //size_t wholeQwords = n / 8;
+    //if (wholeQwords > 0)
+    //{
+    //    n -= wholeQwords * 8;
+    //    uint64_t const* qd = reinterpret_cast<uint64_t const*>(d);
+    //    uint64_t const* qs = reinterpret_cast<uint64_t const*>(s);
+    //    for (; wholeQwords > 0; --wholeQwords)
+    //    {
+    //        if (*qd++ != *qs++) return static_cast<uint8_t>(*(qd - 1)) < static_cast<uint8_t>(*(qs - 1)) ? -1 : 1;
+    //    }
+    //    d = reinterpret_cast<uint8_t const*>(qd);
+    //    s = reinterpret_cast<uint8_t const*>(qs);
+    //}
     for (; n > 0; --n)
     {
         if (*d++ != *s++) return static_cast<uint8_t>(*(d - 1)) < static_cast<uint8_t>(*(s - 1)) ? -1 : 1;
@@ -245,7 +247,7 @@ void *HeapAlloc(size_t size, std::align_val_t alignVal)
 //    Uart::Puts(" bytes at ");
 //    Uart::PutHex(result);
 //    Uart::Puts("\n");
-//    Debugger::RawPrintCallstack();
+//    Debugger::PrintCurrentCallstack();
 
     return result;
 

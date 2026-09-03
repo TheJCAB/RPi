@@ -252,3 +252,13 @@ extern "C" void RawPutc(char c)
 {
     Uart::Raw::Putc(c);
 }
+
+extern "C" void RawPuts(char const* str)
+{
+    Uart::Raw::Puts(str);
+}
+
+extern "C" void RawPutHex64(uint64_t value)
+{
+    Uart::Raw::PutHex(value);
+}

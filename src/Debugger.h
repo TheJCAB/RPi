@@ -9,9 +9,12 @@ namespace Debugger
 
 extern Scheduler::ThreadInfo* DebuggerThread;
 
-void PrintThreadContext(Uart::LockedStream& stream, ThreadContext* context);
+void PrintThreadContext(Uart::LockedStream&, ThreadContext*);
+void PrintCallstack    (Uart::LockedStream&, ThreadContext*);
+
 void RawPrintThreadContext(ThreadContext* context);
-void RawPrintCallstack();
+
+void PrintCurrentCallstack();
 
 //void Debug(ThreadContext* debuggedThread);
 
