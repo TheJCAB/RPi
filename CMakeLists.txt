@@ -77,7 +77,7 @@ function(add_kernel_image TargetName)
         message(FATAL_ERROR "No valid kernel type specified. Use RPI or VIRT.")
     endif()
     set_target_properties(${TargetName} PROPERTIES LINK_DEPENDS "${LINKER_SCRIPT}")
-    target_link_options(${TargetName} PRIVATE "-T${LINKER_SCRIPT}" "-Wl,-Map,$<TARGET_FILE_DIR:${TargetName}>/${TargetName}.map")
+    target_link_options(${TargetName} PRIVATE "-T${LINKER_SCRIPT}" "-Wl,--build-id" "-Wl,-Map,$<TARGET_FILE_DIR:${TargetName}>/${TargetName}.map")
 
     #add_custom_command(
     #    TARGET HelloBoot
@@ -100,5 +100,5 @@ endfunction()
 #        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/boot" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}"
 
 add_subdirectory(libcxxinc)
-add_subdirectory(kernelloader)
+#add_subdirectory(kernelloader)
 add_subdirectory(src)

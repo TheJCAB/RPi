@@ -6,12 +6,24 @@
 namespace BootLib::Uart
 {
 
+class MiniUart
+{
+    union Registers;
+
+public:
+    static constexpr uint32_t UartRegistersOffset = 0x21'5000u; // TODO: Move. This is RPi-specific
+
+    static void Disable(uintptr_t registersBase);
+};
+
 class PL011Uart
 {
-    union PL011Registers;
+    union Registers;
 
 public:
     static constexpr uint32_t Uart0RegistersOffset = 0x20'1000u; // TODO: Move. This is RPi-specific
+
+    static void Disable(uintptr_t registersBase);
 
     PL011Uart(uintptr_t registersBase);
 
@@ -26,7 +38,7 @@ public:
     void PutDec(auto value);
 
 private:
-    PL011Registers& Registers;
+    Registers& registers;
 };
 
 inline char Getc   (PL011Uart* uart) { return uart ? uart->Getc()    : 0; }

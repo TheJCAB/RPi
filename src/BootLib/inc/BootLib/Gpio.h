@@ -31,7 +31,7 @@ public:
         Alt5   = 0b010,
     };
 
-    static constexpr uint32_t RegistersOffset = 0x200000u;
+    static constexpr uint32_t RegistersOffset = 0x20'0000u;
 
     Gpio(uintptr_t registersBase) : Registers(*reinterpret_cast<GpioRegisters*>(registersBase)) {}
 

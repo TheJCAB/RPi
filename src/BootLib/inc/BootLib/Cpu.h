@@ -41,17 +41,23 @@ inline PerformanceTime GetFarFuturePerformanceTime    (PerformanceTime currentTi
 inline PerformanceTime GetMaximumFuturePerformanceTime() { return Cpu::GetPerformanceCounter() + INT64_MAX; }
 inline PerformanceTime GetFarFuturePerformanceTime    () { return Cpu::GetPerformanceCounter() + INT64_MAX/2; }
 
-inline PerformanceTimeDiff GetPerformanceTicksForUs(std::unsigned_integral auto us) { return static_cast<PerformanceTimeDiff>(us * GetPerformanceFrequency() / 1'000'000u); }
-inline PerformanceTimeDiff GetPerformanceTicksForMs(std::unsigned_integral auto ms) { return static_cast<PerformanceTimeDiff>(ms * GetPerformanceFrequency() /     1'000u); }
+PerformanceTimeDiff GetPerformanceTicksForUs(uint64_t us);
+PerformanceTimeDiff GetPerformanceTicksForMs(uint64_t ms);
 
-inline PerformanceTimeDiff GetPerformanceTicksForUs(std::signed_integral auto us) { return static_cast<PerformanceTimeDiff>(us * static_cast<int64_t>(GetPerformanceFrequency()) / 1'000'000); }
-inline PerformanceTimeDiff GetPerformanceTicksForMs(std::signed_integral auto ms) { return static_cast<PerformanceTimeDiff>(ms * static_cast<int64_t>(GetPerformanceFrequency()) /     1'000); }
+PerformanceTimeDiff GetPerformanceTicksForUs(int64_t us);
+PerformanceTimeDiff GetPerformanceTicksForMs(int64_t ms);
 
-inline int64_t GetUsForPerformanceTicks(PerformanceTimeDiff timeDiff) { return static_cast<int64_t>(timeDiff) * 1'000'000 / static_cast<int64_t>(GetPerformanceFrequency()); }
-inline int64_t GetMsForPerformanceTicks(PerformanceTimeDiff timeDiff) { return static_cast<int64_t>(timeDiff) *     1'000 / static_cast<int64_t>(GetPerformanceFrequency()); }
+inline PerformanceTimeDiff GetPerformanceTicksForUs(std::unsigned_integral auto us) { return GetPerformanceTicksForUs(static_cast<uint64_t>(us)); }
+inline PerformanceTimeDiff GetPerformanceTicksForMs(std::unsigned_integral auto ms) { return GetPerformanceTicksForMs(static_cast<uint64_t>(ms)); }
 
-inline void DelayInMicroseconds(uint64_t us) { DelayUntilPerformanceTime(GetPerformanceCounter() + GetPerformanceTicksForUs(us)); }
-inline void DelayInMilliseconds(uint64_t ms) { DelayUntilPerformanceTime(GetPerformanceCounter() + GetPerformanceTicksForMs(ms)); }
+inline PerformanceTimeDiff GetPerformanceTicksForUs(std::signed_integral auto us) { return GetPerformanceTicksForUs(static_cast<int64_t>(us)); }
+inline PerformanceTimeDiff GetPerformanceTicksForMs(std::signed_integral auto ms) { return GetPerformanceTicksForMs(static_cast<int64_t>(ms)); }
+
+int64_t GetUsForPerformanceTicks(PerformanceTimeDiff timeDiff);
+int64_t GetMsForPerformanceTicks(PerformanceTimeDiff timeDiff);
+
+void DelayInMicroseconds(uint64_t us);
+void DelayInMilliseconds(uint64_t ms);
 
 inline void Yield() { asm volatile("yield"); }
 

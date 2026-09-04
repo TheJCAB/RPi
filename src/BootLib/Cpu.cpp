@@ -56,6 +56,18 @@ void DelayUntilPerformanceTime(PerformanceTime time)
     }
 }
 
+PerformanceTimeDiff GetPerformanceTicksForUs(uint64_t us) { return static_cast<PerformanceTimeDiff>(us * GetPerformanceFrequency() / 1'000'000u); }
+PerformanceTimeDiff GetPerformanceTicksForMs(uint64_t ms) { return static_cast<PerformanceTimeDiff>(ms * GetPerformanceFrequency() /     1'000u); }
+
+PerformanceTimeDiff GetPerformanceTicksForUs(int64_t us) { return static_cast<PerformanceTimeDiff>(us * static_cast<int64_t>(GetPerformanceFrequency()) / 1'000'000); }
+PerformanceTimeDiff GetPerformanceTicksForMs(int64_t ms) { return static_cast<PerformanceTimeDiff>(ms * static_cast<int64_t>(GetPerformanceFrequency()) /     1'000); }
+
+int64_t GetUsForPerformanceTicks(PerformanceTimeDiff timeDiff) { return static_cast<int64_t>(timeDiff) * 1'000'000 / static_cast<int64_t>(GetPerformanceFrequency()); }
+int64_t GetMsForPerformanceTicks(PerformanceTimeDiff timeDiff) { return static_cast<int64_t>(timeDiff) *     1'000 / static_cast<int64_t>(GetPerformanceFrequency()); }
+
+void DelayInMicroseconds(uint64_t us) { DelayUntilPerformanceTime(GetPerformanceCounter() + GetPerformanceTicksForUs(us)); }
+void DelayInMilliseconds(uint64_t ms) { DelayUntilPerformanceTime(GetPerformanceCounter() + GetPerformanceTicksForMs(ms)); }
+
 [[noreturn]] void Halt()
 {
     // Halt the CPU by entering an infinite loop

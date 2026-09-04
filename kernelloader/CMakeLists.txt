@@ -4,6 +4,7 @@ add_executable(kernelloader
     #Min2.S
     #Min.S
     kernelloader.S
+    #kernelloadernew.S
 )
 
 set_target_properties(kernelloader PROPERTIES

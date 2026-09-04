@@ -6,8 +6,6 @@
 namespace BootLib
 {
 
-constexpr uintptr_t GpioMmioOffset = 0x200000u;
-
 union Gpio::GpioRegisters
 {
     RegisterArray<uint32_t, 0x00, 5> GPFSEL;
@@ -51,7 +49,7 @@ void Gpio::SetPull(uint32_t pin, Pull pull)
 
         pudreg = static_cast<uint32_t>(pull);
         Cpu::DelayInMicroseconds(150); // Wait for 150 cycles (we use 150us)
-        clkreg = static_cast<uint32_t>(pin) << shift;
+        clkreg = 1u << shift;
         Cpu::DelayInMicroseconds(150); // Wait for 150 cycles (we use 150us)
         if (static_cast<uint32_t>(pull) != 0)
         {

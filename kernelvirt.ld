@@ -19,6 +19,7 @@ SECTIONS
         _init_array_end = .;
         *(.eh_frame*)
         *(.gcc_except_table*)
+        *(.note.gnu.build-id*)
     }
 
     . = ALIGN(4096);

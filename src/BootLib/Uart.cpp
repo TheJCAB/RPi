@@ -6,10 +6,31 @@
 
 #include <atomic>
 
-namespace BootLib
+namespace BootLib::Uart
 {
 
-union PL011Uart::PL011Registers
+union MiniUart::Registers
+{
+    Register<uint32_t, 0x04> ENABLES;
+    Register<uint32_t, 0x54> LSR;
+};
+
+void MiniUart::Disable(uintptr_t registersBase)
+{
+    auto& registers(*reinterpret_cast<Registers*>(registersBase));
+    if (registers.ENABLES & 1u)
+    {
+        // It's enabled.
+        // Drain the transmit FIFO.
+        while (!(registers.LSR & 0x40)) { // IDLE
+            Cpu::Yield();
+        }
+
+        registers.ENABLES &= ~1u; // Disable UART if it was enabled
+    }
+}
+
+union PL011Uart::Registers
 {
     Register<uint32_t, 0x00> DR   ; // Data Register
     Register<uint32_t, 0x04> RSR  ; // Receive Status Register
@@ -27,55 +48,67 @@ union PL011Uart::PL011Registers
     Register<uint32_t, 0x48> DMACR; // DMA Control Register
 };
 
-PL011Uart::PL011Uart(uintptr_t registersBase)
-    : Registers(*reinterpret_cast<PL011Registers*>(registersBase))
+void PL011Uart::Disable(uintptr_t registersBase)
 {
+    auto& registers(*reinterpret_cast<Registers*>(registersBase));
+    if (registers.CR & 1u)
+    {
+        // It's enabled.
+        // Drain the transmit FIFO.
+        while (registers.FR & 0x08) { // BUSY
+            Cpu::Yield();
+        }
+
+        registers.CR &= ~1u; // Disable UART if it was enabled
+    }
+}
+
+PL011Uart::PL011Uart(uintptr_t registersBase)
+    : registers(*reinterpret_cast<Registers*>(registersBase))
+{
+    Disable(registersBase);
+
     // Clear pending interrupts
-    Registers.ICR = 0x7FF;
+    registers.ICR = 0x7FF;
 
     // Set integer & fractional part of baud rate
     // Baud = 115200, UARTCLK = 48 MHz (default for Pi 3)
     // Divider = UARTCLK / (16 * Baud) = 48,000,000 / (16*115200) = 26.0416
-    Registers.IBRD = 26;
-    Registers.FBRD = 3;
+    registers.IBRD = 26;
+    registers.FBRD = 3;
 
     // Enable FIFO & 8 bit data transmission (1 stop bit, no parity)
-    Registers.LCRH = (1 << 4) | (3 << 5); // FIFO enable, 8 bit
+    registers.LCRH = (1 << 4) | (3 << 5); // FIFO enable, 8 bit
 
     // Mask all interrupts
-    Registers.IMSC = (1 << 1) | (1 << 4) | (1 << 5) | (1 << 6) |
+    registers.IMSC = (1 << 1) | (1 << 4) | (1 << 5) | (1 << 6) |
                     (1 << 7) | (1 << 8) | (1 << 9) | (1 << 10);
 
     // Enable UART0, receive & transmit
-    Registers.CR = (1 << 0) | (1 << 8) | (1 << 9);
-
-    // Drain the receive FIFO.
-    while (!(Registers.FR & 0x10)) {
-        (void)Registers.DR.get();
-    }
+    registers.CR = (1 << 0) | (1 << 8) | (1 << 9);
 }
 
 char PL011Uart::Getc()
 {
     // Wait until data is ready in receiver FIFO
-    while (Registers.FR & 0x10) {}
-    return static_cast<char>(Registers.DR & 0xFF);
+    while (registers.FR & 0x10) {}
+    return static_cast<char>(registers.DR & 0xFF);
 }
 
 char PL011Uart::TryGetc()
 {
-    if (Registers.FR & 0x10)
+    if (registers.FR & 0x10)
     {
         return (char)0; // No data available
     }
-    return static_cast<char>(Registers.DR & 0xFF);
+    return static_cast<char>(registers.DR & 0xFF);
 }
 
 void PL011Uart::Putc(char c)
 {
     // Wait until transmitter FIFO has space
-    while (Registers.FR & (1 << 5)) {}
-    Registers.DR = c;
+    while (registers.FR & (1 << 5)) {}
+    registers.DR = c;
 }
 
 void PL011Uart::Puts(char const* str)

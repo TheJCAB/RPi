@@ -51,15 +51,28 @@ extern "C" [[noreturn]] void GetNewKernel(BootLib::PL011Uart uart0, uint8_t* des
     BootLib::Cpu::Halt(); // Should never reach here.
 }
 
+extern "C" uint64_t _bss_start;
+extern "C" uint64_t _bss_end;
+
 extern "C" [[noreturn]] void KernelMain(void* p0, void* p1, void* dtb, void* p3)
 {
+    // Clear the BSS soonest.
+    for (auto p = &_bss_start; p < &_bss_end; ++p)
+    {
+        *p = 0;
+    }
+
+
     auto const peripheralsBase = BootLib::Mmio::GetPeripheralsPhysicalBase();
+
+    BootLib::Uart::MiniUart ::Disable(peripheralsBase + BootLib::Uart::MiniUart ::UartRegistersOffset );
+    BootLib::Uart::PL011Uart::Disable(peripheralsBase + BootLib::Uart::PL011Uart::Uart0RegistersOffset);
 
     BootLib::Gpio gpio{ peripheralsBase + BootLib::Gpio::RegistersOffset };
 
     gpio.SetUart0_14_15();
 
-    BootLib::PL011Uart uart0{ peripheralsBase + BootLib::PL011Uart::Uart0RegistersOffset };
+    BootLib::Uart::PL011Uart uart0{ peripheralsBase + BootLib::Uart::PL011Uart::Uart0RegistersOffset };
 
     uart0.Puts("\n\nRelocating...\n");
 
