@@ -52,7 +52,7 @@ Spark TimerSpark(uintptr_t)
         Cpu::GetPerformanceTicksForMs(50),
         { .Func = TimerSpark }
     );
-    //Uart::Putc('-');
+    //Uart::Puts("-");
     return {};
 }
 

@@ -157,15 +157,15 @@ int wctob(wint_t c)
     return static_cast<char>(c);
 }
 
-size_t strlen(char const* s)
-{
-    char const* p = s;
-    while (*p != '\0')
-    {
-        ++p;
-    }
-    return static_cast<size_t>(p - s);
-}
+//size_t strlen(char const* s)
+//{
+//    char const* p = s;
+//    while (*p != '\0')
+//    {
+//        ++p;
+//    }
+//    return static_cast<size_t>(p - s);
+//}
 
 int strcmp(char const* s1, char const* s2)
 {

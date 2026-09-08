@@ -13,10 +13,10 @@ extern "C" [[noreturn]] void KernelMain(void* p0, void* p1, void* dtb, void* p3)
 
 extern "C" [[noreturn]] void GetNewKernel(BootLib::PL011Uart uart0, uint8_t* destination, void* p0, void* p1, void* dtb, void* p3)
 {
-    uart0.Puts("\n\nLet's load a kernel over UART!\n\n");
+    Puts(uart0, "\n\nLet's load a kernel over UART!\n\n");
 
     // We send three threes to start the protocol.
-    uart0.Puts("\03\03\03");
+    Puts(uart0, "\03\03\03");
 
     // The server sends "OK" to signal readiness.
     while (uart0.Getc() != 'O') {}
@@ -35,11 +35,11 @@ extern "C" [[noreturn]] void GetNewKernel(BootLib::PL011Uart uart0, uint8_t* des
     );
 
     // We acknowledge the size.
-    uart0.Puts("OK");
+    Puts(uart0, "OK");
 
-    uart0.Puts("Size: ");
-    uart0.PutDec(size);
-    uart0.Puts("\n");
+    Puts(uart0, "Size: ");
+    PutDec(uart0, size);
+    Puts(uart0, "\n");
 
     uint8_t* dest = reinterpret_cast<uint8_t*>(&_start);
     for (uint32_t i = 0; i < size; ++i)
@@ -74,7 +74,7 @@ extern "C" [[noreturn]] void KernelMain(void* p0, void* p1, void* dtb, void* p3)
 
     BootLib::Uart::PL011Uart uart0{ peripheralsBase + BootLib::Uart::PL011Uart::Uart0RegistersOffset };
 
-    uart0.Puts("\n\nRelocating...\n");
+    Puts(uart0, "\n\nRelocating...\n");
 
     uint32_t const offsetInBytes = 0x4000; // Relocate to 16K bytes before the start address;
 

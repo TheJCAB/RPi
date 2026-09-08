@@ -1,11 +1,11 @@
 #pragma once
 
+#include <BootLib/StreamOut.h>
+
 #include <stdint.h>
 #include <stddef.h>
 
 #include <string_view>
-
-namespace BootLib::Uart { class PL011Uart; }
 
 namespace BootLib::DeviceTree
 {
@@ -48,7 +48,7 @@ extern size_t      memoryRangeCount;
 extern Cpu      cpus[16];
 extern size_t   cpuCount;
 
-void ParseDeviceTree(uintptr_t dtb, Uart::PL011Uart* log);
+void ParseDeviceTree(uintptr_t dtb, Stream::Out const& log);
 
 }
 // namespace BootLib::DeviceTree

@@ -19,13 +19,9 @@ void Init(PL011Uart* uart);
 namespace Raw
 {
 
-void NoMmuPutc(char c);
-void NoMmuPuts(char const* str);
-
-void Putc(char c);
 char Getc();
 char TryGetc();
-void Puts(char const* str);
+void Puts(std::string_view str);
 void PutHex(std::integral auto value);
 void PutHex(void const volatile* value);
 void PutBin(std::integral auto value);
@@ -34,10 +30,9 @@ void PutDec(std::integral auto value);
 }
 // namespace Raw
 
-void Putc(char c);
 char Getc();
 char TryGetc();
-void Puts(char const* str);
+void Puts(std::string_view str);
 void PutHex(std::integral auto value);
 void PutHex(void const volatile* value);
 void PutBin(std::integral auto value);
@@ -57,10 +52,9 @@ public:
 
     explicit operator bool() const { return locked; }
 
-    void Putc(char c);
     char Getc();
     char TryGetc();
-    void Puts(char const* str);
+    void Puts(std::string_view str);
     void PutHex(std::integral auto value);
     void PutHex(void const volatile* value);
     void PutBin(std::integral auto value);

@@ -48,7 +48,12 @@ struct BE
 {
     T value;
 
+    std::remove_cv_t<T> get() const { return FromBE(value); }
     operator std::remove_cv_t<T>() const { return FromBE(value); }
+
+    friend void PutHex(BootLib::Stream::Out& out, BE<T> value) { using namespace Stream; PutHex(out, value.get()); }
+    friend void PutBin(BootLib::Stream::Out& out, BE<T> value) { using namespace Stream; PutBin(out, value.get()); }
+    friend void PutDec(BootLib::Stream::Out& out, BE<T> value) { using namespace Stream; PutDec(out, value.get()); }
 };
 
 // DTB constants
@@ -75,11 +80,11 @@ struct Header
 
 struct ParseState
 {
-    Uart::PL011Uart*    log;
+    Stream::Out         log;
     char const*         strings;
     BE<uint32_t> const* struct_block;
-    uint32_t            addressCells[4]{ 1 };
-    uint32_t            sizeCells   [4]{ 1 };
+    uint32_t            addressCells[8]{ 1 };
+    uint32_t            sizeCells   [8]{ 1 };
     uint32_t            currentCells = 0;
 
     void PushCells(uint32_t address, uint32_t size)
@@ -105,6 +110,9 @@ struct ParseState
 
     uint32_t GetCurrentAddressCells() const { return addressCells[currentCells]; }
     uint32_t GetCurrentSizeCells   () const { return sizeCells   [currentCells]; }
+
+    uint32_t GetParentAddressCells() const { return currentCells > 0 ? addressCells[currentCells - 1] : addressCells[currentCells]; }
+    uint32_t GetParentSizeCells   () const { return currentCells > 0 ? sizeCells   [currentCells - 1] : sizeCells   [currentCells]; }
 };
 
 template < typename F > concept NodeFunction     = std::predicate<F, ParseState&, std::string_view /* name */, std::string_view /* address */>;
@@ -112,6 +120,8 @@ template < typename F > concept PropertyFunction = std::predicate<F, ParseState&
 
 bool ParseNode(ParseState& state, NodeFunction auto&& node, PropertyFunction auto&& property)
 {
+    std::span<BE<uint32_t> const> reg;
+    std::span<BE<uint32_t> const> ranges;
     for (;;)
     {
         uint32_t const token = *state.struct_block++;
@@ -141,6 +151,15 @@ bool ParseNode(ParseState& state, NodeFunction auto&& node, PropertyFunction aut
             std::string_view const name = state.strings + *state.struct_block++;
             std::span value{ state.struct_block, (len + 3) / 4 };
             state.struct_block += value.size();
+            if (name == "reg")
+            {
+                reg = value;
+            }
+            if (name == "ranges")
+            {
+                ranges = value;
+            }
+
             if (name == "#address-cells")
             {
                 state.SetCurrentAddressCells(value[0]);
@@ -155,12 +174,69 @@ bool ParseNode(ParseState& state, NodeFunction auto&& node, PropertyFunction aut
             }
             break;
         }
-        case FDT_END_NODE: return true;
+        case FDT_END_NODE: {
+            if (!reg.empty())
+            {
+                Puts(state.log, "  reg:");
+                for (auto value : reg)
+                {
+                    Puts(state.log, " ");
+                    PutHex(state.log, value);
+                }
+                Puts(state.log, "\n");
+                for (size_t i = 0; i < reg.size(); i += state.GetCurrentAddressCells() + state.GetCurrentSizeCells())
+                {
+                    uintptr_t base = 0;
+                    uintptr_t size = 0;
+                    for (size_t j = 0; j < state.GetCurrentAddressCells(); ++j, ++i)
+                    {
+                        base = (base << 32) + reg[i];
+                    }
+                    for (size_t j = 0; j < state.GetCurrentSizeCells(); ++j, ++i)
+                    {
+                        size = (size << 32) + reg[i];
+                    }
+                    Puts(state.log, "  'reg' -- Base: "); PutHex(state.log, base); Puts(state.log, " Size: "); PutHex(state.log, size); Puts(state.log, "\n");
+                }
+            }
+
+            if (!ranges.empty())
+            {
+                Puts(state.log, "  ranges:");
+                for (auto value : ranges)
+                {
+                    Puts(state.log, " ");
+                    PutHex(state.log, value);
+                }
+                Puts(state.log, "\n");
+                for (size_t i = 0; i < ranges.size(); i += state.GetCurrentAddressCells() + state.GetParentAddressCells() + state.GetCurrentSizeCells())
+                {
+                    uintptr_t base = 0;
+                    uintptr_t parent = 0;
+                    uintptr_t size = 0;
+                    for (size_t j = 0; j < state.GetCurrentAddressCells(); ++j, ++i)
+                    {
+                        base = (base << 32) + ranges[i];
+                    }
+                    for (size_t j = 0; j < state.GetParentAddressCells(); ++j, ++i)
+                    {
+                        parent = (parent << 32) + ranges[i];
+                    }
+                    for (size_t j = 0; j < state.GetCurrentSizeCells(); ++j, ++i)
+                    {
+                        size = (size << 32) + ranges[i];
+                    }
+                    Puts(state.log, "  'ranges' -- Base: "); PutHex(state.log, base); Puts(state.log, " Parent: "); PutHex(state.log, parent); Puts(state.log, " Size: "); PutHex(state.log, size); Puts(state.log, "\n");
+                }
+            }
+
+            return true;
+        }
         case FDT_END:      return false;
         case FDT_NOP:      break;
         default:
-            Uart::Puts(state.log, "Unknown token\n");
-            Uart::PutDec(state.log, token);
+            Puts(state.log, "Unknown token\n");
+            PutDec(state.log, token);
             return false;
         }
     }
@@ -168,9 +244,9 @@ bool ParseNode(ParseState& state, NodeFunction auto&& node, PropertyFunction aut
 
 bool PrintProperty(ParseState& state, std::string_view name, std::span<BE<uint32_t> const> value)
 {
-    Uart::Puts(state.log, "  Property: ");
-    Uart::Puts(state.log, name.data());
-    Uart::Puts(state.log, "\n");
+    Puts(state.log, "  Property: ");
+    Puts(state.log, name);
+    Puts(state.log, "\n");
     return true;
 }
 
@@ -179,6 +255,14 @@ bool SkipNode(ParseState& state)
     return ParseNode(state,
         [](ParseState& state, std::string_view name, std::string_view address)
         {
+            Puts(state.log, "Unknown skipped node: ");
+            Puts(state.log, name);
+            if (!address.empty())
+            {
+                Puts(state.log, "  Address: ");
+                Puts(state.log, address);
+            }
+            Puts(state.log, "\n");
             return SkipNode(state);
         },
         [](ParseState& state, std::string_view name, std::span<BE<uint32_t> const> value)
@@ -194,6 +278,14 @@ bool ParseMemoryNode(ParseState& state)
     if (!ParseNode(state,
             [](ParseState& state, std::string_view name, std::string_view address)
             {
+                Puts(state.log, "Unknown memory node: ");
+                Puts(state.log, name);
+                if (!address.empty())
+                {
+                    Puts(state.log, "  Address: ");
+                    Puts(state.log, address);
+                }
+                Puts(state.log, "\n");
                 return SkipNode(state);
             },
             [&](ParseState& state, std::string_view name, std::span<BE<uint32_t> const> value)
@@ -201,7 +293,7 @@ bool ParseMemoryNode(ParseState& state)
                 if (name == "reg")
                 {
                     // Handle memory region
-                    Uart::Puts(state.log, "  Memory region found\n");
+                    Puts(state.log, "  Memory region found\n");
                     reg = value;
                 }
                 return true;
@@ -227,8 +319,8 @@ bool ParseMemoryNode(ParseState& state)
             if (size > 0)
             {
                 memoryRanges[memoryRangeCount++] = { base, size };
-                Uart::Puts(state.log, "  Memory range added\n");
-                Uart::Puts(state.log, "    Base: "); Uart::PutHex(state.log, base); Uart::Puts(state.log, " Size: "); Uart::PutHex(state.log, size); Uart::Puts(state.log, "\n");
+                Puts(state.log, "  : ");
+                Puts(state.log, "    Base: "); PutHex(state.log, base); Puts(state.log, " Size: "); PutHex(state.log, size); Puts(state.log, "\n");
             }
         }
         
@@ -244,62 +336,67 @@ bool ParseRootNode(ParseState& state)
             if (name == "memory")
             {
                 // Handle memory node
-                Uart::Puts(state.log, "Memory node found\n");
+                Puts(state.log, "Memory node found\n");
                 return ParseMemoryNode(state);
             }
             else
             {
-                Uart::Puts(state.log, "Unknown node: ");
-                Uart::Puts(state.log, name.data());
-                Uart::Puts(state.log, "\n");
+                Puts(state.log, "Unknown root node: ");
+                Puts(state.log, name);
+                if (!address.empty())
+                {
+                    Puts(state.log, "  Address: ");
+                    Puts(state.log, address);
+                }
+                Puts(state.log, "\n");
                 return SkipNode(state);
             }
         },
         [](ParseState& state, std::string_view name, std::span<BE<uint32_t> const> value)
         {
-            Uart::Puts(state.log, "  Property: ");
-            Uart::Puts(state.log, name.data());
-            Uart::Puts(state.log, "\n");
+            Puts(state.log, "  Property: ");
+            Puts(state.log, name);
+            Puts(state.log, "\n");
             return true;
         }
     );
 }
 
-void ParseDeviceTree(uintptr_t dtb, Uart::PL011Uart* log)
+void ParseDeviceTree(uintptr_t dtb, Stream::Out const& log)
 {
     if (dtb == 0)
     {
-        Uart::Puts(log, "No DeviceTree found\n");
+        Puts(log, "No DeviceTree found\n");
         return;
     }
     auto const hdr = reinterpret_cast<Header const*>(dtb);
     if (hdr->magic != FDT_MAGIC)
     {
-        Uart::Puts(log, "Invalid DTB magic\n");
+        Puts(log, "Invalid DTB magic\n");
         return;
     }
 
-    Uart::Puts(log, "DTB magic found\n");
-    Uart::Puts(log, "DTB total size:                    "); Uart::PutDec(log, static_cast<uint32_t>(hdr->totalsize        )); Uart::Puts(log, " bytes\n");
-    Uart::Puts(log, "DTB structure offset:              "); Uart::PutDec(log, static_cast<uint32_t>(hdr->off_dt_struct    )); Uart::Puts(log, " bytes\n");
-    Uart::Puts(log, "DTB strings offset:                "); Uart::PutDec(log, static_cast<uint32_t>(hdr->off_dt_strings   )); Uart::Puts(log, " bytes\n");
-    Uart::Puts(log, "DTB version:                       "); Uart::PutDec(log, static_cast<uint32_t>(hdr->version          )); Uart::Puts(log, "\n");
-    Uart::Puts(log, "DTB last compatible version:       "); Uart::PutDec(log, static_cast<uint32_t>(hdr->last_comp_version)); Uart::Puts(log, "\n");
-    Uart::Puts(log, "DTB boot CPU ID:                   "); Uart::PutDec(log, static_cast<uint32_t>(hdr->boot_cpuid_phys  )); Uart::Puts(log, "\n");
-    Uart::Puts(log, "DTB size of strings:               "); Uart::PutDec(log, static_cast<uint32_t>(hdr->size_dt_strings  )); Uart::Puts(log, " bytes\n");
-    Uart::Puts(log, "DTB size of structure:             "); Uart::PutDec(log, static_cast<uint32_t>(hdr->size_dt_struct   )); Uart::Puts(log, " bytes\n");
-    Uart::Puts(log, "DTB memory reservation map offset: "); Uart::PutDec(log, static_cast<uint32_t>(hdr->off_mem_rsvmap   )); Uart::Puts(log, " bytes\n");
+    Puts(log, "DTB magic found\n");
+    Puts(log, "DTB total size:                    "); PutDec(log, static_cast<uint32_t>(hdr->totalsize        )); Puts(log, " bytes\n");
+    Puts(log, "DTB structure offset:              "); PutDec(log, static_cast<uint32_t>(hdr->off_dt_struct    )); Puts(log, " bytes\n");
+    Puts(log, "DTB strings offset:                "); PutDec(log, static_cast<uint32_t>(hdr->off_dt_strings   )); Puts(log, " bytes\n");
+    Puts(log, "DTB version:                       "); PutDec(log, static_cast<uint32_t>(hdr->version          )); Puts(log, "\n");
+    Puts(log, "DTB last compatible version:       "); PutDec(log, static_cast<uint32_t>(hdr->last_comp_version)); Puts(log, "\n");
+    Puts(log, "DTB boot CPU ID:                   "); PutDec(log, static_cast<uint32_t>(hdr->boot_cpuid_phys  )); Puts(log, "\n");
+    Puts(log, "DTB size of strings:               "); PutDec(log, static_cast<uint32_t>(hdr->size_dt_strings  )); Puts(log, " bytes\n");
+    Puts(log, "DTB size of structure:             "); PutDec(log, static_cast<uint32_t>(hdr->size_dt_struct   )); Puts(log, " bytes\n");
+    Puts(log, "DTB memory reservation map offset: "); PutDec(log, static_cast<uint32_t>(hdr->off_mem_rsvmap   )); Puts(log, " bytes\n");
 
     if (hdr->off_mem_rsvmap != 0)
     {
         // TODO: Do something with these.
         BE<uint64_t>* mem_rsvmap = reinterpret_cast<BE<uint64_t>*>(dtb + hdr->off_mem_rsvmap);
         while (mem_rsvmap[0] != 0 && mem_rsvmap[1] != 0) {
-            Uart::Puts(log, "Memory reservation: base=");
-            Uart::PutHex(log, static_cast<uint64_t>(mem_rsvmap[0]));
-            Uart::Puts(log, ", size=");
-            Uart::PutHex(log, static_cast<uint64_t>(mem_rsvmap[1]));
-            Uart::Puts(log, "\n");
+            Puts(log, "Memory reservation: base=");
+            PutHex(log, static_cast<uint64_t>(mem_rsvmap[0]));
+            Puts(log, ", size=");
+            PutHex(log, static_cast<uint64_t>(mem_rsvmap[1]));
+            Puts(log, "\n");
             mem_rsvmap += 2;
         }
     }
@@ -324,9 +421,9 @@ void ParseDeviceTree(uintptr_t dtb, Uart::PL011Uart* log)
             }
             else
             {
-                Uart::Puts(log, "Root node expected, but found: ");
-                Uart::Puts(log, name.data());
-                Uart::Puts(log, "\n");
+                Puts(log, "Root node expected, but found: ");
+                Puts(log, name);
+                Puts(log, "\n");
                 return;
             }
         } else if (token == FDT_END) {
@@ -334,9 +431,9 @@ void ParseDeviceTree(uintptr_t dtb, Uart::PL011Uart* log)
         } else if (token == FDT_NOP) {
             continue;
         } else {
-            Uart::Puts(log, "Unknown expected token: ");
-            Uart::PutHex(log, token);
-            Uart::Puts(log, "\n");
+            Puts(log, "Unknown expected token: ");
+            PutHex(log, token);
+            Puts(log, "\n");
             break;
         }
 
@@ -352,36 +449,36 @@ void ParseDeviceTree(uintptr_t dtb, Uart::PL011Uart* log)
 //
 //            if (in_root_node || in_memory_node) {
 //                if (strcmp(prop_name, "#address-cells") == 0) {
-//                    Uart::Puts(log, "Address cells found: ");
-//                    Uart::PutDec(log, static_cast<uint32_t>(*value));
-//                    Uart::Puts(log, "\n");
+//                    Puts(log, "Address cells found: ");
+//                    PutDec(log, static_cast<uint32_t>(*value));
+//                    Puts(log, "\n");
 //                } else if (strcmp(prop_name, "#size-cells") == 0) {
-//                    Uart::Puts(log, "Size cells found: ");
-//                    Uart::PutDec(log, static_cast<uint32_t>(*value));
-//                    Uart::Puts(log, "\n");
+//                    Puts(log, "Size cells found: ");
+//                    PutDec(log, static_cast<uint32_t>(*value));
+//                    Puts(log, "\n");
 //                } else if (strcmp(prop_name, "memreserve") == 0) {
-//                    Uart::Puts(log, "Memory reservation found: ");
-//                    Uart::PutHex(log, static_cast<uint32_t>(value[0]));
-//                    Uart::Puts(log, " ");
-//                    Uart::PutHex(log, static_cast<uint32_t>(value[1]));
-//                    Uart::Puts(log, "\n");
+//                    Puts(log, "Memory reservation found: ");
+//                    PutHex(log, static_cast<uint32_t>(value[0]));
+//                    Puts(log, " ");
+//                    PutHex(log, static_cast<uint32_t>(value[1]));
+//                    Puts(log, "\n");
 //                }
 //            }
 //
 //            if (in_memory_node && strcmp(prop_name, "reg") == 0) {
-//                Uart::Puts(log, "Memory reg found. Length: ");
-//                Uart::PutDec(log, len);
-//                Uart::Puts(log, "\n");
+//                Puts(log, "Memory reg found. Length: ");
+//                PutDec(log, len);
+//                Puts(log, "\n");
 //                while (len >= 12) {
 //                    uint64_t base = (static_cast<uint64_t>(value[0]) << 32) |
 //                                    value[1];
 //                    uint64_t size = value[2];
 //
-//                    Uart::Puts(log, "Memory base: ");
-//                    Uart::PutHex(log, base);
-//                    Uart::Puts(log, "\nMemory size: ");
-//                    Uart::PutHex(log, size);
-//                    Uart::Puts(log, "\n");
+//                    Puts(log, "Memory base: ");
+//                    PutHex(log, base);
+//                    Puts(log, "\nMemory size: ");
+//                    PutHex(log, size);
+//                    Puts(log, "\n");
 //
 //                    value += 3;
 //                    len -= 12;

@@ -79,3 +79,7 @@ void DelayInMilliseconds(uint64_t ms) { DelayUntilPerformanceTime(GetPerformance
 
 }
 // namespace BootLib::Cpu
+
+namespace std { inline namespace ABI {
+    void __libcpp_verbose_abort(char const* fmt, ...) { BootLib::Cpu::Halt(); }
+}}

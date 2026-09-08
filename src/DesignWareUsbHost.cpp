@@ -299,7 +299,7 @@ void HCDHost::HandleChannelInterrupt()
         }
 
         //printf("HCD: Channel %u (%p) interrupt received.\n", channel, m_Channels[channel].get());
-        //Uart::Putc('!');
+        //Uart::Puts("!");
 
         m_Channels[channel]->HandleInterrupt();
     }

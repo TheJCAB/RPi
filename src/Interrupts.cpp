@@ -518,7 +518,7 @@ extern "C" Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
     {
         if (pendingCoreInterrupts.CNTVIRQ)
         {
-            //Uart::Putc('@'); // Printf tracing of the handler.
+            //Uart::Puts("@"); // Printf tracing of the handler.
             auto const spark = CoreInterruptsData[coreId].VirtualTimerHandler();
             if (spark)
             {
@@ -528,7 +528,7 @@ extern "C" Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
 
         if (pendingCoreInterrupts.GPU)
         {
-            //Uart::Putc('>'); // Printf tracing of the handler.
+            //Uart::Puts(">"); // Printf tracing of the handler.
             auto basicPending = Rpi3::IrqBasicPending.get();
             // Handle basic IRQs
             if (basicPending.USB)

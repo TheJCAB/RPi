@@ -16,8 +16,6 @@ using BootLib::PL011Uart;
 
 PL011Uart* Uart0 = nullptr;
 
-constexpr uint32_t PL011_MMIO_OFFSET = 0x20'1000u;
-
 bool useMutex = false;
 //std::atomic<bool> Mutex;
 std::mutex Mutex;
@@ -30,38 +28,13 @@ void Init(PL011Uart* uart)
 namespace Raw
 {
 
-void NoMmuPutc(char c)
-{
-    // Wait until transmitter FIFO has space
-    if (Cpu::IsRpi4())
-    {
-        while (*(volatile unsigned int*)0x4'7E20'1018ull & (1 << 5)) {}
-        *(volatile unsigned int*)0x4'7E20'1000ull = c;
-    }
-    else
-    {
-        while (*(volatile unsigned int*)0x3F20'1018ull & (1 << 5)) {}
-        *(volatile unsigned int*)0x3F20'1000ull = c;
-    }
-}
-
-void NoMmuPuts(char const* str)
-{
-    while (*str)
-    {
-        NoMmuPutc(*str++);
-    }
-}
-
-
 char Getc   ()                           { return Uart0 ? Uart0->Getc() : char{0}; }
 char TryGetc()                           { return Uart0 ? Uart0->TryGetc() : char{0}; }
-void Putc   (char c)                     { if (Uart0) Uart0->Putc(c); }
-void Puts   (char const* str)            { if (Uart0) Uart0->Puts(str); }
-void PutHex (std::integral auto value)   { if (Uart0) Uart0->PutHex(value); }
-void PutHex (void const volatile* value) { if (Uart0) Uart0->PutHex(reinterpret_cast<uintptr_t>(value)); }
-void PutBin (std::integral auto value)   { if (Uart0) Uart0->PutBin(value); }
-void PutDec (std::integral auto value)   { if (Uart0) Uart0->PutDec(value); }
+void Puts   (std::string_view str)       { Puts(Uart0, str); }
+void PutHex (std::integral auto value)   { PutHex(Uart0, value); }
+void PutHex (void const volatile* value) { PutHex(Uart0, reinterpret_cast<uintptr_t>(value)); }
+void PutBin (std::integral auto value)   { PutBin(Uart0, value); }
+void PutDec (std::integral auto value)   { PutDec(Uart0, value); }
 
 template void PutHex(uint64_t value);
 template void PutHex(uint32_t value);
@@ -125,11 +98,6 @@ void LockedStream::Unlock()
     locked = false;
 }
 
-void LockedStream::Putc(char c)
-{
-    if (locked) Raw::Putc(c);
-}
-
 char LockedStream::Getc()
 {
     if (!locked) return 0;
@@ -142,7 +110,7 @@ char LockedStream::TryGetc()
     return Raw::TryGetc();
 }
 
-void LockedStream::Puts(char const* str)
+void LockedStream::Puts(std::string_view str)
 {
     if (locked) Raw::Puts(str);
 }
@@ -186,11 +154,6 @@ template void LockedStream::PutDec(uint8_t  value);
 template void LockedStream::PutDec(bool     value);
 
 
-void Putc(char c)
-{
-    LockedStream{}.Putc(c);
-}
-
 char Getc()
 {
     return LockedStream{}.Getc();
@@ -201,7 +164,7 @@ char TryGetc()
     return LockedStream{}.TryGetc();
 }
 
-void Puts(char const* str)
+void Puts(std::string_view str)
 {
     LockedStream{}.Puts(str);
 }
@@ -248,12 +211,7 @@ template void PutDec(bool     value);
 }
 // namespace Uart
 
-extern "C" void RawPutc(char c)
-{
-    Uart::Raw::Putc(c);
-}
-
-extern "C" void RawPuts(char const* str)
+extern "C" void RawPuts(std::string_view str)
 {
     Uart::Raw::Puts(str);
 }

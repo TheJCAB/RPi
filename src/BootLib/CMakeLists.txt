@@ -8,6 +8,7 @@ add_library(BootLib STATIC
     Gpio.cpp            inc/BootLib/Gpio.h
     Uart.cpp            inc/BootLib/Uart.h
     Mmio.cpp            inc/BootLib/Mmio.h
+    StreamOut.cpp       inc/BootLib/StreamOut.h
 
     inc/BootLib/RegisterProxy.h
 )

@@ -12,13 +12,15 @@ add_library(KernelRuntime INTERFACE)
 
 target_compile_options(KernelRuntime INTERFACE
     -ffreestanding
+    -fno-exceptions
+    -fno-rtti
     -ffixed-x18
     -Wno-builtin-macro-redefined
     #-O0
     -O1
     #-O2
     #-O3
-    -frtti
+    #-frtti
     #-fPIC
     -mcmodel=tiny
     -mcpu=cortex-a53

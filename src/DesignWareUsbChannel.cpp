@@ -456,7 +456,7 @@ void HCDChannel::HandleInterrupt()
     {
         m_interruptStatus = registers.Interrupt->Raw32;
 
-        //Uart::Putc('=');
+        //Uart::Puts("=");
         Scheduler::AddSpark(
             Scheduler::MakeUserModeSpark(
                 [](uintptr_t arg) -> Scheduler::Spark

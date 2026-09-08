@@ -1,8 +1,8 @@
 #include <BootLib/Uart.h>
 
 #include <BootLib/Cpu.h>
-#include <BootLib/Mmio.h>
 #include <BootLib/Gpio.h>
+#include <BootLib/Mmio.h>
 
 #include <atomic>
 
@@ -104,97 +104,20 @@ char PL011Uart::TryGetc()
     return static_cast<char>(registers.DR & 0xFF);
 }
 
-void PL011Uart::Putc(char c)
+void PL011Uart::PutcImpl(char c)
 {
     // Wait until transmitter FIFO has space
     while (registers.FR & (1 << 5)) {}
     registers.DR = c;
 }
 
-void PL011Uart::Puts(char const* str)
+void PL011Uart::PutsImpl(std::string_view str)
 {
-    while (*str)
+    for (char c : str)
     {
-        Putc(*str++);
+        PutcImpl(c);
     }
 }
-
-void PL011Uart::PutHex(auto value)
-{
-    char const* hexDigits = "0123456789ABCDEF";
-
-    Putc('0');
-    Putc('x');
-    for (int i = sizeof(value) * 8 - 4; i >= 0; i -= 4)
-    {
-        Putc(hexDigits[(value >> i) & 0xF]);
-        if (i > 0 && i % 16 == 0)
-        {
-            Putc('\''); // Add digit separator for readability
-        }
-    }
-}
-
-void PL011Uart::PutBin(auto value)
-{
-    const char* binDigits = "01";
-    Putc('0');
-    Putc('b');
-    for (int i = sizeof(value) * 8 - 1; i >= 0; --i)
-    {
-        Putc('0' + ((value >> i) & 0x1));
-        if (i > 0 && i % 4 == 0)
-        {
-            Putc('\''); // Add digit separator for readability
-        }
-    }
-}
-
-void PL011Uart::PutDec(auto value)
-{
-    if (value == 0)
-    {
-        Putc('0');
-        return;
-    }
-
-    char buffer[20]; // Enough for 64-bit integer
-    int index = 0;
-
-    while (value > 0)
-    {
-        buffer[index++] = '0' + (value % 10);
-        value /= 10;
-    }
-
-    // Print in reverse order
-    for (int i = index - 1; i >= 0; --i)
-    {
-        Putc(buffer[i]);
-        if (i > 0 && i % 3 == 0)
-        {
-            Putc('\''); // Add digit separator for readability
-        }
-    }
-}
-
-template void PL011Uart::PutHex(uint64_t value);
-template void PL011Uart::PutHex(uint32_t value);
-template void PL011Uart::PutHex(uint16_t value);
-template void PL011Uart::PutHex(uint8_t  value);
-template void PL011Uart::PutHex(bool     value);
-
-template void PL011Uart::PutBin(uint64_t value);
-template void PL011Uart::PutBin(uint32_t value);
-template void PL011Uart::PutBin(uint16_t value);
-template void PL011Uart::PutBin(uint8_t  value);
-template void PL011Uart::PutBin(bool     value);
-
-template void PL011Uart::PutDec(uint64_t value);
-template void PL011Uart::PutDec(uint32_t value);
-template void PL011Uart::PutDec(uint16_t value);
-template void PL011Uart::PutDec(uint8_t  value);
-template void PL011Uart::PutDec(bool     value);
 
 }
 // namespace BootLib::Uart

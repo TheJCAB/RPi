@@ -16,14 +16,14 @@ extern "C" [[noreturn]] void KernelMain()
 
     BootLib::PL011Uart uart0{ peripheralsBase + BootLib::PL011Uart::Uart0RegistersOffset };
 
-    uart0.Puts("\r\n\nHello from the kernel!\r\n\n");
+    Puts(uart0, "\r\n\nHello from the kernel!\r\n\n");
     if (BootLib::Cpu::IsRpi4())
     {
-        uart0.Puts("Running on a Raspberry Pi 4!\n");
+        Puts(uart0, "Running on a Raspberry Pi 4!\n");
     }
     else
     {
-        uart0.Puts("Running on a Raspberry Pi 3!\n");
+        Puts(uart0, "Running on a Raspberry Pi 3!\n");
     }
 
     BootLib::Cpu::Halt();

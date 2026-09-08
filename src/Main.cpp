@@ -83,65 +83,65 @@ void Core1()
     {
         // Without MMU, we need to use physical addresses to access peripherals.
         BootLib::PL011Uart uart{ BootLib::Mmio::GetPeripheralsPhysicalBase() + BootLib::PL011Uart::Uart0RegistersOffset };
-        uart.Puts("Core 1 starting\n");
+        Puts(uart, "Core 1 starting\n");
     }
 
     InitCore();
 
     BootLib::PL011Uart uart{ Mmio::Base + BootLib::PL011Uart::Uart0RegistersOffset };
-    uart.Puts("Core 1 says hello\n");
+    Puts(uart, "Core 1 says hello\n");
 
 #if 0
     uint8_t* buffer = Mmu::AllocatePages<uint8_t>(2);
-    uart.Puts("Buffer is ");
-    uart.PutHex(reinterpret_cast<uintptr_t>(buffer));
-    uart.Puts("\n");
+    Puts(uart, "Buffer is ");
+    PutHex(uart, reinterpret_cast<uintptr_t>(buffer));
+    Puts(uart, "\n");
 
-    uart.Puts("Core 1: Writing to Buffer[0]\n");
+    Puts(uart, "Core 1: Writing to Buffer[0]\n");
     buffer[0] = 0x42; // Write something to the buffer
-    uart.Puts("Core 1: Writing to Buffer[4095]\n");
+    Puts(uart, "Core 1: Writing to Buffer[4095]\n");
     buffer[4095] = 0x56; // Write something to the buffer
-    uart.Puts("Core 1: Writing to Buffer[8191]\n");
+    Puts(uart, "Core 1: Writing to Buffer[8191]\n");
     buffer[8191] = 0xBA; // Write something to the buffer
 
     Processor::InvalidateDataCache(buffer, 8192); // Invalidate the data cache for the buffer
 
     if (buffer[0] != 0x42)
     {
-        uart.Puts("Core 1: Buffer[0] is not 0x42\n");
+        Puts(uart, "Core 1: Buffer[0] is not 0x42\n");
     }
     else
     {
-        uart.Puts("Core 1: Buffer[0] is 0x42\n");
+        Puts(uart, "Core 1: Buffer[0] is 0x42\n");
     }
 
     if (buffer[4095] != 0x56)
     {
-        uart.Puts("Core 1: Buffer[4095] is not 0x56\n");
+        Puts(uart, "Core 1: Buffer[4095] is not 0x56\n");
     }
     else
     {
-        uart.Puts("Core 1: Buffer[4095] is 0x56\n");
+        Puts(uart, "Core 1: Buffer[4095] is 0x56\n");
     }
 
     if (buffer[8191] != 0xBA)
     {
-        uart.Puts("Core 1: Buffer[8191] is not 0xBA\n");
+        Puts(uart, "Core 1: Buffer[8191] is not 0xBA\n");
     }
     else
     {
-        uart.Puts("Core 1: Buffer[8191] is 0xBA\n");
+        Puts(uart, "Core 1: Buffer[8191] is 0xBA\n");
     }
 
-    uart.Puts("Core 1: PhysBuffer[0] = ");
-    uart.PutHex(reinterpret_cast<uint8_t*>(0x7'2000'0000)[0]);
-    uart.Puts("\n");
-    uart.Puts("Core 1: PhysBuffer[4095] = ");
-    uart.PutHex(reinterpret_cast<uint8_t*>(0x7'2000'0000)[4095]);
-    uart.Puts("\n");
-    uart.Puts("Core 1: PhysBuffer[8191] = ");
-    uart.PutHex(reinterpret_cast<uint8_t*>(0x7'2000'0000)[0x3FFF]);
-    uart.Puts("\n");
+    Puts(uart, "Core 1: PhysBuffer[0] = ");
+    PutHex(uart, reinterpret_cast<uint8_t*>(0x7'2000'0000)[0]);
+    Puts(uart, "\n");
+    Puts(uart, "Core 1: PhysBuffer[4095] = ");
+    PutHex(uart, reinterpret_cast<uint8_t*>(0x7'2000'0000)[4095]);
+    Puts(uart, "\n");
+    Puts(uart, "Core 1: PhysBuffer[8191] = ");
+    PutHex(uart, reinterpret_cast<uint8_t*>(0x7'2000'0000)[0x3FFF]);
+    Puts(uart, "\n");
 
 #endif // 0
 
@@ -162,13 +162,13 @@ void Core2()
     {
         // Without MMU, we need to use physical addresses to access peripherals.
         BootLib::PL011Uart uart{ BootLib::Mmio::GetPeripheralsPhysicalBase() + BootLib::PL011Uart::Uart0RegistersOffset };
-        uart.Puts("Core 2 starting\n");
+        Puts(uart, "Core 2 starting\n");
     }
 
     InitCore();
 
     BootLib::PL011Uart uart{ Mmio::Base + BootLib::PL011Uart::Uart0RegistersOffset };
-    uart.Puts("Core 2 says hello\n");
+    Puts(uart, "Core 2 says hello\n");
     Core2Ready = true; // Signal that core 2 is ready
 
     asm volatile ("dmb ish"); // Release barrier
@@ -192,13 +192,13 @@ void Core3()
     {
         // Without MMU, we need to use physical addresses to access peripherals.
         BootLib::PL011Uart uart{ BootLib::Mmio::GetPeripheralsPhysicalBase() + BootLib::PL011Uart::Uart0RegistersOffset };
-        uart.Puts("Core 3 starting\n");
+        Puts(uart, "Core 3 starting\n");
     }
 
     InitCore();
 
     BootLib::PL011Uart uart{ Mmio::Base + BootLib::PL011Uart::Uart0RegistersOffset };
-    uart.Puts("Core 3 says hello\n");
+    Puts(uart, "Core 3 says hello\n");
     Core3Ready = true; // Signal that core 3 is ready
 
     asm volatile ("dmb ish"); // Release barrier
@@ -255,13 +255,15 @@ void Core0(uintptr_t dtb)
                 }
             }();
 
-        uart.Puts("Core ");
-        uart.PutDec(BootLib::Cpu::mpidr_el1->CoreId);
-        uart.Puts(" starting\n");
+        auto out = uart.Out();
 
-        uart.Puts("CurrentEL (may be 2): ");
-        uart.PutDec(Cpu::CurrentEL->EL);
-        uart.Puts("\n");
+        Puts(out, "Core ");
+        PutDec(out, BootLib::Cpu::mpidr_el1->CoreId);
+        Puts(out, " starting\n");
+
+        Puts(out, "CurrentEL (may be 2): ");
+        PutDec(out, Cpu::CurrentEL->EL);
+        Puts(out, "\n");
 
         // Enable the Floating point and SIMD unit for EL0 and EL1
         Cpu::cpacr_el1.modify([](auto& reg){ reg.FPEN = 3; });
@@ -284,48 +286,48 @@ void Core0(uintptr_t dtb)
 
             el2_to_el1_return();
 
-            uart.Puts("Lowered to EL1\n");
+            Puts(out, "Lowered to EL1\n");
 
-            uart.Puts("CurrentEL: ");
-            uart.PutDec(Cpu::CurrentEL->EL);
-            uart.Puts("\n");
+            Puts(out, "CurrentEL: ");
+            PutDec(out, Cpu::CurrentEL->EL);
+            Puts(out, "\n");
         }
 
-        uart.Puts("cpacr_el1 = ");
-        uart.PutHex(std::bit_cast<uint64_t>(Cpu::cpacr_el1.get()));
-        uart.Puts("\n");
+        Puts(out, "cpacr_el1 = ");
+        PutHex(out, std::bit_cast<uint64_t>(Cpu::cpacr_el1.get()));
+        Puts(out, "\n");
 
-        uart.Puts("sctlr_el1 = ");
-        uart.PutHex(std::bit_cast<uint64_t>(Cpu::sctlr_el1.get()));
-        uart.Puts("\n");
+        Puts(out, "sctlr_el1 = ");
+        PutHex(out, std::bit_cast<uint64_t>(Cpu::sctlr_el1.get()));
+        Puts(out, "\n");
 
         Uart::Init(&uart);
         Uart::Puts("This is a test\n");
 
-        Init_EmbStdio([](char Ch, uintptr_t) { Uart::Putc(Ch); });
+        Init_EmbStdio([](char Ch, uintptr_t) { Uart::Puts({ &Ch, 1 }); });
 
         if (Cpu::IsRpi4())
         {
-            uart.Puts("Detected Raspberry Pi 4\n");
+            Puts(out, "Detected Raspberry Pi 4\n");
         }
         else
         {
-            uart.Puts("Detected Raspberry Pi 3\n");
+            Puts(out, "Detected Raspberry Pi 3\n");
         }
 
-        uart.Puts("Performance Frequency: ");
-        uart.PutDec(Cpu::GetPerformanceFrequency());
-        uart.Puts("\n");
+        Puts(out, "Performance Frequency: ");
+        PutDec(out, Cpu::GetPerformanceFrequency());
+        Puts(out, "\n");
 
-        uart.Puts("\r\n\nHello!\n");
+        Puts(out, "\r\n\nHello!\n");
 
         Exception::Init();
 
-        uart.Puts("DTB pointer: ");
-        uart.PutHex(dtb);
-        uart.Puts("\n");
+        Puts(out, "DTB pointer: ");
+        PutHex(out, dtb);
+        Puts(out, "\n");
 
-        BootLib::DeviceTree::ParseDeviceTree(dtb, &uart);
+        BootLib::DeviceTree::ParseDeviceTree(dtb, out);
 
         printf("Device tree complete.\n");
 
@@ -367,21 +369,21 @@ void Core0(uintptr_t dtb)
         }
 
         Mmu::DumpMMUState();
-        uart.Puts("MMU enabled\n");
+        Puts(out, "MMU enabled\n");
         
-        uart.Puts("Initializing heap...\n");
+        Puts(out, "Initializing heap...\n");
         InitGlobalHeap();
-        uart.Puts("Heap initialized.\n");
+        Puts(out, "Heap initialized.\n");
         
         // Call all global initializers.
-        uart.Puts("Calling global initializers...\n");
+        Puts(out, "Calling global initializers...\n");
         for (auto ctor = _init_array_start; ctor < _init_array_end; ++ctor) {
             if (ctor != nullptr)
             {
                 (*ctor)();
             }
         }
-        uart.Puts("Global initializers complete.\n");
+        Puts(out, "Global initializers complete.\n");
     }
 
     // TODO: We should get addresses from the MM now.
@@ -567,7 +569,7 @@ void Core0(uintptr_t dtb)
                 for (size_t j = 0; j < 16; ++j)
                 {
                     Uart::PutHex(buffer[i * 16 + j]);
-                    Uart::Putc(' ');
+                    Uart::Puts(" ");
                     if (j == 7)
                     {
                         Uart::Puts("- ");
@@ -590,7 +592,7 @@ void Core0(uintptr_t dtb)
                 for (size_t j = 0; j < 16; ++j)
                 {
                     Uart::PutHex(buffer[i * 16 + j]);
-                    Uart::Putc(' ');
+                    Uart::Puts(" ");
                     if (j == 7)
                     {
                         Uart::Puts("- ");

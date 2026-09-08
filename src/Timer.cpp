@@ -225,7 +225,7 @@ constexpr uint32_t Timer_Reload    = 0xB418u;
 Interrupts::Spark HandleArmVirtualTimerInterrupt()
 {
     // Set up the timer for the next scheduled event, scheduling the sparks for reached timers.
-    //Uart::Raw::Putc('^');
+    //Uart::Raw::Puts("^");
     SetupTimerForNext();
 
     return Exception::MakeSpark(Scheduler::GetNextScheduledSpark);
