@@ -65,7 +65,7 @@ void SetHighDetectEnable(uint32_t pin, bool enable)
 
 void SetPullUpDown(uint32_t pin, PullUpDown pud)
 {
-    if (Cpu::IsRpi4())
+    if (BootLib::Cpu::IsRpi4())
     {
         auto const shift = (pin % 16) * 2;
         auto&& cntrlreg = Rpi4Registers.GPIO_PUP_PDN_CNTRL_REG[pin / 16];
@@ -82,9 +82,9 @@ void SetPullUpDown(uint32_t pin, PullUpDown pud)
         auto&& clkreg = Rpi3Registers.GPPUDCLK[pin / 32];
 
         pudreg = static_cast<uint32_t>(pud);
-        Cpu::DelayInMicroseconds(150); // Wait for 150 cycles (we use 150us)
+        Cpu::Delay(150us); // Wait for 150 cycles (we use 150us)
         clkreg = static_cast<uint32_t>(pin) << shift;
-        Cpu::DelayInMicroseconds(150); // Wait for 150 cycles (we use 150us)
+        Cpu::Delay(150us); // Wait for 150 cycles (we use 150us)
         if (static_cast<uint32_t>(pud) != 0)
         {
             pudreg = 0;

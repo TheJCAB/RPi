@@ -403,7 +403,7 @@ Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
 
 void EnableUsb(HandlerFunction handler)
 {
-    if (Cpu::IsRpi4())
+    if (BootLib::Cpu::IsRpi4())
     {
         return;
     }
@@ -425,7 +425,7 @@ void EnableUsb(HandlerFunction handler)
 
 void EnableXhci(HandlerFunction handler)
 {
-    if (!Cpu::IsRpi4())
+    if (!BootLib::Cpu::IsRpi4())
     {
         return;
     }
@@ -457,7 +457,7 @@ void EnableCoreVirtualTimerInterrupt(HandlerFunction handler)
 
     CoreInterruptsData[coreId].VirtualTimerHandler = handler;
 
-    if (Cpu::IsRpi4())
+    if (BootLib::Cpu::IsRpi4())
     {
         Rpi4::Distributor::RefRegisters().Enable = { .VTimer = true };
     }
@@ -480,7 +480,7 @@ void DisableCoreVirtualTimerInterrupt()
         .IMASK = 1,
     };
 
-    if (Cpu::IsRpi4())
+    if (BootLib::Cpu::IsRpi4())
     {
         Rpi4::Distributor::RefRegisters().Disable = { .VTimer = true };
     }
@@ -495,7 +495,7 @@ void DisableCoreVirtualTimerInterrupt()
 
 extern "C" Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
 {
-    if (Cpu::IsRpi4())
+    if (BootLib::Cpu::IsRpi4())
     {
         return Rpi4::InterruptDispatcher(context, code);
     }
@@ -658,7 +658,7 @@ void HandlePeriodicInterrupt()
 
 void Init()
 {
-    if (Cpu::IsRpi4())
+    if (BootLib::Cpu::IsRpi4())
     {
         Rpi4::Distributor::Init();
         Rpi4::Core::Init();

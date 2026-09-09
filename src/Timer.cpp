@@ -103,9 +103,9 @@ void SetupTimerForNext()
 
 // Public API functions
 
-SparkHandle ScheduleSpark(Cpu::PerformanceTimeDiff delay_us, Scheduler::Spark const& spark)
+SparkHandle ScheduleSpark(Cpu::PerformanceTimeDiff delay_ticks, Scheduler::Spark const& spark)
 {
-    auto trigger_time = GetCurrentTimeTicks() + delay_us;
+    auto trigger_time = Cpu::GetPerformanceCounter() + delay_ticks;
     return ScheduleSparkAtTime(trigger_time, spark);
 }
 

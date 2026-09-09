@@ -656,14 +656,9 @@ namespace Async
         void await_resume() const {}
     };
 
-    inline DelayAwaitable DelayInMilliseconds(uint32_t ms)
+    inline DelayAwaitable Delay(std::chrono::microseconds delay)
     {
-        return DelayAwaitable{ Cpu::GetPerformanceCounter() + Cpu::GetPerformanceTicksForMs(ms) };
-    }
-
-    inline DelayAwaitable DelayInMicroseconds(uint32_t us)
-    {
-        return DelayAwaitable{ Cpu::GetPerformanceCounter() + Cpu::GetPerformanceTicksForUs(us) };
+        return DelayAwaitable{ Cpu::GetPerformanceCounter() + Cpu::ToTicks(delay) };
     }
 
     template < typename T >
@@ -671,7 +666,7 @@ namespace Async
     {
         while (!task.client_await_ready())
         {
-            Cpu::DelayInMicroseconds(100);
+            Cpu::Delay(100us);
         }
 
         //usbInitTask.client_await_notify(nullptr, [](void*){});

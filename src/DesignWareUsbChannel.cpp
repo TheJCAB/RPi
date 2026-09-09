@@ -253,26 +253,6 @@ DWCRESULT HCDCheckErrorAndAction(ChannelInterrupts interrupts, bool packetSplit,
     return DWCRESULT::ErrorGeneral;
 }
 
-/*-INTERNAL: HCDWaitOnTransmissionResult------------------------------------
- When not using Interrupts, Timers or OS this is the good old polling wait
- around for transmission packet sucess or timeout. HCD supports multiple
- options on sending the packets this static polled is just one way.
- 19Feb17 LdB
- --------------------------------------------------------------------------*/
-ChannelInterrupts HCDChannel::WaitOnTransmissionResult(uint32_t timeout)
-{
-    auto ticksTimeout = Cpu::GetPerformanceTicksForUs(timeout);
-    auto original_tick = Cpu::GetPerformanceCounter();
-    for (;;) {
-        Cpu::DelayInMicroseconds(100);
-        ChannelInterrupts tempInt = registers.Interrupt;
-        if (tempInt.Halt || Cpu::GetPerformanceCounter() - original_tick > ticksTimeout)
-        {
-            return tempInt;
-        }
-    }
-}
-
 
 struct HCDChannel::TransmissionAwaitable
 {
@@ -331,23 +311,13 @@ struct HCDChannel::TransmissionAwaitable
     }
 };
 
-HCDChannel::TransmissionAwaitable HCDChannel::StartTransmission(Cpu::PerformanceTimeDiff timeout)
+HCDChannel::TransmissionAwaitable HCDChannel::StartTransmission(std::chrono::microseconds timeout)
 {
-    return TransmissionAwaitable{ timeout, ++m_currentTransmissionNumber, *this };
-}
-
-Async::task<ChannelInterrupts> HCDChannel::AwaitTransmissionResult(uint32_t timeout)
-{
-    auto ticksTimeout = Cpu::GetPerformanceTicksForUs(timeout);
-    auto original_tick = Cpu::GetPerformanceCounter();
-    for (;;) {
-        /*co_await Async*/ Cpu::DelayInMicroseconds(100);
-        ChannelInterrupts tempInt = registers.Interrupt;
-        if (tempInt.Halt || Cpu::GetPerformanceCounter() - original_tick > ticksTimeout)
-        {
-            co_return tempInt;
-        }
-    }
+    return TransmissionAwaitable{
+        .Timeout            = Cpu::ToTicks(timeout),
+        .TransmissionNumber = ++m_currentTransmissionNumber,
+        .Channel            = *this,
+    };
 }
 
 //void HCDChannel::Prepare(
@@ -610,7 +580,7 @@ Async::task<uint32_t> HCDChannel::TransferIn(UsbPipe const& pipe, usb_transfer_t
         };
 
         // Polling wait on transmission only option right now .. other options soon :-)
-        auto tempInt = co_await StartTransmission(Cpu::GetPerformanceTicksForUs(5'000));
+        auto tempInt = co_await StartTransmission(5ms);
         if (!tempInt.Halt)
         {
             LOG("HCD: Request on channel %i has timed out.\n", m_Number);
@@ -630,7 +600,7 @@ Async::task<uint32_t> HCDChannel::TransferIn(UsbPipe const& pipe, usb_transfer_t
 
         sendCtrl.SplitTries = 0;
         while (sendCtrl.ActionResendSplit) {                        // Decision was made to resend split
-            /*co_await Async*/ Cpu::DelayInMicroseconds(250);
+            /*co_await Async*/ Cpu::Delay(250us);
             // Clear channel interrupts
             registers.Interrupt = 0xFFFFFFFF;
             registers.InterruptMask = 0x0;
@@ -639,7 +609,7 @@ Async::task<uint32_t> HCDChannel::TransferIn(UsbPipe const& pipe, usb_transfer_t
             registers.SplitCtrl = [](auto& reg) { reg.complete_split = true; };
 
             // Polling wait on transmission only option right now .. other options soon :-)
-            tempInt = co_await StartTransmission(Cpu::GetPerformanceTicksForUs(5'000));
+            tempInt = co_await StartTransmission(5ms);
             if (!tempInt.Halt)
             {
                 LOG("HCD: Request split completion on channel:%i has timed out.\n", m_Number);
@@ -652,8 +622,8 @@ Async::task<uint32_t> HCDChannel::TransferIn(UsbPipe const& pipe, usb_transfer_t
             LOG_DEBUG("Result: %i Action: 0x%08x tempInt: 0x%08x tempSplit: 0x%08x Bytes sent: %i\n",
                 result, sendCtrl.Raw32, tempInt.Raw32, tempSplit.Raw32, result != DWCRESULT::Ok ? 0 : (*registers.TransferSize).size);
             if (sendCtrl.ActionFatalError) co_return 0u;            // Fatal error occured bail
-            if (sendCtrl.LongerDelay) co_await Async::DelayInMicroseconds(10'000);            // Not yet response slower delay
-                else co_await Async::DelayInMicroseconds(2'500);                                // Small delay between split resends
+            if (sendCtrl.LongerDelay) co_await Async::Delay(10ms);            // Not yet response slower delay
+                else co_await Async::Delay(2'500us);                                // Small delay between split resends
         }
 
         uint32_t const newPacketCount = registers.TransferSize->packet_count;
@@ -799,7 +769,7 @@ Async::task<uint32_t> HCDChannel::TransferOut(UsbPipe const& pipe, usb_transfer_
         };
 
         // Polling wait on transmission only option right now .. other options soon :-)
-        auto tempInt = co_await StartTransmission(Cpu::GetPerformanceTicksForUs(5'000));
+        auto tempInt = co_await StartTransmission(5ms);
         if (!tempInt.Halt)
         {
             LOG_DEBUG("HCD: Request on channel %i has timed out.\n", m_Number);
@@ -819,7 +789,7 @@ Async::task<uint32_t> HCDChannel::TransferOut(UsbPipe const& pipe, usb_transfer_
 
         sendCtrl.SplitTries = 0;
         while (sendCtrl.ActionResendSplit) {                        // Decision was made to resend split
-            /*co_await Async*/ Cpu::DelayInMicroseconds(250);
+            /*co_await Async*/ Cpu::Delay(250us);
             // Clear channel interrupts
             registers.Interrupt = 0xFFFFFFFF;
             registers.InterruptMask = 0x0;
@@ -828,7 +798,7 @@ Async::task<uint32_t> HCDChannel::TransferOut(UsbPipe const& pipe, usb_transfer_
             registers.SplitCtrl = [](auto& reg) { reg.complete_split = true; };
 
             // Polling wait on transmission only option right now .. other options soon :-)
-            tempInt = co_await StartTransmission(Cpu::GetPerformanceTicksForUs(5'000));
+            tempInt = co_await StartTransmission(5ms);
             if (!tempInt.Halt)
             {
                 LOG("HCD: Request split completion on channel:%i has timed out.\n", m_Number);
@@ -841,8 +811,8 @@ Async::task<uint32_t> HCDChannel::TransferOut(UsbPipe const& pipe, usb_transfer_
             LOG_DEBUG("Result: %i Action: 0x%08x tempInt: 0x%08x tempSplit: 0x%08x Bytes sent: %i\n",
                 result, sendCtrl.Raw32, tempInt.Raw32, tempSplit.Raw32, result != DWCRESULT::Ok ? 0 : (*registers.TransferSize).size);
             if (sendCtrl.ActionFatalError) co_return 0u;            // Fatal error occured bail
-            if (sendCtrl.LongerDelay) co_await Async::DelayInMicroseconds(10'000);            // Not yet response slower delay
-            else co_await Async::DelayInMicroseconds(2'500);                                // Small delay between split resends
+            if (sendCtrl.LongerDelay) co_await Async::Delay(10ms);            // Not yet response slower delay
+            else co_await Async::Delay(2'500us);                                // Small delay between split resends
         }
 
         uint32_t const newPacketCount = registers.TransferSize->packet_count;

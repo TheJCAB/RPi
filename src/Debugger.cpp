@@ -102,7 +102,7 @@ Scheduler::ThreadInfo* DebuggerThread = nullptr;
     {
         // For example, print the current thread context every second.
         //PrintThreadContext(stream, &Scheduler::GetCurrentThreadInfo().Context);
-        Cpu::DelayInMilliseconds(1000);
+        Cpu::Delay(1000ms);
     }
 }
 

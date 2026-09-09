@@ -92,12 +92,12 @@ static Cpu::PerformanceTimeDiff RefreshState(UsbDriver& driver)
         AxisStates[static_cast<size_t>(Axis::LeftX)]  = static_cast<int16_t>(static_cast<int8_t>(report.x - 128) * 256);
         AxisStates[static_cast<size_t>(Axis::LeftY)]  = static_cast<int16_t>(static_cast<int8_t>(report.y - 128) * 256);
 
-        return Cpu::GetPerformanceTicksForMs(20u); // Refresh every 20 ms
+        return Cpu::ToTicks(20ms); // Refresh every 20 ms
     }
     else
     {
         printf("HID Gamepad Read Error: %d\n", status);
-        return Cpu::GetPerformanceTicksForMs(1u); // Try again in 1ms
+        return Cpu::ToTicks(1ms); // Try again in 1ms
     }
 }
 
@@ -158,7 +158,7 @@ static Cpu::PerformanceTimeDiff RefreshState(UsbDriver& driver)
         if (report.report_id != 0x30)
         {
             printf("HID Gamepad unknown report ID: %02X\n", report.report_id);
-            return Cpu::GetPerformanceTicksForMs(1u); // Try again in 1ms
+            return Cpu::ToTicks(1ms); // Try again in 1ms
         }
         //printf("HID Gamepad Buttons: %08b %08b %08b Axes: %6d %6d %6d %6d Vendor: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n",
         //    report.buttons, report.buttons2, report.buttons3, report.leftX - 0x7F0, report.leftY - 0x80, report.rightX - 0x7F0, report.rightY - 0x80,
@@ -193,12 +193,12 @@ static Cpu::PerformanceTimeDiff RefreshState(UsbDriver& driver)
         AxisStates[static_cast<size_t>(Axis::RightX)] = static_cast<int16_t>(static_cast<int16_t>(report.rightX - 0x7F0) * 16);
         AxisStates[static_cast<size_t>(Axis::RightY)] = static_cast<int16_t>(static_cast<int8_t >(report.rightY - 128) * 256);
 
-        return Cpu::GetPerformanceTicksForMs(20u); // Refresh every 20 ms
+        return Cpu::ToTicks(20ms); // Refresh every 20 ms
     }
     else
     {
         //printf("HID Gamepad Read Error: %d\n", status);
-        return Cpu::GetPerformanceTicksForMs(1u); // Try again in 1ms
+        return Cpu::ToTicks(1ms); // Try again in 1ms
     }
 }
 

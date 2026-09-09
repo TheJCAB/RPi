@@ -32,7 +32,7 @@ Interrupts::Spark CallbackC(uintptr_t)
     stream.Puts("Timer C fired - scheduling another timer in 2 seconds!\n");
 
     // Schedule another timer from within a callback
-    Timer::ScheduleSpark(Timer::MicrosecondsToTicks(2'000'000), { .Func = CallbackA }); // 2 seconds = 2,000,000 microseconds
+    Timer::ScheduleSpark(2s, { .Func = CallbackA }); // 2 seconds = 2,000,000 microseconds
 
     return {};
 }
@@ -70,9 +70,9 @@ Interrupts::Spark DemonstrateScheduledTimers()
     Uart::Puts("=== Scheduled Timer Demonstration ===\n");
     
     // Schedule some timers at different intervals
-    Timer::SparkHandle handle_a = Timer::ScheduleSpark(Timer::MicrosecondsToTicks(1'000'000), { .Func = CallbackA });  // 1 second
-    Timer::SparkHandle handle_b = Timer::ScheduleSpark(Timer::MicrosecondsToTicks(2'500'000), { .Func = CallbackB });  // 2.5 seconds
-    Timer::SparkHandle handle_c = Timer::ScheduleSpark(Timer::MicrosecondsToTicks(5'000'000), { .Func = CallbackC });  // 5 seconds
+    Timer::SparkHandle handle_a = Timer::ScheduleSpark(1'000ms, { .Func = CallbackA });  // 1 second
+    Timer::SparkHandle handle_b = Timer::ScheduleSpark(2'500ms, { .Func = CallbackB });  // 2.5 seconds
+    Timer::SparkHandle handle_c = Timer::ScheduleSpark(5'000ms, { .Func = CallbackC });  // 5 seconds
 
     Uart::Puts("Scheduled 3 timers:\n");
     Uart::Puts("  Timer A: 1 second\n");
@@ -80,16 +80,16 @@ Interrupts::Spark DemonstrateScheduledTimers()
     Uart::Puts("  Timer C: 5 seconds (will schedule another)\n");
     
     // Example of scheduling at absolute time
-    auto current_time = Timer::GetCurrentTimeTicks();
-    auto future_time = current_time + Timer::MicrosecondsToTicks(3'000'000); // 3 seconds from now
+    auto current_time = Cpu::GetPerformanceCounter();
+    auto future_time = current_time + Cpu::ToTicks(3s); // 3 seconds from now
     Timer::SparkHandle handle_abs = Timer::ScheduleSparkAtTime(future_time, { .Func = AbsoluteTimeCallback });
 
     // Example of canceling a timer
     Uart::Puts("  Timer D: 0.5 seconds (will be cancelled)\n");
-    cancel_handle = Timer::ScheduleSpark(Timer::MicrosecondsToTicks(500'000), { .Func = NeverCallCallback });
+    cancel_handle = Timer::ScheduleSpark(Cpu::ToTicks(500ms), { .Func = NeverCallCallback });
 
     // Cancel the timer after 100ms
-    Timer::ScheduleSpark(Timer::MicrosecondsToTicks(100'000), { .Func = CancelTimerCallback });
+    Timer::ScheduleSpark(Cpu::ToTicks(100ms), { .Func = CancelTimerCallback });
 
     Uart::Puts("Timers set up. Watch for callbacks over the next 10 seconds...\n");
     return {};

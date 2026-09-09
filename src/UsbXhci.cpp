@@ -987,59 +987,66 @@ public:
     }
 
 
-    Status wait_for_transfer_event(uint32_t slotId, uint32_t timeout_ms = 1000) {
+    Status wait_for_transfer_event(uint32_t slotId, std::chrono::microseconds timeout = 1s)
+    {
         if (event_ring.empty())
         {
             printf("XHCI: Event ring is not initialized\n");
             return Status::Error;
         }
 
-        auto const start_time = Cpu::GetPerformanceCounter();
-        auto const timeout_ticks = Cpu::GetPerformanceTicksForMs(timeout_ms);
-
-        while ((Cpu::GetPerformanceCounter() - start_time) < timeout_ticks) {
-            EventResult event = GetNextEvent();
-            if (event.Result != Status::Success) {
-                if (event.Result == Status::NotFound) {
-                    Cpu::DelayInMicroseconds(50);
-                    continue;
-                }
-
-                return event.Result;
-            }
-
-            if (event.SlotId != 0 && slotId != 0 && event.SlotId != slotId)
+        auto result = Cpu::WaitUntilWithTimeout(timeout,
+            [&]() -> std::optional<Status>
             {
-                continue;
-            }
+                EventResult event = GetNextEvent();
+                if (event.Result != Status::Success) {
+                    if (event.Result == Status::NotFound) {
+                        Cpu::Delay(50us);
+                        return std::nullopt;
+                    }
 
-            if (event.Type == TrbType::TransferEvent) {
-                if (event.Completion == CompletionCode::Success || event.Completion == CompletionCode::ShortPacket) {
-                    return Status::Success;
+                    return event.Result;
                 }
 
-                if (event.Completion == CompletionCode::EndpointNotEnabled) {
-                    printf("XHCI: Transfer event failed, completion=%u (endpoint not enabled)\n", event.Completion);
+                if (event.SlotId != 0 && slotId != 0 && event.SlotId != slotId)
+                {
+                    return std::nullopt;
+                }
+
+                if (event.Type == TrbType::TransferEvent) {
+                    if (event.Completion == CompletionCode::Success || event.Completion == CompletionCode::ShortPacket) {
+                        return Status::Success;
+                    }
+
+                    if (event.Completion == CompletionCode::EndpointNotEnabled) {
+                        printf("XHCI: Transfer event failed, completion=%u (endpoint not enabled)\n", event.Completion);
+                        return Status::Error;
+                    }
+
+                    printf("XHCI: Transfer event failed, completion=%u\n", event.Completion);
                     return Status::Error;
                 }
 
-                printf("XHCI: Transfer event failed, completion=%u\n", event.Completion);
-                return Status::Error;
-            }
-
-            if (event.Type == TrbType::CmdCompletionEvent) {
-                if (event.Completion != CompletionCode::Success) {
-                    printf("XHCI: Command completion failed, completion=%u\n", event.Completion);
+                if (event.Type == TrbType::CmdCompletionEvent) {
+                    if (event.Completion != CompletionCode::Success) {
+                        printf("XHCI: Command completion failed, completion=%u\n", event.Completion);
+                    }
+                    return std::nullopt;
                 }
-                continue;
-            }
 
-            printf("XHCI: Ignoring event type=%u completion=%u\n", event.Type, event.Completion);
+                printf("XHCI: Ignoring event type=%u completion=%u\n", event.Type, event.Completion);
+                return std::nullopt;
+            }
+        );
+        if (result)
+        {
+            return result.value();
         }
 
         printf("XHCI: Timed out waiting for transfer completion event\n");
         size_t i = 0;
-        for (auto& trb : event_ring) {
+        for (auto& trb : event_ring)
+        {
             if (trb != TRB{}) {
                 printf("Event TRB[%zu]: parameter=0x%016llX status=0x%08X control=0x%08X\n", i, trb.parameter, trb.status, trb.control);
             }
@@ -1048,39 +1055,45 @@ public:
         return Status::Timeout;
     }
 
-    bool wait_for_command_completion(uint32_t& slotId, uint32_t timeout_ms = 1000) {
-        auto const start_time = Cpu::GetPerformanceCounter();
-        auto const timeout_ticks = Cpu::GetPerformanceTicksForMs(timeout_ms);
+    bool wait_for_command_completion(uint32_t& slotId, std::chrono::microseconds timeout = 1s)
+    {
+        auto result = Cpu::WaitUntilWithTimeout(timeout,
+            [&] -> std::optional<bool>
+            {
+                EventResult event = GetNextEvent();
+                if (event.Result != Status::Success) {
+                    if (event.Result == Status::NotFound) {
+                        Cpu::Delay(50us);
+                        return std::nullopt;
+                    }
 
-        while ((Cpu::GetPerformanceCounter() - start_time) < timeout_ticks) {
-            EventResult event = GetNextEvent();
-            if (event.Result != Status::Success) {
-                if (event.Result == Status::NotFound) {
-                    Cpu::DelayInMicroseconds(50);
-                    continue;
+                    return false;
                 }
 
-                return false;
-            }
+                if (event.Type != TrbType::CmdCompletionEvent) {
+                    return std::nullopt;
+                }
 
-            if (event.Type != TrbType::CmdCompletionEvent) {
-                continue;
-            }
+                if (event.Completion != CompletionCode::Success) {
+                    printf("XHCI: Command completion failed, completion=%u\n", event.Completion);
+                    return false;
+                }
 
-            if (event.Completion != CompletionCode::Success) {
-                printf("XHCI: Command completion failed, completion=%u\n", event.Completion);
-                return false;
+                slotId = event.SlotId;
+                return true;
             }
-
-            slotId = event.SlotId;
-            return true;
+        );
+        if (result)
+        {
+            return result.value();
         }
 
         printf("XHCI: Timed out waiting for command completion event\n");
-         printf("XHCI: USBSTS=0x%08X IMAN=0x%08X ERDP=0x%016llX\n",
-             operationalRegisters_.UsbStatus.get(),
-             runtimeRegisters_.InterrupterManagement.get(),
-             get_erdp());
+        printf("XHCI: USBSTS=0x%08X IMAN=0x%08X ERDP=0x%016llX\n",
+            operationalRegisters_.UsbStatus.get(),
+            runtimeRegisters_.InterrupterManagement.get(),
+            get_erdp()
+        );
         return false;
     }
     
@@ -1097,7 +1110,7 @@ public:
         if (usbsts_before & XHCI_STS_HCH) {
             printf("XHCI: Controller halted before command submit, attempting restart\n");
             operationalRegisters_.UsbCommand |= XHCI_CMD_RUN;
-            Cpu::DelayInMicroseconds(100);
+            Cpu::Delay(100us);
             usbcmd_before = operationalRegisters_.UsbCommand;
         }
         
@@ -1244,35 +1257,26 @@ public:
         return info;
     }
 
-    bool wait_for_ready(uint32_t timeout_ms = 1000) {
-        auto start_time = Cpu::GetPerformanceCounter();
-        auto timeout_ticks = Cpu::GetPerformanceTicksForMs(timeout_ms);
-        
-        while ((Cpu::GetPerformanceCounter() - start_time) < timeout_ticks) {
-            uint32_t status = operationalRegisters_.UsbStatus;
-            if (!(status & XHCI_STS_CNR)) {
-                return true;
-            }
+    bool wait_for_ready(std::chrono::microseconds timeout = 1s)
+    {
+        uint32_t status = 0;
+        if (!Cpu::WaitUntilWithTimeout(timeout, [&]{
+                status = operationalRegisters_.UsbStatus;
+                return !(status & XHCI_STS_CNR);
+            }))
+        {
+            printf("Timed out waiting for ready state. Command: 0x%X, Status: 0x%X\n", operationalRegisters_.UsbCommand.get(), status);
+            return false;
         }
-        return false;
+        else
+        {
+            return true;
+        }
     }
 
     bool reset_controller()
     {
-        auto start_time = Cpu::GetPerformanceCounter();
-        auto timeout_ticks = Cpu::GetPerformanceTicksForMs(5000);
-        
-        uint32_t status = 0;
-        while ((Cpu::GetPerformanceCounter() - start_time) < timeout_ticks) {
-            status = operationalRegisters_.UsbStatus;
-            if (!(status & XHCI_STS_CNR)) {
-                break;
-            }
-        }
-
-        if (status & XHCI_STS_CNR) {
-            printf("Timed out waiting for ready state. Command: 0x%X, Status: 0x%X\n", operationalRegisters_.UsbCommand.get(), operationalRegisters_.UsbStatus.get());
-        }
+        wait_for_ready(5s);
 
         printf("Command: 0x%X, Status: 0x%X\n", operationalRegisters_.UsbCommand.get(), operationalRegisters_.UsbStatus.get());
 
@@ -1282,15 +1286,13 @@ public:
         operationalRegisters_.UsbCommand &= ~XHCI_CMD_RUN;
         
         // Wait for halt
-        start_time = Cpu::GetPerformanceCounter();
-        timeout_ticks = Cpu::GetPerformanceTicksForMs(5000);
-        
-        status = 0;
-        while ((Cpu::GetPerformanceCounter() - start_time) < timeout_ticks) {
-            status = operationalRegisters_.UsbStatus;
-            if (status & XHCI_STS_HCH) {
-                break;
-            }
+        uint32_t status = 0;
+        if (!Cpu::WaitUntilWithTimeout(5s, [&]{
+                status = operationalRegisters_.UsbStatus;
+                return (status & XHCI_STS_HCH) != 0;
+            }))
+        {
+            printf("Timed out waiting for halt state. Command: 0x%X, Status: 0x%X\n", operationalRegisters_.UsbCommand.get(), status);
         }
         
         printf("XHCI: Controller halted...\n");
@@ -1300,15 +1302,11 @@ public:
         
         // Wait for reset to complete
         uint32_t cmd = 0;
-        start_time = Cpu::GetPerformanceCounter();
-        while ((Cpu::GetPerformanceCounter() - start_time) < timeout_ticks) {
-            cmd = operationalRegisters_.UsbCommand;
-            if (!(cmd & XHCI_CMD_HCRST)) {
-                break;
-            }
-        }
-        
-        if (cmd & XHCI_CMD_HCRST) {
+        if (!Cpu::WaitUntilWithTimeout(5s, [&]{
+                cmd = operationalRegisters_.UsbCommand;
+                return !(cmd & XHCI_CMD_HCRST);
+            }))
+        {
             printf("XHCI: Reset timeout\n");
             printf("Command: 0x%X, Status: 0x%X\n", cmd, status);
             return false;
@@ -1325,19 +1323,23 @@ public:
         operationalRegisters_.UsbCommand &= ~XHCI_CMD_RUN;
         
         // Wait for halt
-        auto start_time = Cpu::GetPerformanceCounter();
-        auto timeout_ticks = Cpu::GetPerformanceTicksForMs(1000);
-        
-        while ((Cpu::GetPerformanceCounter() - start_time) < timeout_ticks) {
-            uint32_t status = operationalRegisters_.UsbStatus;
-            if (status & XHCI_STS_HCH) {
-                printf("XHCI: Controller halted\n");
-                return Status::Success;
-            }
+        if (!Cpu::WaitUntilWithTimeout(1s, [&]{
+                uint32_t status = operationalRegisters_.UsbStatus;
+                if (status & XHCI_STS_HCH) {
+                    printf("XHCI: Controller halted\n");
+                    return true;
+                }
+                else
+                {
+                    return false;
+                }
+            }))
+        {
+            printf("XHCI: Shutdown timeout\n");
+            return Status::Timeout;
         }
-        
-        printf("XHCI: Shutdown timeout\n");
-        return Status::Timeout;
+
+        return Status::Success;
     }
 
     Status read(DeviceSlot& slot, uint8_t endpoint, std::span<uint8_t> buffer)
@@ -1612,7 +1614,7 @@ public:
             if (!reset_in_progress && enabled) {
                 return;
             }
-            Cpu::DelayInMicroseconds(100);
+            Cpu::Delay(100us);
         }
 
         uint32_t const final_portsc = portscReg;
@@ -1947,7 +1949,7 @@ public:
 
         deviceTable_[slotId - 1] = device;
 
-        Cpu::DelayInMilliseconds(20);
+        Cpu::Delay(20ms);
 
         return std::move(device);
     }
@@ -2111,7 +2113,7 @@ public:
         
         // Wait for controller to start and leave halted state.
         auto start_time = Cpu::GetPerformanceCounter();
-        auto timeout_ticks = Cpu::GetPerformanceTicksForMs(1000u);
+        auto timeout_ticks = Cpu::ToTicks(1s);
 
         bool running = false;
         while ((Cpu::GetPerformanceCounter() - start_time) < timeout_ticks)
@@ -2123,7 +2125,7 @@ public:
                 running = true;
                 break;
             }
-            co_await Async::DelayInMicroseconds(50);
+            co_await Async::Delay(50us);
         }
 
         if (!running)
@@ -2389,7 +2391,7 @@ CapabilityRegisters& CreateController(PCIe::Bcm2711Driver& pcie, PCIe::DeviceAdd
     common.Command = 0x146; // !IO, Memory, Master, SERR, PARITY
 
     // Add a delay to ensure the configuration takes effect
-    Cpu::DelayInMicroseconds(100'000);
+    Cpu::Delay(100ms);
 
     asm volatile("dsb sy" : : : "memory");  // ARM64
 

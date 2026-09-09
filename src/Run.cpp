@@ -37,7 +37,7 @@ void Flashing(UsbDriver& driver)
                 background = Magenta;
             }
 
-            Cpu::DelayInMicroseconds(33'333); // Delay for 33.333 ms (30 FPS)
+            Cpu::Delay(33'333us); // Delay for 33.333 ms (30 FPS)
             for (uint32_t x = 0; x < Framebuffer::Width; ++x)
             {
                 for (uint32_t y = 0; y < Framebuffer::Height; ++y)
@@ -101,7 +101,7 @@ enum Direction
 };
 Direction direction = None;
 
-auto const DesiredFrameTime = Cpu::GetPerformanceTicksForUs(33'333);
+auto const DesiredFrameTime = Cpu::ToTicks(33'333us);
 
 Cpu::PerformanceTime nextSimulationTime{0};
 
@@ -132,7 +132,7 @@ void FlashScreen(Color565 color)
 {
     Framebuffer::WriteRectangle(0, 0, Framebuffer::Width, Framebuffer::Height, color);
     Framebuffer::Flip();
-    Cpu::DelayInMicroseconds(33'333); // Flash for 33.333 ms (30 FPS)
+    Cpu::Delay(33'333us); // Flash for 33.333 ms (30 FPS)
 }
 
 void Snake(UsbDriver& driver)
@@ -265,7 +265,7 @@ void Snake(UsbDriver& driver)
             {
                 delayFrame = currentTime + DesiredFrameTime;
             }
-            Cpu::DelayUntilPerformanceTime(delayFrame);
+            BootLib::Cpu::DelayUntilPerformanceTime(delayFrame);
         }
     }
 }

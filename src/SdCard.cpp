@@ -112,7 +112,7 @@ unsigned long sd_scr[2], sd_ocr, sd_rca, sd_err, sd_hv;
  */
 int sd_status(auto& registers, unsigned int mask)
 {
-    int cnt = 500000; while((registers.STATUS & mask) && !(registers.INTERRUPT & INT_ERROR_MASK) && cnt--) Cpu::DelayInMilliseconds(1);
+    int cnt = 500000; while((registers.STATUS & mask) && !(registers.INTERRUPT & INT_ERROR_MASK) && cnt--) Cpu::Delay(1ms);
     return (cnt <= 0 || (registers.INTERRUPT & INT_ERROR_MASK)) ? SD_ERROR : SD_OK;
 }
 
@@ -122,7 +122,7 @@ int sd_status(auto& registers, unsigned int mask)
 int sd_int(auto& registers, unsigned int mask)
 {
     unsigned int r, m=mask | INT_ERROR_MASK;
-    int cnt = 1000000; while(!(registers.INTERRUPT & m) && cnt--) Cpu::DelayInMilliseconds(1);
+    int cnt = 1000000; while(!(registers.INTERRUPT & m) && cnt--) Cpu::Delay(1ms);
     r=registers.INTERRUPT;
     if(cnt<=0 || (r & INT_CMD_TIMEOUT) || (r & INT_DATA_TIMEOUT) ) { registers.INTERRUPT=r; return SD_TIMEOUT; } else
     if(r & INT_ERROR_MASK) { registers.INTERRUPT=r; return SD_ERROR; }
@@ -147,8 +147,8 @@ int sd_cmd(auto& registers, unsigned int code, unsigned int arg)
     registers.INTERRUPT = registers.INTERRUPT.get();
     registers.ARG1=arg;
     registers.CMDTM=code;
-    if(code==CMD_SEND_OP_COND) Cpu::DelayInMilliseconds(1000); else
-    if(code==CMD_SEND_IF_COND || code==CMD_APP_CMD) Cpu::DelayInMilliseconds(100);
+    if(code==CMD_SEND_OP_COND) Cpu::Delay(1000ms); else
+    if(code==CMD_SEND_IF_COND || code==CMD_APP_CMD) Cpu::Delay(100ms);
     if((r=sd_int(registers, INT_CMD_DONE))) {Uart::Puts("ERROR: failed to send EMMC command\n");sd_err=r;return 0;}
     r=registers.RESP0;
     if(code==CMD_GO_IDLE || code==CMD_APP_CMD) return 0; else
@@ -172,18 +172,18 @@ int sd_clk(auto& registers, unsigned int f)
 {
     unsigned int d;
     //unsigned int c=41'666'666/f;
-    unsigned int coreFrequency = Cpu::IsRpi4() ? 500'000'000u : 500'000'000u;
+    unsigned int coreFrequency = BootLib::Cpu::IsRpi4() ? 500'000'000u : 500'000'000u;
     unsigned int c = coreFrequency / (f * 6u);
     unsigned int x,s=32,h=0;
     int cnt = 100000;
-    while((registers.STATUS & (SR_CMD_INHIBIT|SR_DAT_INHIBIT)) && cnt--) Cpu::DelayInMilliseconds(1);
+    while((registers.STATUS & (SR_CMD_INHIBIT|SR_DAT_INHIBIT)) && cnt--) Cpu::Delay(1ms);
     if(cnt<=0) {
         Uart::Puts("ERROR: timeout waiting for inhibit flag\n");
         return SD_ERROR;
     }
 
     registers.CONTROL1 &= ~C1_CLK_EN;
-    Cpu::DelayInMilliseconds(10);
+    Cpu::Delay(10ms);
     x=c-1; if(!x) s=0; else {
         if(!(x & 0xffff0000u)) { x <<= 16; s -= 16; }
         if(!(x & 0xff000000u)) { x <<= 8;  s -= 8; }
@@ -198,10 +198,10 @@ int sd_clk(auto& registers, unsigned int f)
     Uart::Puts("sd_clk divisor ");Uart::PutHex(d);Uart::Puts(", shift ");Uart::PutHex(s);Uart::Puts("\n");
     if(sd_hv>HOST_SPEC_V2) h=(d&0x300)>>2;
     d=(((d&0x0ff)<<8)|h);
-    registers.CONTROL1=(registers.CONTROL1&0xffff003f)|d; Cpu::DelayInMilliseconds(10);
+    registers.CONTROL1=(registers.CONTROL1&0xffff003f)|d; Cpu::Delay(10ms);
     registers.CONTROL1 |= C1_CLK_EN;
-    Cpu::DelayInMilliseconds(10);
-    cnt=10000; while(!(registers.CONTROL1 & C1_CLK_STABLE) && cnt--) Cpu::DelayInMilliseconds(10);
+    Cpu::Delay(10ms);
+    cnt=10000; while(!(registers.CONTROL1 & C1_CLK_STABLE) && cnt--) Cpu::Delay(10ms);
     if(cnt<=0) {
         Uart::Puts("ERROR: failed to get stable clock\n");
         return SD_ERROR;
@@ -218,7 +218,7 @@ bool SdCard::Init()
     int cnt;
     long ccs=0;
 
-    if (Cpu::IsRpi4())
+    if (BootLib::Cpu::IsRpi4())
     {
         //Mailbox::TagMessage<Mailbox::Tag::SET_GPIO_PIN, 2> setEMMC2Voltage{{ 128 + 4, 0 }};
         //Mailbox::SendTags(setEMMC2Voltage);
@@ -267,7 +267,7 @@ bool SdCard::Init()
     cnt=10000;
     do
     {
-        Cpu::DelayInMilliseconds(10);
+        Cpu::Delay(10ms);
     }
     while((registers.CONTROL1 & C1_SRST_HC) && cnt--);
 
@@ -277,7 +277,7 @@ bool SdCard::Init()
     Uart::Puts("EMMC: reset OK\n");
 
     registers.CONTROL1 |= C1_CLK_INTLEN | C1_TOUNIT_MAX;
-    Cpu::DelayInMilliseconds(10);
+    Cpu::Delay(10ms);
 
     // Set clock to setup frequency.
     if (sd_clk(registers, 400'000)) return false;
@@ -313,7 +313,7 @@ bool SdCard::Init()
         uint64_t result = 0;
         while(!(result & ACMD41_CMD_COMPLETE) && cnt--)
         {
-            Cpu::DelayInMicroseconds(400);
+            Cpu::Delay(400us);
             result = sd_cmd(registers, CMD_SEND_OP_COND,ACMD41_ARG_HC);
             Uart::Puts("EMMC: CMD_SEND_OP_COND returned ");
             if (result & ACMD41_CMD_COMPLETE)
@@ -366,7 +366,7 @@ bool SdCard::Init()
         if (registers.STATUS & SR_READ_AVAILABLE)
             sd_scr[r++] = registers.DATA;
         else
-            Cpu::DelayInMilliseconds(1);
+            Cpu::Delay(1ms);
     }
     if (r != 2) return false; // SD_TIMEOUT;
     if (sd_scr[0] & SCR_SD_BUS_WIDTH_4)

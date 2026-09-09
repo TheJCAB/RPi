@@ -29,7 +29,24 @@ constexpr PerformanceTime& operator+=(PerformanceTime& a, PerformanceTimeDiff b)
 constexpr PerformanceTime& operator-=(PerformanceTime& a, PerformanceTimeDiff b) { return a = a - b; }
 
 constexpr PerformanceTimeDiff operator-  (PerformanceTime a, PerformanceTime b) { return static_cast<PerformanceTimeDiff>(static_cast<int64_t>(a) - static_cast<int64_t>(b)); }
+constexpr bool                operator== (PerformanceTime a, PerformanceTime b) { return static_cast<uint64_t>(a) == static_cast<uint64_t>(b); }
 constexpr auto                operator<=>(PerformanceTime a, PerformanceTime b) { return static_cast<int64_t>(a - b) <=> int64_t{0}; }
+
+constexpr PerformanceTimeDiff operator+ (PerformanceTimeDiff a, std::integral auto b) { return static_cast<PerformanceTimeDiff>(static_cast<int64_t>(a) + static_cast<int64_t>(b)); }
+constexpr PerformanceTimeDiff operator- (PerformanceTimeDiff a, std::integral auto b) { return static_cast<PerformanceTimeDiff>(static_cast<int64_t>(a) - static_cast<int64_t>(b)); }
+constexpr PerformanceTimeDiff operator/ (PerformanceTimeDiff a, std::integral auto b) { return static_cast<PerformanceTimeDiff>(static_cast<int64_t>(a) / static_cast<int64_t>(b)); }
+constexpr PerformanceTimeDiff operator% (PerformanceTimeDiff a, std::integral auto b) { return static_cast<PerformanceTimeDiff>(static_cast<int64_t>(a) % static_cast<int64_t>(b)); }
+
+constexpr PerformanceTimeDiff operator+ (PerformanceTimeDiff a, PerformanceTimeDiff b) { return static_cast<PerformanceTimeDiff>(static_cast<int64_t>(a) + static_cast<int64_t>(b)); }
+constexpr PerformanceTimeDiff operator- (PerformanceTimeDiff a, PerformanceTimeDiff b) { return static_cast<PerformanceTimeDiff>(static_cast<int64_t>(a) - static_cast<int64_t>(b)); }
+
+constexpr PerformanceTimeDiff& operator+=(PerformanceTimeDiff& a, std::integral auto b) { return a = a + b; }
+constexpr PerformanceTimeDiff& operator-=(PerformanceTimeDiff& a, std::integral auto b) { return a = a - b; }
+constexpr PerformanceTimeDiff& operator/=(PerformanceTimeDiff& a, std::integral auto b) { return a = a / b; }
+constexpr PerformanceTimeDiff& operator%=(PerformanceTimeDiff& a, std::integral auto b) { return a = a % b; }
+
+constexpr PerformanceTimeDiff& operator+=(PerformanceTimeDiff& a, PerformanceTimeDiff b) { return a = a + b; }
+constexpr PerformanceTimeDiff& operator-=(PerformanceTimeDiff& a, PerformanceTimeDiff b) { return a = a - b; }
 
 uint64_t        GetPerformanceFrequency();
 PerformanceTime GetPerformanceCounter  ();

@@ -489,12 +489,12 @@ Bcm2711Driver::Bcm2711Driver()
 
     // Reset the controller.
     registers.INIT |= 0x3u; // Assert INIT and PERST
-    Cpu::DelayInMicroseconds(1000);
+    Cpu::Delay(1ms);
     registers.INIT &= ~0x2u; // Deassert INIT
 
     // SERDES_IDDQ -- Note: Seen no explanation/documentation for this.
     registers.DEBUG &= ~0x0800'0000u;
-    Cpu::DelayInMicroseconds(100);
+    Cpu::Delay(100us);
 
     std::uint32_t revision = registers.REV;
     printf("Revision=%x\n", revision);
@@ -505,7 +505,7 @@ Bcm2711Driver::Bcm2711Driver()
 
     // Take controller out of reset.
     registers.INIT &= ~0x1u;
-    Cpu::DelayInMilliseconds(100);
+    Cpu::Delay(100ms);
 
     // Wait for link to become active.
     {
@@ -515,7 +515,7 @@ Bcm2711Driver::Bcm2711Driver()
             if ((status & 0x30) == 0x30) { // Phy linkup & DL Active
                 break;
             }
-            Cpu::DelayInMicroseconds(1000);
+            Cpu::Delay(1ms);
             status = registers.STATUS;
         }
 
@@ -896,24 +896,19 @@ namespace examples {
             common.Command = 0x146; // !IO, Memory, Master, SERR, PARITY
 
             // Add a delay to ensure the configuration takes effect
-            Cpu::DelayInMicroseconds(100'000);
+            Cpu::Delay(100ms);
 
             asm volatile("dsb sy" : : : "memory");  // ARM64
 
 
             printf("    Command: 0x%08x  Status: 0x%08x\n", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
+            if (!Cpu::WaitUntilWithTimeout(10ms, [&]{
+                    return (*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24) & (1u << 11)) == 0;
+                }))
             {
-                auto const timeoutTime = Cpu::GetPerformanceCounter() + Cpu::GetPerformanceTicksForMs(10'000);
-                while ((*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24) & (1u << 11)) && Cpu::GetPerformanceCounter() < timeoutTime)
-                {
-                    Cpu::Yield();
-                }
-                if (*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24) & (1u << 11))
-                {
-                    printf("XHCI didn't become ready.\n");
-                    printf("    Command: 0x%08x  Status: 0x%08x\n", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
-                    Cpu::Halt();
-                }
+                printf("XHCI didn't become ready.\n");
+                printf("    Command: 0x%08x  Status: 0x%08x\n", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
+                Cpu::Halt();
             }
 
             // Test memory access
@@ -944,11 +939,9 @@ namespace examples {
             printf("    Resetting...\n");
             *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20) |= 1u << 1;
             {
-                auto const timeoutTime = Cpu::GetPerformanceCounter() + Cpu::GetPerformanceTicksForMs(10'000);
-                while ((*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20) & (1u << 1)) && Cpu::GetPerformanceCounter() < timeoutTime)
-                {
-                    Cpu::Yield();
-                }
+                Cpu::WaitUntilWithTimeout(10'000ms, [&]{
+                    return (*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20) & (1u << 1)) == 0;
+                });
             }
 
             for (int i = 0; i * 4 < 0xB4; ++i)
@@ -980,12 +973,9 @@ namespace examples {
 //                    printf("    New state: %u\n", resetTag.args[0]);
 //                }
 
-                auto const timeoutTime = Cpu::GetPerformanceCounter() + Cpu::GetPerformanceTicksForMs(10'000);
-                while ((*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24) & 0x800u) &&
-                        (Cpu::GetPerformanceCounter() < timeoutTime))
-                {
-                    Cpu::Yield();
-                }
+                Cpu::WaitUntilWithTimeout(10'000ms, [&]{
+                    return (*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24) & 0x800u) == 0;
+                });
 
                 for (int i = 0; i * 4 < 0xB4; ++i)
                 {
@@ -1011,7 +1001,7 @@ namespace examples {
                 printf("    Detected VL805 USB 3.0 controller\n");
                 
                 // Wait for power stabilization
-                Cpu::DelayInMicroseconds(10000); // 10ms delay
+                Cpu::Delay(10ms);
                 
                 // XHCI capability registers start at BAR 0
                 volatile uint32_t* xhci_base = reinterpret_cast<volatile uint32_t*>(0x600000000ULL);

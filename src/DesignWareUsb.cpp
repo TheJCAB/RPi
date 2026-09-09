@@ -606,24 +606,20 @@ DWCRESULT PowerOffUsb(void) {
  --------------------------------------------------------------------------*/
 DWCRESULT HCDReset(void) {
 
-    auto ticks100ms = Cpu::GetPerformanceTicksForUs(100'000);
-    auto original_tick = Cpu::GetPerformanceCounter();
-    do {
-        if (Cpu::GetPerformanceCounter() - original_tick > ticks100ms) {
-            return DWCRESULT::ErrorTimeout;
-        }
-    } while ((*DWC_CORE->RESET).AhbMasterIdle == false);
+    if (!Cpu::WaitUntilWithTimeout(100ms, [&]{ return DWC_CORE->RESET->AhbMasterIdle; }))
+    {
+        return DWCRESULT::ErrorTimeout;
+    }
 
     DWC_CORE->RESET = [](auto& r){ r.CoreSoft = true; };
 
-    struct CoreReset temp;
-    original_tick = Cpu::GetPerformanceCounter();
-    do {
-        if (Cpu::GetPerformanceCounter() - original_tick > ticks100ms) {
-            return DWCRESULT::ErrorTimeout;
-        }
-        temp = *DWC_CORE->RESET;
-    } while (temp.CoreSoft == true || temp.AhbMasterIdle == false);
+    if (!Cpu::WaitUntilWithTimeout(100ms, [&]{
+            CoreReset temp = *DWC_CORE->RESET;
+            return !temp.CoreSoft && temp.AhbMasterIdle;
+        }))
+    {
+        return DWCRESULT::ErrorTimeout;
+    }
 
     return DWCRESULT::Ok;
 }
@@ -637,13 +633,10 @@ DWCRESULT HCDTransmitFifoFlush(CoreFifoFlush fifo) {
     DWC_CORE->RESET = [=](auto& r){ r.TransmitFifoFlushNumber = fifo; };
     DWC_CORE->RESET = [](auto& r){ r.TransmitFifoFlush = true; };
 
-    auto ticks100ms = Cpu::GetPerformanceTicksForUs(100'000);
-    auto original_tick = Cpu::GetPerformanceCounter();
-    do {
-        if (Cpu::GetPerformanceCounter() - original_tick > ticks100ms) {
-            return DWCRESULT::ErrorTimeout;
-        }
-    } while ((*DWC_CORE->RESET).TransmitFifoFlush == true);
+    if (!Cpu::WaitUntilWithTimeout(100ms, [&]{ return !DWC_CORE->RESET->TransmitFifoFlush; }))
+    {
+        return DWCRESULT::ErrorTimeout;
+    }
 
     return DWCRESULT::Ok;
 }
@@ -656,13 +649,10 @@ DWCRESULT HCDReceiveFifoFlush(void) {
 
     DWC_CORE->RESET = [](auto& r){ r.ReceiveFifoFlush = true; };
 
-    auto ticks100ms = Cpu::GetPerformanceTicksForUs(100'000);
-    auto original_tick = Cpu::GetPerformanceCounter();
-    do {
-        if (Cpu::GetPerformanceCounter() - original_tick > ticks100ms) {
-            return DWCRESULT::ErrorTimeout;
-        }
-    } while ((*DWC_CORE->RESET).ReceiveFifoFlush == true);
+    if (!Cpu::WaitUntilWithTimeout(100ms, [&]{ return !DWC_CORE->RESET->ReceiveFifoFlush; }))
+    {
+        return DWCRESULT::ErrorTimeout;
+    }
 
     return DWCRESULT::Ok;
 }
@@ -783,7 +773,7 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
     coreUsb.TsDlinePulseEnable = 0;
     DWC_CORE->CONTROL = coreUsb;
 
-    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::Delay(1ms);
 
     LOG_DEBUG("HCD: Master reset.\n");                                
     if ((result = HCDReset()) != DWCRESULT::Ok) {
@@ -791,7 +781,7 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
         co_return std::unexpected{ result };
     }
 
-    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::Delay(1ms);
 
     if (!PhyInitialized) {
         LOG_DEBUG("HCD: One time phy initialisation.\n");
@@ -807,7 +797,7 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
         }
     }
 
-    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::Delay(1ms);
 
     coreUsb = *DWC_CORE->CONTROL;
     if ((*DWC_CORE->HARDWARE1).HighSpeedPhysical == Ulpi
@@ -822,14 +812,14 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
     }
     DWC_CORE->CONTROL = coreUsb;
 
-    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::Delay(1ms);
 
     CoreAhb tempAhb = *DWC_CORE->AHB;
     tempAhb.DmaEnable = true;
     tempAhb.DmaRemainderMode = Incremental;
     DWC_CORE->AHB = tempAhb;
 
-    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::Delay(1ms);
 
     coreUsb = *DWC_CORE->CONTROL;
     switch ((*DWC_CORE->HARDWARE1).OperatingMode) {
@@ -857,15 +847,15 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
     LOG_DEBUG("HCD: Core started.\n");
     LOG_DEBUG("HCD: Starting host.\n");
 
-    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::Delay(1ms);
 
     DWC_POWER_AND_CLOCK = {};
 
-    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::Delay(1ms);
 
     DWC_CORE->RECEIVESIZE = ReceiveFifoSize;
 
-    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::Delay(1ms);
 
     DWC_CORE->NONPERIODICFIFO_SIZE = [](auto& r)
     {
@@ -873,7 +863,7 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
         r.StartAddress = ReceiveFifoSize;
     };
 
-    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::Delay(1ms);
 
     DWC_CORE->PERIODICINFO_HostSize = [](auto& r)
     {
@@ -881,7 +871,7 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
         r.StartAddress = ReceiveFifoSize + NonPeriodicFifoSize;
     };
 
-    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::Delay(1ms);
 
     LOG_DEBUG("HCD: Set HNP: enabled.\n");
 
@@ -890,15 +880,15 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
     DWC_CORE->OTGCONTROL = tempOtgControl;
     //DWC_CORE->OTGINTERRUPT = 0xFFFF'FFFFu; // Clear all OTG interrupts
 
-    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::Delay(1ms);
 
     if ((result = HCDTransmitFifoFlush(FlushAll)) != DWCRESULT::Ok)
         co_return std::unexpected{ result };
-    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::Delay(1ms);
 
     if ((result = HCDReceiveFifoFlush()) != DWCRESULT::Ok)
         co_return std::unexpected{ result };
-    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
+    /*co_await Async*/ Cpu::Delay(1ms);
 
     HCDHost::ClockRate clockRate;
 

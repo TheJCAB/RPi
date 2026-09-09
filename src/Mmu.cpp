@@ -599,7 +599,7 @@ __attribute__((noinline)) void DumpMMUState()
 
 __attribute__((noinline)) void InitPageTables()
 {
-    if (Cpu::IsQemu())
+    if (BootLib::Cpu::IsQemu())
     {
         Mmio::Base    = 0x0000'0000u; // Update MMIO base to the new aperture.
         Mmio::QA7Base = 0x0000'0000u; // Update ARM cores' MMIO base to the new aperture.
@@ -613,7 +613,7 @@ __attribute__((noinline)) void InitPageTables()
         l1_page_table_physical = &Qemu_l1_page_table;
         l1_page_table          = &Qemu_l1_page_table;
     }
-    else if (Cpu::IsRpi4())
+    else if (BootLib::Cpu::IsRpi4())
     {
         if (Mmio::Rpi4Base == Mmio::Rpi4BaseLo)
         {

@@ -390,7 +390,7 @@ Async::task<std::expected<HubPortFullStatus, RESULT>> UsbDriver::HubPortReset(Us
         }
         timeout = 0;
         do {
-            co_await Async::DelayInMilliseconds(20);
+            co_await Async::Delay(20ms);
             if ((result = co_await HCDReadHubPortStatus(&device, port + 1, portStatus.Raw32)) != RESULT::Ok) {
                 LOG("HUB: Hub failed to get status (4) for %s.Port%d.\n", UsbGetDescription(device), port + 1);
                 co_return std::unexpected(result);
@@ -604,7 +604,7 @@ Async::task<RESULT> UsbDriver::EnumerateDevice(UsbDevice& device)
         LOG("Enumeration: Failed to assign address to %#x.\n", device.GetAddress());// Log the error
         co_return result;												// Fatal enumeration error of this device
     }
-    co_await Async::DelayInMicroseconds(10000);												// Allows time for address to propagate.
+    co_await Async::Delay(10ms);												// Allows time for address to propagate.
     device.Config.Status = USB_STATUS_ADDRESSED;					// Our enumeration status in now addressed
 
     LOG_DEBUG("\n---\nUSB ENUMERATION BY THE BOOK STEP 4 = Read Device Descriptor At Address\n");
@@ -1025,8 +1025,8 @@ Async::task<RESULT> UsbDriver::EnumerateHub(UsbDevice& device)
         if (co_await HCDChangeHubPortFeature(&device, FeaturePower, static_cast<uint8_t>(i + 1), true) != RESULT::Ok)
             LOG("HUB: device: %i could not power Port%d.\n", device.GetAddress(), i + 1);
     }
-    co_await Async::DelayInMicroseconds(data->Descriptor.PowerGoodDelay * 2000);
-    /*co_await Async*/ Cpu::DelayInMicroseconds(1'000);
+    co_await Async::Delay(data->Descriptor.PowerGoodDelay * 2ms);
+    /*co_await Async*/ Cpu::Delay(1ms);
 
     LOG("HUB: device: %i checking %u port connections.\n", device.GetAddress(), data->Children.size());
 

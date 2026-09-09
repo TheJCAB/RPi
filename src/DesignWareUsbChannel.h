@@ -47,14 +47,10 @@ public:
     HCDHost& GetHost() const noexcept { return m_Host; }
 
 private:
-    ChannelInterrupts WaitOnTransmissionResult(uint32_t timeout);
-
-    Async::task<ChannelInterrupts> AwaitTransmissionResult(uint32_t timeout);
-
     struct TransmissionAwaitable;
     friend TransmissionAwaitable;
 
-    TransmissionAwaitable StartTransmission(Cpu::PerformanceTimeDiff timeout);
+    TransmissionAwaitable StartTransmission(std::chrono::microseconds timeout);
 
 private:
     union Registers;

@@ -48,10 +48,7 @@ inline ThreadInfo& SwapCurrentThreadInfo(ThreadInfo* newInfo)
 
 Spark TimerSpark(uintptr_t)
 {
-    Timer::ScheduleSpark(
-        Cpu::GetPerformanceTicksForMs(50),
-        { .Func = TimerSpark }
-    );
+    Timer::ScheduleSpark(50ms, { .Func = TimerSpark });
     //Uart::Puts("-");
     return {};
 }
@@ -73,10 +70,7 @@ void Init()
     Uart::Puts("Scheduler initialized\n");
     //printf("Scheduler initialized. Main thread ThreadInfo: 0x%0X 0x%0X\n", reinterpret_cast<uintptr_t>(&Scheduler::GetCurrentThreadInfo()), threadInfo);
 
-    Timer::ScheduleSpark(
-        Cpu::GetPerformanceTicksForMs(50),
-        { .Func = TimerSpark }
-    );
+    Timer::ScheduleSpark(50ms, { .Func = TimerSpark } );
 }
 
 void AddSpark(Spark const& spark)

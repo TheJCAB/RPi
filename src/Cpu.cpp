@@ -8,7 +8,7 @@
 namespace Cpu
 {
 
-uint64_t const PerformanceFrequency = GetPerformanceFrequency();
+uint64_t const PerformanceFrequency = BootLib::Cpu::GetPerformanceFrequency();
 
 [[noreturn]] void Panic(char const* message)
 {

@@ -306,7 +306,7 @@ void Core0(uintptr_t dtb)
 
         Init_EmbStdio([](char Ch, uintptr_t) { Uart::Puts({ &Ch, 1 }); });
 
-        if (Cpu::IsRpi4())
+        if (BootLib::Cpu::IsRpi4())
         {
             Puts(out, "Detected Raspberry Pi 4\n");
         }
@@ -316,7 +316,7 @@ void Core0(uintptr_t dtb)
         }
 
         Puts(out, "Performance Frequency: ");
-        PutDec(out, Cpu::GetPerformanceFrequency());
+        PutDec(out, BootLib::Cpu::GetPerformanceFrequency());
         Puts(out, "\n");
 
         Puts(out, "\r\n\nHello!\n");
@@ -348,7 +348,7 @@ void Core0(uintptr_t dtb)
         printf("midr_el1: 0x%016llX\n", midr);
 
         // Any further I/O operations will be done once the MMU is active.
-        if (Cpu::IsRpi4())
+        if (BootLib::Cpu::IsRpi4())
         {
             Mmio::Base    = Mmio::Rpi4Base;
             Mmio::QA7Base = Mmio::Rpi4QA7Base;
@@ -361,7 +361,7 @@ void Core0(uintptr_t dtb)
         printf("Page tables initialized... Initializing MMU...\n");
         Mmu::EnableCachesAndMMU();
 
-        if (Cpu::IsRpi4())
+        if (BootLib::Cpu::IsRpi4())
         {
             // The MMIO address changes on Raspberry Pi 4, so we need to recreate the UART before it gets used again.
             uart.~PL011Uart();
@@ -544,15 +544,16 @@ void Core0(uintptr_t dtb)
         for (int i = 0; i < 20; ++i)
         {
             Uart::Puts("Async task is running\n");
-            co_await Async::DelayInMilliseconds(1000);
+            co_await Async::Delay(1000ms);
         }
         Uart::Puts("Async task is done\n");
         co_return;
     }();
 
     Uart::Puts("\n\n\n");
-
+    
     Mailbox::Send(0, 0x80); // UART 1 and USB enabled?
+    Uart::Puts("UART1 and USB enabled\n\n");
 
     SdCard sdCard{ Mmio::Base + SdCard::RegistersOffset };
     if (sdCard.Init())
@@ -617,7 +618,7 @@ void Core0(uintptr_t dtb)
 
     std::shared_ptr<UsbDriver> usbDriver;
 
-    if (Cpu::IsRpi4())
+    if (BootLib::Cpu::IsRpi4())
     {
         //PCIe::examples::demonstrate_enumeration();
         PCIe::Bcm2711Driver pcie{};
