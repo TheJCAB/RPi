@@ -35,7 +35,7 @@
 #include <cstring>
 #include <string>
 #include <memory>
-#include <print>
+#include <fmt/format.h>
 #include <type_traits>
 #include <utility>
 
@@ -140,7 +140,7 @@ union Bcm2711Driver::Registers
 
 void PrintBar(BarInfo const& bar)
 {
-    std::println("    BAR{}: 0x{:016x} (size: 0x{:x}, {}{}{})",
+    fmt::println("    BAR{}: 0x{:016x} (size: 0x{:x}, {}{}{})",
         bar.bar_number,
         static_cast<unsigned long long>(bar.physical_address),
         static_cast<unsigned int>(bar.size),
@@ -151,54 +151,54 @@ void PrintBar(BarInfo const& bar)
 
 void PrintCapability(Capability const& cap, CommonConfigHeader const& config)
 {
-    std::print("    ID: 0x{:02x} ", static_cast<std::underlying_type_t<CapabilityId>>(cap.Id));
+    fmt::print("    ID: 0x{:02x} ", static_cast<std::underlying_type_t<CapabilityId>>(cap.Id));
     switch (cap.Id)
     {
     case CapabilityId::PowerManagement:
     {
-        std::println("Power management capabilities");
+        fmt::println("Power management capabilities");
         auto& capStruct = cap.GetStruct<PowerManagementCapabilities>(config);
-        std::println("      Capabilities: 0x{:04X}", capStruct.Capabilities.get());
-        std::println("      ControlStatus: 0x{:04X}", capStruct.ControlStatus.get());
+        fmt::println("      Capabilities: 0x{:04X}", capStruct.Capabilities.get());
+        fmt::println("      ControlStatus: 0x{:04X}", capStruct.ControlStatus.get());
         break;
     }
     case CapabilityId::Msi:
     {
-        std::println("Msi capabilities");
+        fmt::println("Msi capabilities");
         auto& capStruct = cap.GetStruct<MsiCapabilities>(config);
-        std::println("      Capabilities:  0x{:04X}", capStruct.Capabilities.get());
+        fmt::println("      Capabilities:  0x{:04X}", capStruct.Capabilities.get());
         break;
     }
     case CapabilityId::Pcie:
     {
-        std::println("PCIe capabilities");
+        fmt::println("PCIe capabilities");
         auto& capStruct = cap.GetStruct<PcieCapabilities>(config);
-        std::println("      Capabilities:              0x{:04X}", capStruct.Capabilities       .get());
-        std::println("      Device Capabilities:   0x{:08X}"    , capStruct.DeviceCapabilities .get());
-        std::println("      Device Control:            0x{:04X}", capStruct.DeviceControl      .get());
-        std::println("      Device Status:             0x{:04X}", capStruct.DeviceStatus       .get());
-        std::println("      Link Capabilities:     0x{:08X}"    , capStruct.LinkCapabilities   .get());
-        std::println("      Link Control:              0x{:04X}", capStruct.LinkControl        .get());
-        std::println("      Link Status:               0x{:04X}", capStruct.LinkStatus         .get());
-        std::println("      Slot Capabilities:     0x{:08X}"    , capStruct.SlotCapabilities   .get());
-        std::println("      Slot Control:              0x{:04X}", capStruct.SlotControl        .get());
-        std::println("      Slot Status:               0x{:04X}", capStruct.SlotStatus         .get());
-        std::println("      Root Control:              0x{:04X}", capStruct.RootControl        .get());
-        std::println("      Root Capabilities:         0x{:04X}", capStruct.RootCapabilities   .get());
-        std::println("      Root Status:           0x{:08X}"    , capStruct.RootStatus         .get());
-        std::println("      Device Capabilities 2: 0x{:08X}"    , capStruct.DeviceCapabilities2.get());
-        std::println("      Device Control 2:          0x{:04X}", capStruct.DeviceControl2     .get());
-        std::println("      Device Status 2:           0x{:04X}", capStruct.DeviceStatus2      .get());
-        std::println("      Link Capabilities 2:   0x{:08X}"    , capStruct.LinkCapabilities2  .get());
-        std::println("      Link Control 2:            0x{:04X}", capStruct.LinkControl2       .get());
-        std::println("      Link Status 2:             0x{:04X}", capStruct.LinkStatus2        .get());
-        std::println("      Slot Capabilities 2:   0x{:08X}"    , capStruct.SlotCapabilities2  .get());
-        std::println("      Slot Control 2:            0x{:04X}", capStruct.SlotControl2       .get());
-        std::println("      Slot Status 2:             0x{:04X}", capStruct.SlotStatus2        .get());
+        fmt::println("      Capabilities:              0x{:04X}", capStruct.Capabilities       .get());
+        fmt::println("      Device Capabilities:   0x{:08X}"    , capStruct.DeviceCapabilities .get());
+        fmt::println("      Device Control:            0x{:04X}", capStruct.DeviceControl      .get());
+        fmt::println("      Device Status:             0x{:04X}", capStruct.DeviceStatus       .get());
+        fmt::println("      Link Capabilities:     0x{:08X}"    , capStruct.LinkCapabilities   .get());
+        fmt::println("      Link Control:              0x{:04X}", capStruct.LinkControl        .get());
+        fmt::println("      Link Status:               0x{:04X}", capStruct.LinkStatus         .get());
+        fmt::println("      Slot Capabilities:     0x{:08X}"    , capStruct.SlotCapabilities   .get());
+        fmt::println("      Slot Control:              0x{:04X}", capStruct.SlotControl        .get());
+        fmt::println("      Slot Status:               0x{:04X}", capStruct.SlotStatus         .get());
+        fmt::println("      Root Control:              0x{:04X}", capStruct.RootControl        .get());
+        fmt::println("      Root Capabilities:         0x{:04X}", capStruct.RootCapabilities   .get());
+        fmt::println("      Root Status:           0x{:08X}"    , capStruct.RootStatus         .get());
+        fmt::println("      Device Capabilities 2: 0x{:08X}"    , capStruct.DeviceCapabilities2.get());
+        fmt::println("      Device Control 2:          0x{:04X}", capStruct.DeviceControl2     .get());
+        fmt::println("      Device Status 2:           0x{:04X}", capStruct.DeviceStatus2      .get());
+        fmt::println("      Link Capabilities 2:   0x{:08X}"    , capStruct.LinkCapabilities2  .get());
+        fmt::println("      Link Control 2:            0x{:04X}", capStruct.LinkControl2       .get());
+        fmt::println("      Link Status 2:             0x{:04X}", capStruct.LinkStatus2        .get());
+        fmt::println("      Slot Capabilities 2:   0x{:08X}"    , capStruct.SlotCapabilities2  .get());
+        fmt::println("      Slot Control 2:            0x{:04X}", capStruct.SlotControl2       .get());
+        fmt::println("      Slot Status 2:             0x{:04X}", capStruct.SlotStatus2        .get());
         break;
     }
     default:
-        std::println("Unknown capability");
+        fmt::println("Unknown capability");
         break;
     }
 }
@@ -417,7 +417,7 @@ std::generator<Capability> Configuration::enumerate_capabilities() const
         cap.Id = entry.Id;
         cap.Offset = offset;
 
-        std::println("Capability ID: {:02X} at offset {:02X}", static_cast<std::underlying_type_t<CapabilityId>>(cap.Id), offset);
+        fmt::println("Capability ID: {:02X} at offset {:02X}", static_cast<std::underlying_type_t<CapabilityId>>(cap.Id), offset);
 
         // Add to capabilities list
         co_yield cap; //capabilities.push_back(cap);
@@ -486,8 +486,8 @@ Bcm2711Driver::Bcm2711Driver()
 {
     std::lock_guard<std::shared_mutex> lock(driver_mutex_);
 
-    std::println("PCIe registers base is 0x{:x}...", reinterpret_cast<std::uint64_t>(&registers));
-    std::println("Initializing PCIe driver...");
+    fmt::println("PCIe registers base is 0x{:x}...", reinterpret_cast<std::uint64_t>(&registers));
+    fmt::println("Initializing PCIe driver...");
 
     // Reset the controller.
     registers.INIT |= 0x3u; // Assert INIT and PERST
@@ -499,7 +499,7 @@ Bcm2711Driver::Bcm2711Driver()
     Cpu::Delay(100us);
 
     std::uint32_t revision = registers.REV;
-    std::println("Revision={:x}", revision);
+    fmt::println("Revision={:x}", revision);
 
     // Clear and mask interrupts.
     registers.INTR2_CPU_CLEAR    = 0xFFFF'FFFFu;
@@ -523,25 +523,25 @@ Bcm2711Driver::Bcm2711Driver()
 
         if ((status & 0x30) != 0x30)
         {
-            std::println("PCIe link not ready (status={:x})", status);
+            fmt::println("PCIe link not ready (status={:x})", status);
             initError_.store(PCIeError::HARDWARE_ERROR);
             return;
         }
 
         if ((status & 0x80) == 0)
         {
-            std::println("PCIe is not in rc mode (status={:x})", status);
+            fmt::println("PCIe is not in rc mode (status={:x})", status);
             initError_.store(PCIeError::HARDWARE_ERROR);
             return;
         }
 
-        std::println("PCIe link ready (status={:x})", status);
+        fmt::println("PCIe link ready (status={:x})", status);
     }
 
     // Set up the MISC_CTRL register with appropriate values.
     registers.MISC_CTRL = [](auto& reg)
         {
-            std::println("MISC_CTRL before = 0x{:08X}", reg.Raw32);
+            fmt::println("MISC_CTRL before = 0x{:08X}", reg.Raw32);
             
             // Ignored for now.
             // reg.SCB0_SIZE        = ;
@@ -553,7 +553,7 @@ Bcm2711Driver::Bcm2711Driver()
             reg.CFG_READ_UR_MODE = 1;
             reg.MAX_BURST_SIZE   = BurstSize::Size128;
             
-            std::println("MISC_CTRL after = 0x{:08X}", reg.Raw32);
+            fmt::println("MISC_CTRL after = 0x{:08X}", reg.Raw32);
             // (reg & 0x30'3480u) | 0x3480u;
         };
 
@@ -570,7 +570,7 @@ Bcm2711Driver::Bcm2711Driver()
     std::uint16_t const vid = registers.BridgeConfig.Common.VendorId;
     if (vid != 0x14e4) // Broadcom vendor ID
     {
-        std::println("PCIe bridge not found (VID={:x})", vid);
+        fmt::println("PCIe bridge not found (VID={:x})", vid);
         initError_.store(PCIeError::DEVICE_NOT_FOUND);
         return;
     }
@@ -583,11 +583,11 @@ Bcm2711Driver::Bcm2711Driver()
 
     // Set the class code to PCI-to-PCI bridge (0x060400) if it's not already set.
     uint32_t ccode = registers.ID;
-    std::println("Class code {:x}", ccode);
+    fmt::println("Class code {:x}", ccode);
     if ((ccode & 0xffffff) != 0x060400)
     {
         ccode = (ccode & ~0xffffff) | 0x060400;
-        std::println("Changing to {:x}", ccode);
+        fmt::println("Changing to {:x}", ccode);
         registers.ID = ccode;
     }
 
@@ -615,17 +615,17 @@ Bcm2711Driver::Bcm2711Driver()
     rootHeader_ = &rootConfig.Header1();
 
     // Pretty print root complex information
-    std::println("PCIe Device 00:00.00");
-    std::println("  Vendor ID: 0x{:04x}", rootDeviceInfo_.VendorId);
-    std::println("  Device ID: 0x{:04x}", rootDeviceInfo_.DeviceId);
-    std::println("  Class:     0x{:06x} ({})", rootDeviceInfo_.ClassCode, utils::class_code_to_string(rootDeviceInfo_.ClassCode).data());
+    fmt::println("PCIe Device 00:00.00");
+    fmt::println("  Vendor ID: 0x{:04x}", rootDeviceInfo_.VendorId);
+    fmt::println("  Device ID: 0x{:04x}", rootDeviceInfo_.DeviceId);
+    fmt::println("  Class:     0x{:06x} ({})", rootDeviceInfo_.ClassCode, utils::class_code_to_string(rootDeviceInfo_.ClassCode).data());
 
     // Get and display additional information if available
     {
         std::uint16_t command = rootHeader_->Common.Command;
         std::uint16_t status  = rootHeader_->Common.Status;
-        std::println("  Command:   0x{:04x}", command);
-        std::println("  Status:    0x{:04x}", status);
+        fmt::println("  Command:   0x{:04x}", command);
+        fmt::println("  Status:    0x{:04x}", status);
     }
 
     rootHeader_->Common.Command |= 6; // Enable memory space (bit 1) and bus mastering (bit 2)
@@ -637,7 +637,7 @@ Bcm2711Driver::Bcm2711Driver()
     rootHeader_->NPMemLimit     = static_cast<std::uint16_t>(PCI_LIMIT >> 16) & 0xFFF0;
     rootHeader_->BridgeControl  = 1; // Parity
 
-    std::println("  BARs:");
+    fmt::println("  BARs:");
     for (auto&& bar : rootConfig.enumerate_bars())
     {
         PrintBar(bar);
@@ -673,22 +673,22 @@ Bcm2711Driver::Bcm2711Driver()
         uint8_t  const interruptPin         = rootHeader_->Common.InterruptPin;
         uint16_t const bridgeControl        = rootHeader_->BridgeControl;
 
-        std::println("Bridge command               : {:#X}", rootHeader_->Common.Command.get());
-        std::println("Bridge status                : {:#X}", rootHeader_->Common.Status.get());
-        std::println("Primary Bus Number           : {:#X}", primaryBus);
-        std::println("Secondary Bus Number         : {:#X}", secondaryBus);
-        std::println("Subordinate Bus Number       : {:#X}", subordinateBus);
-        std::println("Legacy Latency Timer         : {:#X}", legacyLatencyTimer);
-        std::println("I/O Base                     : {:#X}", ioBase);
-        std::println("I/O Limit                    : {:#X}", ioLimit);
-        std::println("Secondary Status             : {:#X}", secondaryStatus);
-        std::println("Memory Base                  : {:#X}", memoryBase);
-        std::println("Memory Limit                 : {:#X}", memoryLimit);
-        std::println("Prefetchable Memory Base     : {:#X}", prefetchableMemBase);
-        std::println("Prefetchable Memory Limit    : {:#X}", prefetchableMemLimit);
-        std::println("Interrupt Line               : {:#X}", interruptLine);
-        std::println("Interrupt Pin                : {:#X}", interruptPin);
-        std::println("Bridge Control               : {:#X}", bridgeControl);
+        fmt::println("Bridge command               : {:#X}", rootHeader_->Common.Command.get());
+        fmt::println("Bridge status                : {:#X}", rootHeader_->Common.Status.get());
+        fmt::println("Primary Bus Number           : {:#X}", primaryBus);
+        fmt::println("Secondary Bus Number         : {:#X}", secondaryBus);
+        fmt::println("Subordinate Bus Number       : {:#X}", subordinateBus);
+        fmt::println("Legacy Latency Timer         : {:#X}", legacyLatencyTimer);
+        fmt::println("I/O Base                     : {:#X}", ioBase);
+        fmt::println("I/O Limit                    : {:#X}", ioLimit);
+        fmt::println("Secondary Status             : {:#X}", secondaryStatus);
+        fmt::println("Memory Base                  : {:#X}", memoryBase);
+        fmt::println("Memory Limit                 : {:#X}", memoryLimit);
+        fmt::println("Prefetchable Memory Base     : {:#X}", prefetchableMemBase);
+        fmt::println("Prefetchable Memory Limit    : {:#X}", prefetchableMemLimit);
+        fmt::println("Interrupt Line               : {:#X}", interruptLine);
+        fmt::println("Interrupt Pin                : {:#X}", interruptPin);
+        fmt::println("Bridge Control               : {:#X}", bridgeControl);
     }
 
     // Real PCIe device enumeration for Raspberry Pi 4
@@ -706,7 +706,7 @@ Bcm2711Driver::Bcm2711Driver()
                 DeviceAddress const addr{ .Function = function, .Device = device, .Bus = bus };
                 Configuration config(*this, addr);
 
-                std::println("Scanning device at {:02}:{:02}.{}", bus, device, function);
+                fmt::println("Scanning device at {:02}:{:02}.{}", bus, device, function);
                 
                 // Read vendor ID to check if device exists
                 auto vendor = config.vendor_id();
@@ -805,26 +805,26 @@ namespace examples {
         auto init_result = root.initError_.load();
         if (init_result != PCIeError::SUCCESS) {
             // Initialization error
-            std::println("PCIe init error: {}", static_cast<std::underlying_type_t<PCIeError>>(init_result));
+            fmt::println("PCIe init error: {}", static_cast<std::underlying_type_t<PCIeError>>(init_result));
             return;
         }
 
-        std::println("Enumerating PCIe devices...");
+        fmt::println("Enumerating PCIe devices...");
 
-        std::println("PCIe driver initialized successfully.");
+        fmt::println("PCIe driver initialized successfully.");
 
-        std::println("Enumerating devices...");
+        fmt::println("Enumerating devices...");
         
-        std::println("Found {} PCIe devices:", root.devices_.size());
+        fmt::println("Found {} PCIe devices:", root.devices_.size());
 
-                std::println("    Enabling USB controller power...");
+                fmt::println("    Enabling USB controller power...");
                 Mailbox::TagMessage<Mailbox::Tag::RPI4_PCIE_XHCI_USB_RESET, 1> resetTag{{ 1u << 20 }};
                 if (!Mailbox::SendTags(resetTag)) {
-                    std::println("    ✗ Failed to enable USB controller power");
+                    fmt::println("    ✗ Failed to enable USB controller power");
                 }
                 else
                 {
-                    std::println("    New state: {}", resetTag.args[0]);
+                    fmt::println("    New state: {}", resetTag.args[0]);
                 }
 
 
@@ -837,18 +837,18 @@ namespace examples {
             auto class_code = info.ClassCode;
 
             // Pretty print device information
-            std::println("PCIe Device {:02x}:{:02x}.{:x}", static_cast<uint32_t>(addr.Bus), static_cast<uint32_t>(addr.Device), static_cast<uint32_t>(addr.Function));
-            std::println("  Vendor ID: 0x{:04x}", vendor);
-            std::println("  Device ID: 0x{:04x}", device_id);
-            std::println("  Class:     0x{:06x} ({})", class_code, 
+            fmt::println("PCIe Device {:02x}:{:02x}.{:x}", static_cast<uint32_t>(addr.Bus), static_cast<uint32_t>(addr.Device), static_cast<uint32_t>(addr.Function));
+            fmt::println("  Vendor ID: 0x{:04x}", vendor);
+            fmt::println("  Device ID: 0x{:04x}", device_id);
+            fmt::println("  Class:     0x{:06x} ({})", class_code, 
                 utils::class_code_to_string(class_code).data());
 
             // Get and display additional information if available
             Configuration configuration{ root, info.Address };
             std::uint16_t command = configuration.Common().Command;
             std::uint16_t status  = configuration.Common().Status;
-            std::println("  Command:   0x{:04x}", command);
-            std::println("  Status:    0x{:04x}", status);
+            fmt::println("  Command:   0x{:04x}", command);
+            fmt::println("  Status:    0x{:04x}", status);
 
             auto& common = configuration.Common();
 
@@ -861,33 +861,33 @@ namespace examples {
             {
                 if (bar0.size == 0)
                 {
-                    std::println("  BARs:");
+                    fmt::println("  BARs:");
                     bar0 = bar;
                 }
                 PrintBar(bar);
             }
 
             // Display capabilities if any
-            std::println("  Capabilities:");
+            fmt::println("  Capabilities:");
             for (const auto& cap : configuration.enumerate_capabilities())
             {
                 PrintCapability(cap, configuration.Common());
             }
 
             // TODO: Don't hardcode. Use the BAR mapping.
-            std::println("Word0: {:08X}", *(uint32_t*)CONFIG_BASE);
+            fmt::println("Word0: {:08X}", *(uint32_t*)CONFIG_BASE);
             
             // Enable BAR 0 at the beginning of PCIe aperture
-            std::println("    Configuring BAR 0: CPU=0x{:016x} Size = 0x{:X}", bar0.physical_address, bar0.size);
+            fmt::println("    Configuring BAR 0: CPU=0x{:016x} Size = 0x{:X}", bar0.physical_address, bar0.size);
             if (bar0.size == 0)
             {
-                std::println("    BAR 0 size is zero. Halting...");
+                fmt::println("    BAR 0 size is zero. Halting...");
                 Cpu::Halt();
             }
             
             auto bar0Memory = configuration.map_bar(bar0);
 
-            std::println("    Configured BAR 0: CPU=0x{:016x} Size = 0x{:X}", bar0.physical_address, bar0.size);
+            fmt::println("    Configured BAR 0: CPU=0x{:016x} Size = 0x{:X}", bar0.physical_address, bar0.size);
             
             // Verify the BAR was written correctly
             //auto const rebar0 = configuration.get_bar(0);
@@ -903,42 +903,42 @@ namespace examples {
             asm volatile("dsb sy" : : : "memory");  // ARM64
 
 
-            std::println("    Command: 0x{:08x}  Status: 0x{:08x}", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
+            fmt::println("    Command: 0x{:08x}  Status: 0x{:08x}", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
             if (!Cpu::WaitUntilWithTimeout(10ms, [&]{
                     return (*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24) & (1u << 11)) == 0;
                 }))
             {
-                std::println("XHCI didn't become ready.");
-                std::println("    Command: 0x{:08x}  Status: 0x{:08x}", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
+                fmt::println("XHCI didn't become ready.");
+                fmt::println("    Command: 0x{:08x}  Status: 0x{:08x}", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
                 Cpu::Halt();
             }
 
             // Test memory access
-            std::println("    Testing memory access at 0x{:016x}...", bar0.physical_address);
+            fmt::println("    Testing memory access at 0x{:016x}...", bar0.physical_address);
             volatile uint32_t* test_ptr = reinterpret_cast<volatile uint32_t*>(bar0.physical_address);
             uint32_t test_value = *test_ptr;
-            std::println("    First word: 0x{:08x}", test_value);
-            std::println("    Command: 0x{:08x}  Status: 0x{:08x}", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
+            fmt::println("    First word: 0x{:08x}", test_value);
+            fmt::println("    Command: 0x{:08x}  Status: 0x{:08x}", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
 
-            std::println("    Testing memory access again at 0x{:016x}...", bar0.physical_address);
-            std::println("    First word: 0x{:08x}", *test_ptr);
-            std::println("    Command: 0x{:08x}  Status: 0x{:08x}", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
+            fmt::println("    Testing memory access again at 0x{:016x}...", bar0.physical_address);
+            fmt::println("    First word: 0x{:08x}", *test_ptr);
+            fmt::println("    Command: 0x{:08x}  Status: 0x{:08x}", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20), *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
 
             for (int i = 0; i * 4 < 0xB4; ++i)
             {
-                std::println("    PCIe [0x{:03X}] 0x{:08X}", i * 4, reinterpret_cast<uint32_t const*>(&configuration.Header0())[i]);
+                fmt::println("    PCIe [0x{:03X}] 0x{:08X}", i * 4, reinterpret_cast<uint32_t const*>(&configuration.Header0())[i]);
             }
 
             for (int i = 0; i < 64 && i * 4 < bar0.size; ++i)
             {
-                std::println("    xHCI [0x{:03X}] 0x{:08X}", i * 4, test_ptr[i]);
+                fmt::println("    xHCI [0x{:03X}] 0x{:08X}", i * 4, test_ptr[i]);
             }
             for (int i = 0x420 / 4; i < 0x440 / 4; ++i)
             {
-                std::println("    xHCI [0x{:03X}] 0x{:08X}", i * 4, reinterpret_cast<uint32_t const volatile*>(bar0.physical_address)[i]);
+                fmt::println("    xHCI [0x{:03X}] 0x{:08X}", i * 4, reinterpret_cast<uint32_t const volatile*>(bar0.physical_address)[i]);
             }
 
-            std::println("    Resetting...");
+            fmt::println("    Resetting...");
             *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x20) |= 1u << 1;
             {
                 Cpu::WaitUntilWithTimeout(10'000ms, [&]{
@@ -948,22 +948,22 @@ namespace examples {
 
             for (int i = 0; i * 4 < 0xB4; ++i)
             {
-                std::println("    PCIe [0x{:03X}] 0x{:08X}", i * 4, reinterpret_cast<uint32_t const*>(&configuration.Header0())[i]);
+                fmt::println("    PCIe [0x{:03X}] 0x{:08X}", i * 4, reinterpret_cast<uint32_t const*>(&configuration.Header0())[i]);
             }
 
             for (int i = 0; i < 64 && i * 4 < bar0.size; ++i)
             {
-                std::println("    xHCI [0x{:03X}] 0x{:08X}", i * 4, test_ptr[i]);
+                fmt::println("    xHCI [0x{:03X}] 0x{:08X}", i * 4, test_ptr[i]);
             }
             for (int i = 0x420 / 4; i < 0x440 / 4; ++i)
             {
-                std::println("    xHCI [0x{:03X}] 0x{:08X}", i * 4, reinterpret_cast<uint32_t const volatile*>(bar0.physical_address)[i]);
+                fmt::println("    xHCI [0x{:03X}] 0x{:08X}", i * 4, reinterpret_cast<uint32_t const volatile*>(bar0.physical_address)[i]);
             }
 
             //// Enable USB controller power via mailbox
             while (*reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24) & 0x800u)
             {
-                std::println("    Status: 0x{:08x}", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
+                fmt::println("    Status: 0x{:08x}", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
 
 //                printf("    Enabling USB controller power...\n");
 //                Mailbox::TagMessage<Mailbox::Tag::RPI4_PCIE_XHCI_USB_RESET, 1> resetTag{{ 1u << 20 }};
@@ -981,26 +981,26 @@ namespace examples {
 
                 for (int i = 0; i * 4 < 0xB4; ++i)
                 {
-                    std::println("    PCIe [0x{:03X}] 0x{:08X}", i * 4, reinterpret_cast<uint32_t const*>(&configuration.Header0())[i]);
+                    fmt::println("    PCIe [0x{:03X}] 0x{:08X}", i * 4, reinterpret_cast<uint32_t const*>(&configuration.Header0())[i]);
                 }
 
                 for (int i = 0; i < 64 && i * 4 < bar0.size; ++i)
                 {
-                    std::println("    xHCI [0x{:03X}] 0x{:08X}", i * 4, reinterpret_cast<uint32_t const volatile*>(bar0.physical_address)[i]);
+                    fmt::println("    xHCI [0x{:03X}] 0x{:08X}", i * 4, reinterpret_cast<uint32_t const volatile*>(bar0.physical_address)[i]);
                 }
                 for (int i = 0x420 / 4; i < 0x440 / 4; ++i)
                 {
-                    std::println("    xHCI [0x{:03X}] 0x{:08X}", i * 4, reinterpret_cast<uint32_t const volatile*>(bar0.physical_address)[i]);
+                    fmt::println("    xHCI [0x{:03X}] 0x{:08X}", i * 4, reinterpret_cast<uint32_t const volatile*>(bar0.physical_address)[i]);
                 }
 
                 Cpu::Halt();
             }
 
-            std::println("    Status: 0x{:08x}", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
+            fmt::println("    Status: 0x{:08x}", *reinterpret_cast<volatile uint32_t*>(bar0.physical_address + 0x24));
 
             // Verify XHCI controller presence by reading its capability registers
             if (vendor == 0x1106 && device_id == 0x3483) { // VIA VL805 USB 3.0 controller
-                std::println("    Detected VL805 USB 3.0 controller");
+                fmt::println("    Detected VL805 USB 3.0 controller");
                 
                 // Wait for power stabilization
                 Cpu::Delay(10ms);
@@ -1018,31 +1018,31 @@ namespace examples {
                 uint8_t cap_length = caplength_hciversion & 0xFF;
                 uint16_t hci_version = (caplength_hciversion >> 16) & 0xFFFF;
                 
-                std::println("    XHCI Capability Length: 0x{:02x}", cap_length);
-                std::println("    XHCI Interface Version: 0x{:04x}", hci_version);
-                std::println("    Max Device Slots: {}", hcsparams1 & 0xFF);
-                std::println("    Max Interrupters: {}", (hcsparams1 >> 8) & 0x7FF);
-                std::println("    Max Ports: {}", (hcsparams1 >> 24) & 0xFF);
+                fmt::println("    XHCI Capability Length: 0x{:02x}", cap_length);
+                fmt::println("    XHCI Interface Version: 0x{:04x}", hci_version);
+                fmt::println("    Max Device Slots: {}", hcsparams1 & 0xFF);
+                fmt::println("    Max Interrupters: {}", (hcsparams1 >> 8) & 0x7FF);
+                fmt::println("    Max Ports: {}", (hcsparams1 >> 24) & 0xFF);
                 
                 // Verify this looks like a valid XHCI controller
                 if (cap_length >= 0x20 && cap_length <= 0x40 && 
                     (hci_version == 0x0100 || hci_version == 0x0110 || hci_version == 0x0120)) {
-                    std::println("    ✓ XHCI controller verification successful");
+                    fmt::println("    ✓ XHCI controller verification successful");
                     
                     // Read operational registers base
                     volatile uint32_t* xhci_op_base = reinterpret_cast<volatile uint32_t*>(0x600000000ULL + cap_length);
                     uint32_t usbcmd = xhci_op_base[0x00 / 4];  // USB Command register
                     uint32_t usbsts = xhci_op_base[0x04 / 4];  // USB Status register
                     
-                    std::println("    USB Command: 0x{:08x}", usbcmd);
-                    std::println("    USB Status: 0x{:08x} {}", usbsts, 
+                    fmt::println("    USB Command: 0x{:08x}", usbcmd);
+                    fmt::println("    USB Status: 0x{:08x} {}", usbsts, 
                             (usbsts & 0x1) ? "(Controller Halted)" : "(Controller Running)");
                 } else {
-                    std::println("    ✗ XHCI controller verification failed - invalid capability registers");
+                    fmt::println("    ✗ XHCI controller verification failed - invalid capability registers");
                 }
             }
 
-            std::println("");
+            fmt::println("");
         }
     }
 }

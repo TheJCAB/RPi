@@ -6,7 +6,7 @@
 
 #include "Uart.h"
 
-#include <print>
+#include <fmt/format.h>
 #include <stdint.h>
 #include <stddef.h>
 
@@ -28,13 +28,13 @@ Exception::Spark SyscallDispatcher(ThreadContext* threadContext, uint32_t code)
     auto threadInfo = &Scheduler::GetCurrentThreadInfo();
 
     auto const func = static_cast<Function>(Cpu::esr_el1->ISS);
-    std::println("Syscall function {}", static_cast<uint32_t>(func));
+    fmt::println("Syscall function {}", static_cast<uint32_t>(func));
 
     switch (func)
     {
     case Function::YieldToThread:
     {
-        std::println("YieldToThread from {:#x} to {:#x}",
+        fmt::println("YieldToThread from {:#x} to {:#x}",
             reinterpret_cast<uintptr_t>(&Scheduler::GetCurrentThreadInfo()),
             reinterpret_cast<uintptr_t>(threadContext->X[0]));
 
@@ -43,7 +43,7 @@ Exception::Spark SyscallDispatcher(ThreadContext* threadContext, uint32_t code)
     }
 
     case Function::HelloFromISS1:
-        std::println("Hello from ISS 1");
+        fmt::println("Hello from ISS 1");
         break;
 
     default:

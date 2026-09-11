@@ -12,7 +12,7 @@
 
 #include <stdint.h>
 #include <atomic>
-#include <print>
+#include <fmt/format.h>
 
 namespace Interrupts
 {
@@ -304,7 +304,7 @@ void Init()
 {
     auto& registers = RefRegisters();
 
-    std::println("DistributorControl: {:#b}", registers.Control->Raw32);
+    fmt::println("DistributorControl: {:#b}", registers.Control->Raw32);
 
     registers.Enable  = { .VTimer = 1 };
 
@@ -543,7 +543,7 @@ extern "C" Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
         // Ensure we don't just loop indefinitely if some interrupt is defined but not handled.
         if (--retryCount == 0)
         {
-            std::println("Panic: Unhandled core interrupt: {:#b}", pendingCoreInterrupts.Raw32);
+            fmt::println("Panic: Unhandled core interrupt: {:#b}", pendingCoreInterrupts.Raw32);
             Cpu::Halt();
         }
     }
@@ -558,7 +558,7 @@ extern "C" Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
     retryCount = 100;
     while (auto basicPending = Rpi3::IrqBasicPending.get())
     {
-        std::println("Basic IRQs pending: {:#x}", basicPending.Raw32);
+        fmt::println("Basic IRQs pending: {:#x}", basicPending.Raw32);
 
         // Handle basic IRQs
         if (basicPending.USB)
@@ -574,7 +574,7 @@ extern "C" Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
         if (basicPending.IRQs1)
         {
             auto irq1 = Rpi3::IrqPending1.get();
-            std::println("IRQs 1 pending: {:#x}", irq1.Raw32);
+            fmt::println("IRQs 1 pending: {:#x}", irq1.Raw32);
 
             // Handle IRQ1
         }
@@ -583,14 +583,14 @@ extern "C" Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
         if (basicPending.IRQs2)
         {
             auto irq2 = Rpi3::IrqPending2.get();
-            std::println("IRQs 2 pending: {:#x}", irq2.Raw32);
+            fmt::println("IRQs 2 pending: {:#x}", irq2.Raw32);
 
             // Handle IRQ2
         }
 
         if (--retryCount == 0)
         {
-            std::println("Panic: Unhandled SoC interrupt: {:#b}", basicPending.Raw32);
+            fmt::println("Panic: Unhandled SoC interrupt: {:#b}", basicPending.Raw32);
             Cpu::Halt();
         }
     }

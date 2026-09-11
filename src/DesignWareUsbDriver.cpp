@@ -45,7 +45,7 @@
 #include <expected>
 #include <algorithm>
 #include <optional>
-#include <print>
+#include <fmt/format.h>
 
 #include <span>
 
@@ -630,7 +630,7 @@ class DesignWareUsbDriver : public UsbDriver
 
 Async::task<std::shared_ptr<UsbDriver>> UsbInitializeDesignWare()
 {
-    std::println("Initializing DesignWare USB Driver");
+    fmt::println("Initializing DesignWare USB Driver");
     auto result = std::make_shared<DesignWareUsbDriver>();
     co_await result->Initialize();
     co_return result;

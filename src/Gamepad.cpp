@@ -7,7 +7,7 @@
 #include "emb-stdio.h"
 
 #include <array>
-#include <print>
+#include <fmt/format.h>
 
 namespace Gamepad
 {
@@ -97,7 +97,7 @@ static Cpu::PerformanceTimeDiff RefreshState(UsbDriver& driver)
     }
     else
     {
-        std::println("HID Gamepad Read Error: {}", static_cast<int>(status));
+        fmt::println("HID Gamepad Read Error: {}", static_cast<int>(status));
         return Cpu::ToTicks(1ms); // Try again in 1ms
     }
 }
@@ -158,7 +158,7 @@ static Cpu::PerformanceTimeDiff RefreshState(UsbDriver& driver)
     {
         if (report.report_id != 0x30)
         {
-            std::println("HID Gamepad unknown report ID: {:02X}", report.report_id);
+            fmt::println("HID Gamepad unknown report ID: {:02X}", report.report_id);
             return Cpu::ToTicks(1ms); // Try again in 1ms
         }
         //printf("HID Gamepad Buttons: %08b %08b %08b Axes: %6d %6d %6d %6d Vendor: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n",
@@ -238,11 +238,11 @@ void Init(UsbDriver& driver)
             auto const status = Async::WaitOnTask(HIDReadReport(driver, firstGamepad, 0, USB_HID_REPORT_TYPE_FEATURE << 8 | 0x80, &buf[0], 8));
             if (status != RESULT::Ok)
             {
-                std::println("HID Gamepad Feature Report Error: {}", static_cast<int>(status));
+                fmt::println("HID Gamepad Feature Report Error: {}", static_cast<int>(status));
             }
             else
             {
-                std::println("HID Gamepad Feature Report sent successfully.");
+                fmt::println("HID Gamepad Feature Report sent successfully.");
             }
 
             break;
@@ -251,27 +251,27 @@ void Init(UsbDriver& driver)
     if (firstGamepad > 0)
     {
         auto& device = *driver.UsbDeviceAtAddress(firstGamepad);
-        std::println("Gamepad detected\r");
-        std::println("Vendor ID: {:04X}, Product ID: {:04X}\r", descriptor.idVendor, descriptor.idProduct);
+        fmt::println("Gamepad detected\r");
+        fmt::println("Vendor ID: {:04X}, Product ID: {:04X}\r", descriptor.idVendor, descriptor.idProduct);
         char buffer[256];
         if (size_t length = device.GetDeviceProductString(buffer))
         {
-            std::println("Product: {}\r", buffer);
+            fmt::println("Product: {}\r", buffer);
         }
         if (size_t length = device.GetDeviceManufacturerString(buffer))
         {
-            std::println("Manufacturer: {}\r", buffer);
+            fmt::println("Manufacturer: {}\r", buffer);
         }
         if (size_t length = device.GetDeviceSerialNumberString(buffer))
         {
-            std::println("Serial Number: {}\r", buffer);
+            fmt::println("Serial Number: {}\r", buffer);
         }
         if (size_t length = device.GetDeviceConfigStringString(buffer))
         {
-            std::println("Configuration: {}\r", buffer);
+            fmt::println("Configuration: {}\r", buffer);
         }
         Async::WaitOnTask(HIDEnableInterruptINSimple(driver, firstGamepad, 0));
-        std::println("Gamepad configured\r");
+        fmt::println("Gamepad configured\r");
     }
 }
 
@@ -291,7 +291,7 @@ static void RefreshStateIfNeeded(UsbDriver& driver)
             case Device::NintendoSwitchPro: { auto nextRefreshDelay = NintendoSwitchPro::RefreshState(driver); nextRefresh = Cpu::GetPerformanceCounter() + nextRefreshDelay; break; }
             case Device::DragonRise       : { auto nextRefreshDelay = DragonRise       ::RefreshState(driver); nextRefresh = Cpu::GetPerformanceCounter() + nextRefreshDelay; break; }
             default:
-                std::println("Gamepad: Unknown device type {}", static_cast<int>(firstGamepadType));
+                fmt::println("Gamepad: Unknown device type {}", static_cast<int>(firstGamepadType));
                 nextRefresh = Cpu::PerformanceTime{0xFFFF'FFFF'FFFF'FFFF}; // Don't try again
                 return;
         }

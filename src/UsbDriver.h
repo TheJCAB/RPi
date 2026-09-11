@@ -70,11 +70,11 @@ enum class RESULT : int
 };
 
 template<>
-struct std::formatter<RESULT> : std::formatter<std::underlying_type_t<RESULT>>
+struct fmt::formatter<RESULT> : fmt::formatter<std::underlying_type_t<RESULT>>
 {
     auto format(RESULT value, format_context& ctx) const
     {
-        return std::formatter<std::underlying_type_t<RESULT>>::format(static_cast<std::underlying_type_t<RESULT>>(value), ctx);
+        return fmt::formatter<std::underlying_type_t<RESULT>>::format(static_cast<std::underlying_type_t<RESULT>>(value), ctx);
     }
 };
 

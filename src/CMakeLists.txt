@@ -5,6 +5,8 @@ add_subdirectory(HelloBoot)
 add_subdirectory(Playground)
 add_subdirectory(KernelLoader)
 
+add_subdirectory(fmt)
+
 add_library(CppCrt STATIC
     # Compilery stuff, to make C++ work.
     ClangBuiltins.cpp
@@ -14,7 +16,7 @@ add_library(CppCrt STATIC
     emb-stdio.cpp       emb-stdio.h
     Heap.cpp            Heap.h
 )
-target_link_libraries(CppCrt PUBLIC KernelRuntime)
+target_link_libraries(CppCrt PUBLIC KernelRuntime fmt)
 
 set(KernelSources
     Boot.S
@@ -69,7 +71,7 @@ set(KernelSources
 
 add_kernel_image(kernel8 RPI ${KernelSources})
 
-target_link_libraries(kernel8 PRIVATE BootLib CppCrt)
+target_link_libraries(kernel8 PRIVATE BootLib CppCrt fmt)
 
 
 # QEMU kernel. Start with:
@@ -77,7 +79,7 @@ target_link_libraries(kernel8 PRIVATE BootLib CppCrt)
 # add "-S -s" for debugging.
 add_kernel_image(kernelvirt VIRT ${KernelSources})
 
-target_link_libraries(kernelvirt PRIVATE BootLib CppCrt)
+target_link_libraries(kernelvirt PRIVATE BootLib CppCrt fmt)
 
 
 #set_target_properties(kernel8 PROPERTIES

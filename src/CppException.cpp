@@ -13,6 +13,8 @@
 #include <exception>
 #include <expected>
 #include <typeinfo>
+#include <string>
+#include <system_error>
 
 namespace Cpu { [[noreturn]] void Panic(char const* fmt, ...); }
 
@@ -111,12 +113,32 @@ std::logic_error::logic_error(char const* what_arg) : std::exception(), __imp_(w
     // In a full implementation, you'd need to manage the string storage
 }
 
-std::runtime_error::runtime_error(char const*) : std::exception(), __imp_("runtime_error") {
+std::runtime_error::runtime_error(std::string const& what_arg) : std::exception(), __imp_(what_arg.c_str()) {
+    // Store the error message - basic implementation
+    // In a full implementation, you'd need to manage the string storage
+}
+
+std::runtime_error::runtime_error(char const* what_arg) : std::exception(), __imp_(what_arg) {
     // Store the error message - basic implementation
     // In a full implementation, you'd need to manage the string storage
 }
 
 std::runtime_error::~runtime_error() noexcept
+{
+    // Default destructor implementation
+}
+
+std::system_error::system_error(std::error_code, std::string const& what_arg) : std::runtime_error(what_arg) {
+    // Store the error message - basic implementation
+    // In a full implementation, you'd need to manage the string storage
+}
+
+std::system_error::system_error(std::error_code, char const* what_arg) : std::runtime_error(what_arg) {
+    // Store the error message - basic implementation
+    // In a full implementation, you'd need to manage the string storage
+}
+
+std::system_error::~system_error() noexcept
 {
     // Default destructor implementation
 }
@@ -187,3 +209,58 @@ std::__libcpp_refstring::__libcpp_refstring(const char* __msg) : __imp_(__msg) {
 std::__libcpp_refstring::~__libcpp_refstring() {}
 //
 //  _LIBCPP_HIDE_FROM_ABI const char* c_str() const _NOEXCEPT { return __imp_; }
+
+std::error_category::~error_category() = default;
+
+std::error_condition std::error_category::default_error_condition(int __ev) const noexcept
+{
+    return error_condition(__ev, *this);
+}
+
+bool std::error_category::equivalent(int __code, const error_condition& __condition) const noexcept
+{
+    return false;
+}
+
+bool std::error_category::equivalent(const error_code& __code, int __condition) const noexcept
+{
+    return false;
+}
+  
+std::error_category const& std::generic_category() noexcept
+{
+    class generic_error_category : public error_category
+    {
+    public:
+        const char* name() const noexcept override
+        {
+            return "generic";
+        }
+
+        string message(int condition) const override
+        {
+            return "generic error";
+        }
+    };
+    static const generic_error_category instance;
+    return instance;
+}
+
+std::error_category const& std::system_category() noexcept
+{
+    class system_error_category : public error_category
+    {
+    public:
+        const char* name() const noexcept override
+        {
+            return "system";
+        }
+
+        string message(int condition) const override
+        {
+            return "system error";
+        }
+    };
+    static const system_error_category instance;
+    return instance;
+}

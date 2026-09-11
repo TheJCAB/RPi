@@ -8,7 +8,7 @@
 
 #include <BootLib/RegisterProxy.h>
 
-#include <print>
+#include <fmt/format.h>
 
 union SdCard::Registers
 {
@@ -141,17 +141,17 @@ int sd_cmd(auto& registers, unsigned int code, unsigned int arg)
     sd_err=SD_OK;
     if(code&CMD_NEED_APP) {
         r=sd_cmd(registers, CMD_APP_CMD|(sd_rca?CMD_RSPNS_48:0),sd_rca);
-        if(sd_rca && !r) { std::println("ERROR: failed to send SD APP command"); sd_err=SD_ERROR;return 0;}
+        if(sd_rca && !r) { fmt::println("ERROR: failed to send SD APP command"); sd_err=SD_ERROR;return 0;}
         code &= ~CMD_NEED_APP;
     }
-    if(sd_status(registers, SR_CMD_INHIBIT)) { std::println("ERROR: EMMC busy"); sd_err= SD_TIMEOUT;return 0;}
-    std::println("EMMC: Sending command {:#x} arg {:#x}", code, arg);
+    if(sd_status(registers, SR_CMD_INHIBIT)) { fmt::println("ERROR: EMMC busy"); sd_err= SD_TIMEOUT;return 0;}
+    fmt::println("EMMC: Sending command {:#x} arg {:#x}", code, arg);
     registers.INTERRUPT = registers.INTERRUPT.get();
     registers.ARG1=arg;
     registers.CMDTM=code;
     if(code==CMD_SEND_OP_COND) Cpu::Delay(1000ms); else
     if(code==CMD_SEND_IF_COND || code==CMD_APP_CMD) Cpu::Delay(100ms);
-    if((r=sd_int(registers, INT_CMD_DONE))) {std::println("ERROR: failed to send EMMC command");sd_err=r;return 0;}
+    if((r=sd_int(registers, INT_CMD_DONE))) {fmt::println("ERROR: failed to send EMMC command");sd_err=r;return 0;}
     r=registers.RESP0;
     if(code==CMD_GO_IDLE || code==CMD_APP_CMD) return 0; else
     if(code==(CMD_APP_CMD|CMD_RSPNS_48)) return r&SR_APP_CMD; else
@@ -180,7 +180,7 @@ int sd_clk(auto& registers, unsigned int f)
     int cnt = 100000;
     while((registers.STATUS & (SR_CMD_INHIBIT|SR_DAT_INHIBIT)) && cnt--) Cpu::Delay(1ms);
     if(cnt<=0) {
-        std::println("ERROR: timeout waiting for inhibit flag");
+        fmt::println("ERROR: timeout waiting for inhibit flag");
         return SD_ERROR;
     }
 
@@ -197,7 +197,7 @@ int sd_clk(auto& registers, unsigned int f)
     }
     if(sd_hv>HOST_SPEC_V2) d=c; else d=(1<<s);
     if(d<=2) {d=2;s=0;}
-    std::println("sd_clk divisor {:#x}, shift {:#x}", d, s);
+    fmt::println("sd_clk divisor {:#x}, shift {:#x}", d, s);
     if(sd_hv>HOST_SPEC_V2) h=(d&0x300)>>2;
     d=(((d&0x0ff)<<8)|h);
     registers.CONTROL1=(registers.CONTROL1&0xffff003f)|d; Cpu::Delay(10ms);
@@ -205,7 +205,7 @@ int sd_clk(auto& registers, unsigned int f)
     Cpu::Delay(10ms);
     cnt=10000; while(!(registers.CONTROL1 & C1_CLK_STABLE) && cnt--) Cpu::Delay(10ms);
     if(cnt<=0) {
-        std::println("ERROR: failed to get stable clock");
+        fmt::println("ERROR: failed to get stable clock");
         return SD_ERROR;
     }
     return SD_OK;
@@ -255,10 +255,10 @@ bool SdCard::Init()
         Gpio::SetPullUpDown(53, Gpio::PullUpDown::PullUp);
     }
 
-    std::println("EMMC: GPIO set up");
+    fmt::println("EMMC: GPIO set up");
 
     sd_hv = (registers.SLOTISR_VER & HOST_SPEC_NUM) >> HOST_SPEC_NUM_SHIFT;
-    std::println("EMMC: Spec {}", sd_hv);
+    fmt::println("EMMC: Spec {}", sd_hv);
 
     // Reset the card.
     registers.CONTROL0 = 0;
@@ -272,9 +272,9 @@ bool SdCard::Init()
     while((registers.CONTROL1 & C1_SRST_HC) && cnt--);
 
     if (cnt <= 0) {
-        std::println("ERROR: failed to reset EMMC");
+        fmt::println("ERROR: failed to reset EMMC");
     }
-    std::println("EMMC: reset OK");
+    fmt::println("EMMC: reset OK");
 
     registers.CONTROL1 |= C1_CLK_INTLEN | C1_TOUNIT_MAX;
     Cpu::Delay(10ms);
@@ -293,14 +293,14 @@ bool SdCard::Init()
     sd_cmd(registers, CMD_GO_IDLE,0);
     if (sd_err)
     {
-        std::println("Error: {:#x}", sd_err);
+        fmt::println("Error: {:#x}", sd_err);
         return false;
     }
 
     sd_cmd(registers, CMD_SEND_IF_COND,0x000001AA);
     if (sd_err)
     {
-        std::println("Error: {:#x}", sd_err);
+        fmt::println("Error: {:#x}", sd_err);
         return false;
     }
 
@@ -311,21 +311,21 @@ bool SdCard::Init()
         {
             Cpu::Delay(400us);
             result = sd_cmd(registers, CMD_SEND_OP_COND,ACMD41_ARG_HC);
-            std::print("EMMC: CMD_SEND_OP_COND returned ");
+            fmt::print("EMMC: CMD_SEND_OP_COND returned ");
             if (result & ACMD41_CMD_COMPLETE)
-                std::print("COMPLETE ");
+                fmt::print("COMPLETE ");
             if (result & ACMD41_VOLTAGE)
-                std::print("VOLTAGE ");
+                fmt::print("VOLTAGE ");
             if (result & ACMD41_CMD_CCS)
-                std::print("CCS ");
-            std::println("{:#x}", result);
+                fmt::print("CCS ");
+            fmt::println("{:#x}", result);
             if (sd_err != SD_TIMEOUT && sd_err != SD_OK )
             {
-                std::println("ERROR: EMMC ACMD41 returned error {}", sd_err);
+                fmt::println("ERROR: EMMC ACMD41 returned error {}", sd_err);
                 return false;
             }
         }
-        std::println("EMMC: CMD_SEND_OP_COND completed after {} attempts", 6u - cnt);
+        fmt::println("EMMC: CMD_SEND_OP_COND completed after {} attempts", 6u - cnt);
         if (!(result & ACMD41_CMD_COMPLETE) || !cnt) return false; //SD_TIMEOUT;
         if (!(result & ACMD41_VOLTAGE)) return false; //SD_ERROR;
         if (result & ACMD41_CMD_CCS) ccs = SCR_SUPP_CCS;
@@ -334,7 +334,7 @@ bool SdCard::Init()
     sd_cmd(registers, CMD_ALL_SEND_CID, 0);
 
     sd_rca = sd_cmd(registers, CMD_SEND_REL_ADDR, 0);
-    std::println("EMMC: CMD_SEND_REL_ADDR returned {:#x}", sd_rca);
+    fmt::println("EMMC: CMD_SEND_REL_ADDR returned {:#x}", sd_rca);
     if (sd_err) return false;
 
     if (sd_clk(registers, 25'000'000)) return false;
@@ -365,12 +365,12 @@ bool SdCard::Init()
         registers.CONTROL0 |= C0_HCTL_DWITDH;
     }
     // add software flag
-    std::print("EMMC: supports ");
+    fmt::print("EMMC: supports ");
     if (sd_scr[0] & SCR_SUPP_SET_BLKCNT)
-        std::print("SET_BLKCNT ");
+        fmt::print("SET_BLKCNT ");
     if (ccs)
-        std::print("CCS ");
-    std::println();
+        fmt::print("CCS ");
+    fmt::println("");
     sd_scr[0] &= ~SCR_SUPP_CCS;
     sd_scr[0] |= ccs;
     return true;
@@ -384,7 +384,7 @@ bool SdCard::ReadBlock(uint32_t lba, void* buffer, uint32_t count)
 {
     int r,c=0,d;
     if(count < 1) count = 1;
-    std::println("sd_readblock lba {:#x} num {:#x}", lba, count);
+    fmt::println("sd_readblock lba {:#x} num {:#x}", lba, count);
     if(sd_status(registers, SR_DAT_INHIBIT)) {sd_err=SD_TIMEOUT; return false;}
     unsigned int *buf=(unsigned int *)buffer;
     if(sd_scr[0] & SCR_SUPP_CCS) {
@@ -403,7 +403,7 @@ bool SdCard::ReadBlock(uint32_t lba, void* buffer, uint32_t count)
             sd_cmd(registers, CMD_READ_SINGLE,(lba+c)*512);
             if(sd_err) return false;
         }
-        if((r=sd_int(registers, INT_READ_RDY))){std::println("\rERROR: Timeout waiting for ready to read");sd_err=r;return false;}
+        if((r=sd_int(registers, INT_READ_RDY))){fmt::println("\rERROR: Timeout waiting for ready to read");sd_err=r;return false;}
         for(d=0;d<128;d++) buf[d] = registers.DATA;
         c++; buf+=128;
     }

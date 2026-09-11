@@ -4,11 +4,10 @@
 
 #include "emb-stdio.h"
 
-#include <format>
 #include <optional>
-#include <print>
+#include <fmt/format.h>
 
-#define LOG(...) std::print(__VA_ARGS__)
+#define LOG(...) fmt::print(__VA_ARGS__)
 #define LOG_DEBUG(...) LOG(__VA_ARGS__)
 
 uint8_t GetHidCount(HidDevice* device);
@@ -1049,19 +1048,19 @@ static void UsbShowTree(UsbDevice *root, const int level, const char tee)
     {
         if (TreeLevelInUse[i] == 0)
         {
-            std::print("   ");
-            std::format_to(indent + i * 3, "   ");
+            fmt::print("   ");
+            fmt::format_to(indent + i * 3, "   ");
         }
         else
         {
-            std::print(" {} ", '\xB3');							// Draw level lines if in use
-            std::format_to(indent + i * 3, " {} ", '\xB3');
+            fmt::print(" {} ", '\xB3');							// Draw level lines if in use
+            fmt::format_to(indent + i * 3, " {} ", '\xB3');
         }
     }
     switch (tee)
     {
     case '\xC3':
-        std::format_to(indent + (level - 1) * 3, " {}    ", '\xB3');
+        fmt::format_to(indent + (level - 1) * 3, " {}    ", '\xB3');
         break;
     case '+':
     case '\xC0':
@@ -1081,25 +1080,25 @@ static void UsbShowTree(UsbDevice *root, const int level, const char tee)
             }
             if (drawLine)
             {
-                std::format_to(indent + (level - 1) * 3, "    {} ", '\xB3');
+                fmt::format_to(indent + (level - 1) * 3, "    {} ", '\xB3');
             }
             else
             {
-                std::format_to(indent + (level - 1) * 3, "      ");
+                fmt::format_to(indent + (level - 1) * 3, "      ");
             }
         }
         else
         {
-            std::format_to(indent + (level - 1) * 3, "      ");
+            fmt::format_to(indent + (level - 1) * 3, "      ");
         }
         break;
     }
     default:
-        std::format_to(indent + (level - 1) * 3, "      ");
+        fmt::format_to(indent + (level - 1) * 3, "      ");
         break;
     }
     
-    std::println(" {}-{} id: {} port: {} speed: {} packetsize: {} {}",
+    fmt::println(" {}-{} id: {} port: {} speed: {} packetsize: {} {}",
         tee, root->GetDriver().UsbGetDescription(*root),
         root->GetAddress(),
         root->ParentHub.PortNumber,
@@ -1112,7 +1111,7 @@ static void UsbShowTree(UsbDevice *root, const int level, const char tee)
 
     if (verbose)
     {
-        std::println("{}  config: {} configString: {} status: {} interfaces: {} DescriptorType {} bcdUSB {:X}",
+        fmt::println("{}  config: {} configString: {} status: {} interfaces: {} DescriptorType {} bcdUSB {:X}",
             indent,
             root->Config.ConfigIndex,
             root->Config.ConfigStringIndex,
@@ -1121,20 +1120,20 @@ static void UsbShowTree(UsbDevice *root, const int level, const char tee)
             root->Descriptor.bDescriptorType,										// +0x1 Descriptor type
             root->Descriptor.bcdUSB 												// +0x2 (in BCD 0x210 = USB2.10)
         );
-        std::println("{}  DeviceClass {} DeviceSubClass {} DeviceProtocol {}",
+        fmt::println("{}  DeviceClass {} DeviceSubClass {} DeviceProtocol {}",
             indent,
             root->Descriptor.bDeviceClass,											// +0x4 Class code (enum DeviceClass )
             root->Descriptor.bDeviceSubClass,										// +0x5 Subclass code (assigned by the USB-IF)
             root->Descriptor.bDeviceProtocol 										// +0x6 Protocol code (assigned by the USB-IF)
         );
-        std::println("{}  MaxPacketSize0 {} idVendor {} idProduct {} bcdDevice {:X}",
+        fmt::println("{}  MaxPacketSize0 {} idVendor {} idProduct {} bcdDevice {:X}",
             indent,
             root->Descriptor.bMaxPacketSize0,										// +0x7 Maximum packet size for endpoint 0
             root->Descriptor.idVendor,												// +0x8 Vendor ID (assigned by the USB-IF)
             root->Descriptor.idProduct,												// +0xa Product ID (assigned by the manufacturer)
             root->Descriptor.bcdDevice 												// +0xc Device version number (BCD)
         );
-        std::println("{}  Manufacturer {} Product {} SerialNumber {} NumConfigurations {}",
+        fmt::println("{}  Manufacturer {} Product {} SerialNumber {} NumConfigurations {}",
             indent,
             root->Descriptor.iManufacturer,											// +0xe Index of String Descriptor describing the manufacturer.
             root->Descriptor.iProduct,												// +0xf Index of String Descriptor describing the product
@@ -1143,7 +1142,7 @@ static void UsbShowTree(UsbDevice *root, const int level, const char tee)
         );
         for (size_t i = 0; i < root->Interfaces.size(); i++)
         {
-            std::println("{}  - Interface {} Length {} Type {} Num {} Class {} SubClass {}",
+            fmt::println("{}  - Interface {} Length {} Type {} Num {} Class {} SubClass {}",
                 indent,
                 i,
                 root->Interfaces[i].Header.DescriptorLength,
@@ -1152,7 +1151,7 @@ static void UsbShowTree(UsbDevice *root, const int level, const char tee)
                 root->Interfaces[i].Class,
                 root->Interfaces[i].SubClass
             );
-            std::println("{}    Protocol {} AltSetting {} EndpointCount {} StringIndex {}",
+            fmt::println("{}    Protocol {} AltSetting {} EndpointCount {} StringIndex {}",
                 indent,
                 root->Interfaces[i].Protocol,
                 root->Interfaces[i].AlternateSetting,
@@ -1160,7 +1159,7 @@ static void UsbShowTree(UsbDevice *root, const int level, const char tee)
                 root->Interfaces[i].StringIndex
             );
             for (size_t j = 0; j < root->Endpoints[i].size(); j++) {
-                std::println("{}    - Endpoint {} Address {} {} Type {} Sync {} Usage {}",
+                fmt::println("{}    - Endpoint {} Address {} {} Type {} Sync {} Usage {}",
                     indent,
                     j,
                     static_cast<int>(root->Endpoints[i][j].EndpointAddress.Number),
@@ -1169,7 +1168,7 @@ static void UsbShowTree(UsbDevice *root, const int level, const char tee)
                     static_cast<int>(root->Endpoints[i][j].Attributes.Synchronisation),
                     static_cast<int>(root->Endpoints[i][j].Attributes.Usage)
                 );
-                std::println("{}      MaxPacketSize {} Transactions {} Interval {}",
+                fmt::println("{}      MaxPacketSize {} Transactions {} Interval {}",
                     indent,
                     static_cast<int>(root->Endpoints[i][j].Packet.MaxSize),
                     static_cast<int>(root->Endpoints[i][j].Packet.Transactions),

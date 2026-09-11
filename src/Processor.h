@@ -2,7 +2,7 @@
 
 #include "Uart.h"
 
-#include <print>
+#include <fmt/format.h>
 
 namespace Processor
 {
@@ -49,7 +49,7 @@ inline void InvalidateDataCache(void const volatile* buffer, size_t size)
 
 [[noreturn]] inline void Halt()
 {
-    std::println("The processor has been halted.");
+    fmt::println("The processor has been halted.");
     for (;;)
     {
         asm volatile ("wfe"); // Wait for event

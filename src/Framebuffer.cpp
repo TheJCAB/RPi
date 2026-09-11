@@ -5,7 +5,7 @@
 
 #include "Uart.h"
 
-#include <print>
+#include <fmt/format.h>
 #include <stddef.h>
 
 extern uintptr_t GpuMemBase;
@@ -50,8 +50,8 @@ uint32_t Height;
 
 void Init(uint32_t width, uint32_t height)
 {
-    std::println("Framebuffer initialization started...");
-    std::println("GPU memory base: {:#x}", GpuMemBase);
+    fmt::println("Framebuffer initialization started...");
+    fmt::println("GPU memory base: {:#x}", GpuMemBase);
 
     size_t i = 0;
     mbox[i++] = 0; // Size
@@ -79,26 +79,26 @@ void Init(uint32_t width, uint32_t height)
         Height = mbox[h];
 
         // Framebuffer is now accessible at fb_addr
-        std::println("Framebuffer address: {:#x}", fb_addr);
-        std::println("Framebuffer size: {:#x}", mbox[size]);
-        std::println("Framebuffer pitch: {}", fb_pitch);
-        std::println("Framebuffer width: {}", Width);
-        std::println("Framebuffer height: {}", Height);
-        std::println("Framebuffer physical height: {}", mbox[ph]);
+        fmt::println("Framebuffer address: {:#x}", fb_addr);
+        fmt::println("Framebuffer size: {:#x}", mbox[size]);
+        fmt::println("Framebuffer pitch: {}", fb_pitch);
+        fmt::println("Framebuffer width: {}", Width);
+        fmt::println("Framebuffer height: {}", Height);
+        fmt::println("Framebuffer physical height: {}", mbox[ph]);
     }
     else
     {
-        std::println("Framebuffer initialization failed.");
-        std::println("Mbox size: {}", mbox[0]);
-        std::println("Mbox status: {:#x}", mbox[1]);
-        std::println("Mbox m1: {:#x}", mbox[m1]);
-        std::println("Mbox m2: {:#x}", mbox[m2]);
-        std::println("Mbox m3: {:#x}", mbox[m3]);
-        std::println("Mbox m4: {:#x}", mbox[m4]);
-        std::println("Mbox m5: {:#x}", mbox[m5]);
-        std::println("Mbox m6: {:#x}", mbox[m6]);
-        std::println("Framebuffer address: {:#x}", fb_addr);
-        std::println("Framebuffer pitch: {}", fb_pitch);
+        fmt::println("Framebuffer initialization failed.");
+        fmt::println("Mbox size: {}", mbox[0]);
+        fmt::println("Mbox status: {:#x}", mbox[1]);
+        fmt::println("Mbox m1: {:#x}", mbox[m1]);
+        fmt::println("Mbox m2: {:#x}", mbox[m2]);
+        fmt::println("Mbox m3: {:#x}", mbox[m3]);
+        fmt::println("Mbox m4: {:#x}", mbox[m4]);
+        fmt::println("Mbox m5: {:#x}", mbox[m5]);
+        fmt::println("Mbox m6: {:#x}", mbox[m6]);
+        fmt::println("Framebuffer address: {:#x}", fb_addr);
+        fmt::println("Framebuffer pitch: {}", fb_pitch);
 
         // Error?
         while (true) {
@@ -161,12 +161,12 @@ void Flip()
     }
     else
     {
-        std::println("Framebuffer flip failed.");
-        std::println("Mbox size: {}", mbox[0]);
-        std::println("Mbox status: {:#x}", mbox[1]);
-        std::println("Mbox status2: {:#x}", mbox[4]);
-        std::println("Mbox x: {:#x}", mbox[5]);
-        std::println("Mbox y: {:#x}", mbox[6]);
+        fmt::println("Framebuffer flip failed.");
+        fmt::println("Mbox size: {}", mbox[0]);
+        fmt::println("Mbox status: {:#x}", mbox[1]);
+        fmt::println("Mbox status2: {:#x}", mbox[4]);
+        fmt::println("Mbox x: {:#x}", mbox[5]);
+        fmt::println("Mbox y: {:#x}", mbox[6]);
     }
 }
 

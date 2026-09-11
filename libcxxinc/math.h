@@ -10,6 +10,12 @@
 #ifndef _LIBCPP_MATH_H
 #  define _LIBCPP_MATH_H
 
+#define FP_NAN 3
+#define FP_INFINITE 516
+#define FP_ZERO 96
+#define FP_SUBNORMAL 144
+#define FP_NORMAL 264
+
 /*
     math.h synopsis
 

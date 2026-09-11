@@ -34,6 +34,8 @@ Macros:
 
 #if __has_include_next(<errno.h>)
 #  include_next <errno.h>
+#else
+#define errno ((int)0) // Stub
 #endif
 
 #ifdef __cplusplus

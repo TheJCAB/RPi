@@ -33,7 +33,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#include <format>
+#include <fmt/format.h>
 #include <type_traits>
 #include <concepts>
 
@@ -534,16 +534,16 @@ enum PacketId {
     USB_MDATA = 3,
 };
 
-// std::format support for plain enum types, printed as their underlying integer value.
+// fmt::format support for plain enum types, printed as their underlying integer value.
 template<class T>
 requires std::is_enum_v<T> && (std::same_as<T, UsbSpeed> || std::same_as<T, usb_descriptor_type> ||
     std::same_as<T, UsbDeviceStatus> || std::same_as<T, InterfaceClass> ||
     std::same_as<T, usb_transfer_type> || std::same_as<T, usb_transfer_size> ||
     std::same_as<T, HubPortFeature> || std::same_as<T, DeviceClass> || std::same_as<T, PacketId>)
-struct std::formatter<T> : std::formatter<std::underlying_type_t<T>>
+struct fmt::formatter<T> : fmt::formatter<std::underlying_type_t<T>>
 {
     auto format(T value, format_context& ctx) const
     {
-        return std::formatter<std::underlying_type_t<T>>::format(static_cast<std::underlying_type_t<T>>(value), ctx);
+        return fmt::formatter<std::underlying_type_t<T>>::format(static_cast<std::underlying_type_t<T>>(value), ctx);
     }
 };

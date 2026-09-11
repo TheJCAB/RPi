@@ -52,10 +52,10 @@
 #include "emb-stdio.h"                // Needed for printf
 
 #include <concepts>
-#include <print>
+#include <fmt/format.h>
 
 //#define LOG(...)
-#define LOG(...) std::print(__VA_ARGS__)
+#define LOG(...) fmt::print(__VA_ARGS__)
 #define LOG_DEBUG(...)
 //#define LOG_DEBUG(...) printf(__VA_ARGS__)
 
@@ -676,36 +676,36 @@ Interrupts::Spark InterruptHandler()
 
     if (todo.Raw32 != 0)
     {
-        if (interrupts.CurrentMode                 ) { std::println("CurrentMode"                 ); }
-        if (interrupts.ModeMismatch                ) { std::println("ModeMismatch"                ); }
-        if (interrupts.Otg                         ) { std::println("Otg"                         ); }
-        if (interrupts.DmaStartOfFrame             ) { std::println("DmaStartOfFrame"             ); }
-        if (interrupts.ReceiveStatusLevel          ) { std::println("ReceiveStatusLevel"          ); }
-        if (interrupts.NpTransmitFifoEmpty         ) { std::println("NpTransmitFifoEmpty"         ); }
-        if (interrupts.ginnakeff                   ) { std::println("ginnakeff"                   ); }
-        if (interrupts.goutnakeff                  ) { std::println("goutnakeff"                  ); }
-        if (interrupts.ulpick                      ) { std::println("ulpick"                      ); }
-        if (interrupts.I2c                         ) { std::println("I2c"                         ); }
-        if (interrupts.EarlySuspend                ) { std::println("EarlySuspend"                ); }
-        if (interrupts.UsbSuspend                  ) { std::println("UsbSuspend"                  ); }
-        if (interrupts.UsbReset                    ) { std::println("UsbReset"                    ); }
-        if (interrupts.EnumerationDone             ) { std::println("EnumerationDone"             ); }
-        if (interrupts.IsochronousOutDrop          ) { std::println("IsochronousOutDrop"          ); }
-        if (interrupts.eopframe                    ) { std::println("eopframe"                    ); }
-        if (interrupts.RestoreDone                 ) { std::println("RestoreDone"                 ); }
-        if (interrupts.EndPointMismatch            ) { std::println("EndPointMismatch"            ); }
-        if (interrupts.InEndPoint                  ) { std::println("InEndPoint"                  ); }
-        if (interrupts.OutEndPoint                 ) { std::println("OutEndPoint"                 ); }
-        if (interrupts.IncompleteIsochronousIn     ) { std::println("IncompleteIsochronousIn"     ); }
-        if (interrupts.IncompleteIsochronousOut    ) { std::println("IncompleteIsochronousOut"    ); }
-        if (interrupts.fetsetup                    ) { std::println("fetsetup"                    ); }
-        if (interrupts.ResetDetect                 ) { std::println("ResetDetect"                 ); }
-        if (interrupts.HpTransmitFifoEmpty         ) { std::println("HpTransmitFifoEmpty"         ); }
-        if (interrupts.LowPowerModeTransmitReceived) { std::println("LowPowerModeTransmitReceived"); }
-        if (interrupts.ConnectionIdStatusChange    ) { std::println("ConnectionIdStatusChange"    ); }
-        if (interrupts.Disconnect                  ) { std::println("Disconnect"                  ); }
-        if (interrupts.SessionRequest              ) { std::println("SessionRequest"              ); }
-        if (interrupts.Wakeup                      ) { std::println("Wakeup"                      ); }
+        if (interrupts.CurrentMode                 ) { fmt::println("CurrentMode"                 ); }
+        if (interrupts.ModeMismatch                ) { fmt::println("ModeMismatch"                ); }
+        if (interrupts.Otg                         ) { fmt::println("Otg"                         ); }
+        if (interrupts.DmaStartOfFrame             ) { fmt::println("DmaStartOfFrame"             ); }
+        if (interrupts.ReceiveStatusLevel          ) { fmt::println("ReceiveStatusLevel"          ); }
+        if (interrupts.NpTransmitFifoEmpty         ) { fmt::println("NpTransmitFifoEmpty"         ); }
+        if (interrupts.ginnakeff                   ) { fmt::println("ginnakeff"                   ); }
+        if (interrupts.goutnakeff                  ) { fmt::println("goutnakeff"                  ); }
+        if (interrupts.ulpick                      ) { fmt::println("ulpick"                      ); }
+        if (interrupts.I2c                         ) { fmt::println("I2c"                         ); }
+        if (interrupts.EarlySuspend                ) { fmt::println("EarlySuspend"                ); }
+        if (interrupts.UsbSuspend                  ) { fmt::println("UsbSuspend"                  ); }
+        if (interrupts.UsbReset                    ) { fmt::println("UsbReset"                    ); }
+        if (interrupts.EnumerationDone             ) { fmt::println("EnumerationDone"             ); }
+        if (interrupts.IsochronousOutDrop          ) { fmt::println("IsochronousOutDrop"          ); }
+        if (interrupts.eopframe                    ) { fmt::println("eopframe"                    ); }
+        if (interrupts.RestoreDone                 ) { fmt::println("RestoreDone"                 ); }
+        if (interrupts.EndPointMismatch            ) { fmt::println("EndPointMismatch"            ); }
+        if (interrupts.InEndPoint                  ) { fmt::println("InEndPoint"                  ); }
+        if (interrupts.OutEndPoint                 ) { fmt::println("OutEndPoint"                 ); }
+        if (interrupts.IncompleteIsochronousIn     ) { fmt::println("IncompleteIsochronousIn"     ); }
+        if (interrupts.IncompleteIsochronousOut    ) { fmt::println("IncompleteIsochronousOut"    ); }
+        if (interrupts.fetsetup                    ) { fmt::println("fetsetup"                    ); }
+        if (interrupts.ResetDetect                 ) { fmt::println("ResetDetect"                 ); }
+        if (interrupts.HpTransmitFifoEmpty         ) { fmt::println("HpTransmitFifoEmpty"         ); }
+        if (interrupts.LowPowerModeTransmitReceived) { fmt::println("LowPowerModeTransmitReceived"); }
+        if (interrupts.ConnectionIdStatusChange    ) { fmt::println("ConnectionIdStatusChange"    ); }
+        if (interrupts.Disconnect                  ) { fmt::println("Disconnect"                  ); }
+        if (interrupts.SessionRequest              ) { fmt::println("SessionRequest"              ); }
+        if (interrupts.Wakeup                      ) { fmt::println("Wakeup"                      ); }
     }
 
     DWC_CORE->INTERRUPT = interrupts;

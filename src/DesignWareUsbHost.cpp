@@ -51,7 +51,7 @@
 
 #include <concepts>
 #include <atomic>
-#include <print>
+#include <fmt/format.h>
 
 #define LOG(...)
 //#define LOG(...) printf(__VA_ARGS__)
@@ -259,11 +259,11 @@ union HCDHost::Registers
 void HCDHost::HandlePortInterrupt()
 {
     HostPort port = registers.PORT;
-    std::println("registers.PORT: {:#b}", port.Raw32);
+    fmt::println("registers.PORT: {:#b}", port.Raw32);
 
-    if (port.ConnectChanged    ) { std::println("ConnectChanged    : {}", static_cast<int>(port.Connect    )); }
-    if (port.EnableChanged     ) { std::println("EnableChanged     : {}", static_cast<int>(port.Enable     )); }
-    if (port.OverCurrentChanged) { std::println("OverCurrentChanged: {}", static_cast<int>(port.OverCurrent)); }
+    if (port.ConnectChanged    ) { fmt::println("ConnectChanged    : {}", static_cast<int>(port.Connect    )); }
+    if (port.EnableChanged     ) { fmt::println("EnableChanged     : {}", static_cast<int>(port.Enable     )); }
+    if (port.OverCurrentChanged) { fmt::println("OverCurrentChanged: {}", static_cast<int>(port.OverCurrent)); }
 
     port.Enable = false;
 

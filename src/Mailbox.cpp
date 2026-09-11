@@ -4,7 +4,7 @@
 #include "Uart.h"
 #include "Mmio.h"
 
-#include <print>
+#include <fmt/format.h>
 
 uintptr_t GpuMemBase = 0;
 
@@ -73,7 +73,7 @@ void Send(uint8_t ch, void const volatile* data)
     if (reinterpret_cast<uintptr_t>(data) < GpuMemBase ||
         reinterpret_cast<uintptr_t>(data) >= GpuMemBase + 0x4000'0000u)
     {
-        std::println("Oh, noes! Mailbox data must be in the GPU memory range.");
+        fmt::println("Oh, noes! Mailbox data must be in the GPU memory range.");
         Processor::Halt();
     }
 
@@ -85,7 +85,7 @@ bool SendTags(std::span<uint32_t volatile> data)
 {
     if (data.size() <= 2)
     {
-        std::println("Oh, noes! Mailbox tag buffers must have more than 2 elements.");
+        fmt::println("Oh, noes! Mailbox tag buffers must have more than 2 elements.");
         Processor::Halt();
     }
 

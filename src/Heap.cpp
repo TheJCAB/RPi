@@ -6,7 +6,7 @@
 #include "emb-stdio.h"
 
 #include <atomic>
-#include <print>
+#include <fmt/format.h>
 
 namespace Cpu { [[noreturn]] void Panic(char const* fmt, ...); }
 namespace Mmu { [[nodiscard]] void* AllocateAndCommitPages(uint32_t pageCount); }
@@ -303,15 +303,15 @@ void DumpHeapState(Heap* heap)
 {
     if (!heap)
     {
-        std::println("Heap: null");
+        fmt::println("Heap: null");
         return;
     }
     
-    std::println("Heap at {}:", static_cast<void const*>(heap));
-    std::println("  Block count: {}", heap->BlockCount.load(std::memory_order_relaxed));
-    std::println("  Total size: {} bytes", GetTotalSize(heap));
-    std::println("  Used size: {} bytes", GetUsedSize(heap));
-    std::println("  Free size: {} bytes", GetFreeSize(heap));
+    fmt::println("Heap at {}:", static_cast<void const*>(heap));
+    fmt::println("  Block count: {}", heap->BlockCount.load(std::memory_order_relaxed));
+    fmt::println("  Total size: {} bytes", GetTotalSize(heap));
+    fmt::println("  Used size: {} bytes", GetUsedSize(heap));
+    fmt::println("  Free size: {} bytes", GetFreeSize(heap));
     
     for (uint32_t blockIndex = 0; blockIndex < heap->BlockCount; ++blockIndex)
     {
@@ -319,7 +319,7 @@ void DumpHeapState(Heap* heap)
         
         if (block.Memory)
         {
-            std::println("  Block {}: {}", 
+            fmt::println("  Block {}: {}", 
                 blockIndex, 
                 block.Memory
             );

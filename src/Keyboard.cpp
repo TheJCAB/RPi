@@ -6,7 +6,7 @@
 #include "emb-stdio.h"
 
 #include <array>
-#include <print>
+#include <fmt/format.h>
 
 namespace Keyboard
 {
@@ -56,9 +56,9 @@ void Init(UsbDriver& driver)
     }
     if (firstKbd)
     {
-        std::println("Keyboard detected\r");
+        fmt::println("Keyboard detected\r");
         Async::WaitOnTask(HIDEnableInterruptINSimple(driver, firstKbd, 0));
-        std::println("Keyboard configured\r");
+        fmt::println("Keyboard configured\r");
     }
 }
 

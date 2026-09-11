@@ -9,7 +9,7 @@
 #include "emb-stdio.h"
 
 #include <deque>
-#include <print>
+#include <fmt/format.h>
 
 namespace Scheduler
 {
@@ -56,7 +56,7 @@ Spark TimerSpark(uintptr_t)
 
 void Init()
 {
-    std::println("Initializing scheduler");
+    fmt::println("Initializing scheduler");
 
     auto const coreId = Cpu::mpidr_el1->CoreId;
     auto& coreInfo = CoreSchedulingInfos[coreId];
@@ -66,9 +66,9 @@ void Init()
         .StackBuffer{ reinterpret_cast<std::byte*>(0x8'0000 - coreId * 0x1'0000), 0x1'0000 },
         .Core   = &coreInfo,
     };
-    std::println("Swapping ThreadInfo");
+    fmt::println("Swapping ThreadInfo");
     SwapCurrentThreadInfo(threadInfo);
-    std::println("Scheduler initialized");
+    fmt::println("Scheduler initialized");
     //printf("Scheduler initialized. Main thread ThreadInfo: 0x%0X 0x%0X\n", reinterpret_cast<uintptr_t>(&Scheduler::GetCurrentThreadInfo()), threadInfo);
 
     Timer::ScheduleSpark(50ms, { .Func = TimerSpark } );
@@ -164,7 +164,7 @@ ThreadInfo& CreateThread(ThreadFunction* func, uintptr_t context)
         .Task                 = nullptr,
     };
 
-    std::println("Creating thread {:#x} with stack at {:#x} and context at {:#x} core at: {:#x}",
+    fmt::println("Creating thread {:#x} with stack at {:#x} and context at {:#x} core at: {:#x}",
         reinterpret_cast<uintptr_t>(info),
         reinterpret_cast<uintptr_t>(stackLow),
         reinterpret_cast<uintptr_t>(threadContext),

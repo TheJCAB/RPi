@@ -35,7 +35,7 @@
 
 #include "emb-stdio.h"				// Needed for printf
 
-#include <print>
+#include <fmt/format.h>
 
 #define LOG(...)
 //#define LOG(...) printf(__VA_ARGS__)
@@ -170,7 +170,7 @@ uint8_t GetHidCount(HidDevice* device)
 
 void PrintHid(HidDevice* device, uint8_t hidIndex, char const* indent)
 {
-    std::println("{}    - HID Record Version {:X} Country {} DescriptorCount {} Type {} Length {} Interface {}",
+    fmt::println("{}    - HID Record Version {:X} Country {} DescriptorCount {} Type {} Length {} Interface {}",
         indent,
         device->Descriptor[hidIndex].HidVersion,
         static_cast<int>(device->Descriptor[hidIndex].Countrycode),
@@ -191,7 +191,7 @@ void describe_hid_descriptor(const uint8_t* data, size_t length)
         uint8_t tag  = (prefix >> 4) & 0x0F;
 
         if (prefix == 0xFE) { // Long item (rare)
-            std::println("Long item not supported");
+            fmt::println("Long item not supported");
             break;
         }
 
@@ -246,7 +246,7 @@ void describe_hid_descriptor(const uint8_t* data, size_t length)
                 break;
         }
 
-        std::println("[{:02}] {:10} {:20} Value: 0x{:X} ({})", i - 1, type_str, tag_str, value, value);
+        fmt::println("[{:02}] {:10} {:20} Value: 0x{:X} ({})", i - 1, type_str, tag_str, value, value);
     }
 }
 

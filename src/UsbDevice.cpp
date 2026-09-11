@@ -33,5 +33,5 @@
 
 #include "UsbSpec.h"
 
-#include <format>
+#include <fmt/format.h>
 

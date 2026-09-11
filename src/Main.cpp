@@ -29,7 +29,7 @@
 
 #include <atomic>
 #include <bit>
-#include <print>
+#include <fmt/format.h>
 
 void InitGlobalHeap();
 
@@ -658,7 +658,7 @@ void Core0(uintptr_t dtb)
         printf("\n");
     }
 
-    std::println("Initializing framebuffer...");
+    fmt::println("Initializing framebuffer...");
 
     uint32_t const w = 1280;
     uint32_t const h =  720;

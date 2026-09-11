@@ -833,6 +833,36 @@ int vsnprintf (char* buf, size_t bufSize, const char* fmt, va_list args)
     return s - buf; // Return number of characters written, excluding null terminator
 }
 
+int fflush(FILE* stream)
+{
+    // TODO: FILE streams that don't go to the console.
+    return 0; // Success
+}
+
+int fputc(int c, FILE* stream)
+{
+    // TODO: FILE streams that don't go to the console.
+    printf("%c", c);
+    return c;
+}
+
+int fprintf(FILE* restrict stream, const char* restrict fmt, ...)
+{
+    // TODO: FILE streams that don't go to the console.
+    va_list args;
+    va_start(args, fmt);
+    auto result = vprintf(fmt, args);
+    va_end(args);
+    return result;
+}
+
+size_t fwrite(const void* restrict ptr, size_t size, size_t nmemb, FILE* restrict stream)
+{
+    // TODO: FILE streams that don't go to the console.
+    printf("%.*s", (int)(size * nmemb), (const char*)ptr);
+    return nmemb;
+}
+
 int putchar(int c)
 {
     Console_WriteChar(c, 0);

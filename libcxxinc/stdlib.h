@@ -47,9 +47,9 @@ void* calloc(size_t nmemb, size_t size);
 */
 void free(void* ptr);
 void* malloc(size_t size);
-/*
 void* realloc(void* ptr, size_t size);
-void abort(void);
+[[noreturn]] void abort(void);
+/*
 int atexit(void (*func)(void));
 void exit(int status);
 void _Exit(int status);

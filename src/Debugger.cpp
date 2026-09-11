@@ -3,7 +3,7 @@
 #include "Scheduler.h"
 
 #include <array>
-#include <print>
+#include <fmt/format.h>
 
 namespace Debugger
 {
@@ -68,15 +68,15 @@ void PrintThreadContext(Uart::LockedStream& stream, ThreadContext* context)
 
 void RawPrintThreadContext(ThreadContext* context)
 {
-    std::println("Thread Context:");
+    fmt::println("Thread Context:");
     for (uint32_t i = 0; i < 29; ++i)
     {
-        std::println("{:#x} X{}", context->X[i], i);
+        fmt::println("{:#x} X{}", context->X[i], i);
     }
-    std::println("{:#x} FP", context->Fp);
-    std::println("{:#x} LR", context->Lr);
-    std::println("{:#x} SP", context->Sp);
-    std::println("{:#x} PC", context->Pc);
+    fmt::println("{:#x} FP", context->Fp);
+    fmt::println("{:#x} LR", context->Lr);
+    fmt::println("{:#x} SP", context->Sp);
+    fmt::println("{:#x} PC", context->Pc);
 }
 
 
@@ -120,11 +120,11 @@ Scheduler::ThreadInfo* Init()
     DebuggerThread = &debuggerThread;
     if (DebuggerThread == nullptr)
     {
-        std::println("Failed to create debugger thread.");
+        fmt::println("Failed to create debugger thread.");
     }
     else
     {
-        std::println("Debugger thread initialized.");
+        fmt::println("Debugger thread initialized.");
     }
 
     return &debuggerThread;
