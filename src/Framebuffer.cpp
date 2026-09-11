@@ -5,6 +5,7 @@
 
 #include "Uart.h"
 
+#include <print>
 #include <stddef.h>
 
 extern uintptr_t GpuMemBase;
@@ -49,8 +50,8 @@ uint32_t Height;
 
 void Init(uint32_t width, uint32_t height)
 {
-    Uart::Puts("Framebuffer initialization started...\n");
-    Uart::Puts("GPU memory base: "); Uart::PutHex(GpuMemBase); Uart::Puts("\n");
+    std::println("Framebuffer initialization started...");
+    std::println("GPU memory base: {:#x}", GpuMemBase);
 
     size_t i = 0;
     mbox[i++] = 0; // Size
@@ -78,26 +79,26 @@ void Init(uint32_t width, uint32_t height)
         Height = mbox[h];
 
         // Framebuffer is now accessible at fb_addr
-        Uart::Puts("Framebuffer address: "); Uart::PutHex(fb_addr); Uart::Puts("\n");
-        Uart::Puts("Framebuffer size: "); Uart::PutHex(mbox[size]); Uart::Puts("\n");
-        Uart::Puts("Framebuffer pitch: "); Uart::PutDec(fb_pitch); Uart::Puts("\n");
-        Uart::Puts("Framebuffer width: "); Uart::PutDec(Width); Uart::Puts("\n");
-        Uart::Puts("Framebuffer height: "); Uart::PutDec(Height); Uart::Puts("\n");
-        Uart::Puts("Framebuffer physical height: "); Uart::PutDec(mbox[ph]); Uart::Puts("\n");
+        std::println("Framebuffer address: {:#x}", fb_addr);
+        std::println("Framebuffer size: {:#x}", mbox[size]);
+        std::println("Framebuffer pitch: {}", fb_pitch);
+        std::println("Framebuffer width: {}", Width);
+        std::println("Framebuffer height: {}", Height);
+        std::println("Framebuffer physical height: {}", mbox[ph]);
     }
     else
     {
-        Uart::Puts("Framebuffer initialization failed.\n");
-        Uart::Puts("Mbox size: "); Uart::PutDec(mbox[0]); Uart::Puts("\n");
-        Uart::Puts("Mbox status: "); Uart::PutHex(mbox[1]); Uart::Puts("\n");
-        Uart::Puts("Mbox m1: "); Uart::PutHex(mbox[m1]); Uart::Puts("\n");
-        Uart::Puts("Mbox m2: "); Uart::PutHex(mbox[m2]); Uart::Puts("\n");
-        Uart::Puts("Mbox m3: "); Uart::PutHex(mbox[m3]); Uart::Puts("\n");
-        Uart::Puts("Mbox m4: "); Uart::PutHex(mbox[m4]); Uart::Puts("\n");
-        Uart::Puts("Mbox m5: "); Uart::PutHex(mbox[m5]); Uart::Puts("\n");
-        Uart::Puts("Mbox m6: "); Uart::PutHex(mbox[m6]); Uart::Puts("\n");
-        Uart::Puts("Framebuffer address: "); Uart::PutHex(fb_addr); Uart::Puts("\n");
-        Uart::Puts("Framebuffer pitch: "); Uart::PutDec(fb_pitch); Uart::Puts("\n");
+        std::println("Framebuffer initialization failed.");
+        std::println("Mbox size: {}", mbox[0]);
+        std::println("Mbox status: {:#x}", mbox[1]);
+        std::println("Mbox m1: {:#x}", mbox[m1]);
+        std::println("Mbox m2: {:#x}", mbox[m2]);
+        std::println("Mbox m3: {:#x}", mbox[m3]);
+        std::println("Mbox m4: {:#x}", mbox[m4]);
+        std::println("Mbox m5: {:#x}", mbox[m5]);
+        std::println("Mbox m6: {:#x}", mbox[m6]);
+        std::println("Framebuffer address: {:#x}", fb_addr);
+        std::println("Framebuffer pitch: {}", fb_pitch);
 
         // Error?
         while (true) {
@@ -160,12 +161,12 @@ void Flip()
     }
     else
     {
-        Uart::Puts("Framebuffer flip failed.\n");
-        Uart::Puts("Mbox size: "); Uart::PutDec(mbox[0]); Uart::Puts("\n");
-        Uart::Puts("Mbox status: "); Uart::PutHex(mbox[1]); Uart::Puts("\n");
-        Uart::Puts("Mbox status2: "); Uart::PutHex(mbox[4]); Uart::Puts("\n");
-        Uart::Puts("Mbox x: "); Uart::PutHex(mbox[5]); Uart::Puts("\n");
-        Uart::Puts("Mbox y: "); Uart::PutHex(mbox[6]); Uart::Puts("\n");
+        std::println("Framebuffer flip failed.");
+        std::println("Mbox size: {}", mbox[0]);
+        std::println("Mbox status: {:#x}", mbox[1]);
+        std::println("Mbox status2: {:#x}", mbox[4]);
+        std::println("Mbox x: {:#x}", mbox[5]);
+        std::println("Mbox y: {:#x}", mbox[6]);
     }
 }
 

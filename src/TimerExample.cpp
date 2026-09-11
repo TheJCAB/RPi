@@ -5,6 +5,8 @@
 #include "Interrupts.h"
 #include "Uart.h"
 
+#include <print>
+
 namespace TimerExample
 {
 
@@ -67,17 +69,17 @@ Interrupts::Spark CancelTimerCallback(uintptr_t)
 
 Interrupts::Spark DemonstrateScheduledTimers()
 {
-    Uart::Puts("=== Scheduled Timer Demonstration ===\n");
+    std::println("=== Scheduled Timer Demonstration ===");
     
     // Schedule some timers at different intervals
     Timer::SparkHandle handle_a = Timer::ScheduleSpark(1'000ms, { .Func = CallbackA });  // 1 second
     Timer::SparkHandle handle_b = Timer::ScheduleSpark(2'500ms, { .Func = CallbackB });  // 2.5 seconds
     Timer::SparkHandle handle_c = Timer::ScheduleSpark(5'000ms, { .Func = CallbackC });  // 5 seconds
 
-    Uart::Puts("Scheduled 3 timers:\n");
-    Uart::Puts("  Timer A: 1 second\n");
-    Uart::Puts("  Timer B: 2.5 seconds\n");
-    Uart::Puts("  Timer C: 5 seconds (will schedule another)\n");
+    std::println("Scheduled 3 timers:");
+    std::println("  Timer A: 1 second");
+    std::println("  Timer B: 2.5 seconds");
+    std::println("  Timer C: 5 seconds (will schedule another)");
     
     // Example of scheduling at absolute time
     auto current_time = Cpu::GetPerformanceCounter();
@@ -85,13 +87,13 @@ Interrupts::Spark DemonstrateScheduledTimers()
     Timer::SparkHandle handle_abs = Timer::ScheduleSparkAtTime(future_time, { .Func = AbsoluteTimeCallback });
 
     // Example of canceling a timer
-    Uart::Puts("  Timer D: 0.5 seconds (will be cancelled)\n");
+    std::println("  Timer D: 0.5 seconds (will be cancelled)");
     cancel_handle = Timer::ScheduleSpark(Cpu::ToTicks(500ms), { .Func = NeverCallCallback });
 
     // Cancel the timer after 100ms
     Timer::ScheduleSpark(Cpu::ToTicks(100ms), { .Func = CancelTimerCallback });
 
-    Uart::Puts("Timers set up. Watch for callbacks over the next 10 seconds...\n");
+    std::println("Timers set up. Watch for callbacks over the next 10 seconds...");
     return {};
 }
 

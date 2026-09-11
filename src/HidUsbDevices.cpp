@@ -35,6 +35,8 @@
 
 #include "emb-stdio.h"				// Needed for printf
 
+#include <print>
+
 #define LOG(...)
 //#define LOG(...) printf(__VA_ARGS__)
 #define LOG_DEBUG(...)
@@ -168,12 +170,12 @@ uint8_t GetHidCount(HidDevice* device)
 
 void PrintHid(HidDevice* device, uint8_t hidIndex, char const* indent)
 {
-    printf("%s    - HID Record Version %X Country %u DescriptorCount %u Type %u Length %u Interface %u\n",
+    std::println("{}    - HID Record Version {:X} Country {} DescriptorCount {} Type {} Length {} Interface {}",
         indent,
         device->Descriptor[hidIndex].HidVersion,
-        device->Descriptor[hidIndex].Countrycode,
+        static_cast<int>(device->Descriptor[hidIndex].Countrycode),
         device->Descriptor[hidIndex].DescriptorCount,
-        device->Descriptor[hidIndex].Type,
+        static_cast<int>(device->Descriptor[hidIndex].Type),
         device->Descriptor[hidIndex].Length,
         device->HIDInterface[hidIndex]
     );
@@ -189,7 +191,7 @@ void describe_hid_descriptor(const uint8_t* data, size_t length)
         uint8_t tag  = (prefix >> 4) & 0x0F;
 
         if (prefix == 0xFE) { // Long item (rare)
-            printf("Long item not supported\n");
+            std::println("Long item not supported");
             break;
         }
 
@@ -244,7 +246,7 @@ void describe_hid_descriptor(const uint8_t* data, size_t length)
                 break;
         }
 
-        printf("[%02u] %10s %20s Value: 0x%X (%u)\n", i - 1, type_str, tag_str, value, value);
+        std::println("[{:02}] {:10} {:20} Value: 0x{:X} ({})", i - 1, type_str, tag_str, value, value);
     }
 }
 

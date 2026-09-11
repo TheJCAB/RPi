@@ -3,6 +3,7 @@
 #include "Scheduler.h"
 
 #include <array>
+#include <print>
 
 namespace Debugger
 {
@@ -67,22 +68,15 @@ void PrintThreadContext(Uart::LockedStream& stream, ThreadContext* context)
 
 void RawPrintThreadContext(ThreadContext* context)
 {
-    Uart::Raw::Puts("Thread Context:\n");
+    std::println("Thread Context:");
     for (uint32_t i = 0; i < 29; ++i)
     {
-        Uart::Raw::PutHex(context->X[i]);
-        Uart::Raw::Puts(" X");
-        Uart::Raw::PutDec(i);
-        Uart::Raw::Puts("\n");
+        std::println("{:#x} X{}", context->X[i], i);
     }
-    Uart::Raw::PutHex(context->Fp);
-    Uart::Raw::Puts(" FP\n");
-    Uart::Raw::PutHex(context->Lr);
-    Uart::Raw::Puts(" LR\n");
-    Uart::Raw::PutHex(context->Sp);
-    Uart::Raw::Puts(" SP\n");
-    Uart::Raw::PutHex(context->Pc);
-    Uart::Raw::Puts(" PC\n");
+    std::println("{:#x} FP", context->Fp);
+    std::println("{:#x} LR", context->Lr);
+    std::println("{:#x} SP", context->Sp);
+    std::println("{:#x} PC", context->Pc);
 }
 
 
@@ -126,11 +120,11 @@ Scheduler::ThreadInfo* Init()
     DebuggerThread = &debuggerThread;
     if (DebuggerThread == nullptr)
     {
-        Uart::Puts("Failed to create debugger thread.\n");
+        std::println("Failed to create debugger thread.");
     }
     else
     {
-        Uart::Puts("Debugger thread initialized.\n");
+        std::println("Debugger thread initialized.");
     }
 
     return &debuggerThread;

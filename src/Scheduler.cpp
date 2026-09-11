@@ -9,6 +9,7 @@
 #include "emb-stdio.h"
 
 #include <deque>
+#include <print>
 
 namespace Scheduler
 {
@@ -55,7 +56,7 @@ Spark TimerSpark(uintptr_t)
 
 void Init()
 {
-    printf("Initializing scheduler\n");
+    std::println("Initializing scheduler");
 
     auto const coreId = Cpu::mpidr_el1->CoreId;
     auto& coreInfo = CoreSchedulingInfos[coreId];
@@ -65,9 +66,9 @@ void Init()
         .StackBuffer{ reinterpret_cast<std::byte*>(0x8'0000 - coreId * 0x1'0000), 0x1'0000 },
         .Core   = &coreInfo,
     };
-    Uart::Puts("Swapping ThreadInfo\n");
+    std::println("Swapping ThreadInfo");
     SwapCurrentThreadInfo(threadInfo);
-    Uart::Puts("Scheduler initialized\n");
+    std::println("Scheduler initialized");
     //printf("Scheduler initialized. Main thread ThreadInfo: 0x%0X 0x%0X\n", reinterpret_cast<uintptr_t>(&Scheduler::GetCurrentThreadInfo()), threadInfo);
 
     Timer::ScheduleSpark(50ms, { .Func = TimerSpark } );
@@ -163,15 +164,11 @@ ThreadInfo& CreateThread(ThreadFunction* func, uintptr_t context)
         .Task                 = nullptr,
     };
 
-    Uart::Puts("Creating thread ");
-    Uart::PutHex(reinterpret_cast<uintptr_t>(info));
-    Uart::Puts(" with stack at ");
-    Uart::PutHex(reinterpret_cast<uintptr_t>(stackLow));
-    Uart::Puts(" and context at ");
-    Uart::PutHex(reinterpret_cast<uintptr_t>(threadContext));
-    Uart::Puts(" core at: ");
-    Uart::PutHex(reinterpret_cast<uintptr_t>(GetCurrentThreadInfo().Core));
-    Uart::Puts("\n");
+    std::println("Creating thread {:#x} with stack at {:#x} and context at {:#x} core at: {:#x}",
+        reinterpret_cast<uintptr_t>(info),
+        reinterpret_cast<uintptr_t>(stackLow),
+        reinterpret_cast<uintptr_t>(threadContext),
+        reinterpret_cast<uintptr_t>(GetCurrentThreadInfo().Core));
 
     threadContext->X[ 0] = context; // Set the first argument in X0
     threadContext->X[18] = reinterpret_cast<uintptr_t>(info); // Set the thread info pointer in X18

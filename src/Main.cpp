@@ -1,13 +1,3 @@
-#include <stdint.h>
-#include <stddef.h>
-
-//#include <span>
-//#include <array>
-//#include <format>
-
-#include <atomic>
-#include <bit>
-
 #include <BootLib/DeviceTree.h>
 
 #include "Cpu.h"
@@ -33,6 +23,13 @@
 #include "TimerExample.h"
 
 #include "emb-stdio.h"
+
+#include <stdint.h>
+#include <stddef.h>
+
+#include <atomic>
+#include <bit>
+#include <print>
 
 void InitGlobalHeap();
 
@@ -660,6 +657,8 @@ void Core0(uintptr_t dtb)
         usbDriver->UsbShowTree();
         printf("\n");
     }
+
+    std::println("Initializing framebuffer...");
 
     uint32_t const w = 1280;
     uint32_t const h =  720;

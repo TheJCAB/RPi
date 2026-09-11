@@ -7,6 +7,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#include <stdarg.h>
+
 /*
     stdio.h synopsis
 
@@ -33,6 +35,12 @@ Macros:
 
 typedef void FILE;
 
+#if defined(__cplusplus)
+#define restrict __restrict
+extern "C"
+{
+#endif
+
 /*
 
 Types:
@@ -54,19 +62,23 @@ void setbuf(FILE* restrict stream, char* restrict buf);
 int setvbuf(FILE* restrict stream, char* restrict buf, int mode, size_t size);
 int fprintf(FILE* restrict stream, const char* restrict format, ...);
 int fscanf(FILE* restrict stream, const char * restrict format, ...);
+*/
 int printf(const char* restrict format, ...);
 int scanf(const char* restrict format, ...);
 int snprintf(char* restrict s, size_t n, const char* restrict format, ...);    // C99
 int sprintf(char* restrict s, const char* restrict format, ...);
 int sscanf(const char* restrict s, const char* restrict format, ...);
+/*
 int vfprintf(FILE* restrict stream, const char* restrict format, va_list arg);
 int vfscanf(FILE* restrict stream, const char* restrict format, va_list arg);  // C99
+*/
 int vprintf(const char* restrict format, va_list arg);
 int vscanf(const char* restrict format, va_list arg);                          // C99
 int vsnprintf(char* restrict s, size_t n, const char* restrict format,         // C99
               va_list arg);
 int vsprintf(char* restrict s, const char* restrict format, va_list arg);
 int vsscanf(const char* restrict s, const char* restrict format, va_list arg); // C99
+/*
 int fgetc(FILE* stream);
 char* fgets(char* restrict s, int n, FILE* restrict stream);
 int fputc(int c, FILE* stream);
@@ -92,6 +104,10 @@ int feof(FILE* stream);
 int ferror(FILE* stream);
 void perror(const char* s);
 */
+
+#if defined(__cplusplus)
+} // extern "C"
+#endif
 
 #if defined(__cplusplus) && __cplusplus < 201103L && defined(_LIBCPP_USE_FROZEN_CXX03_HEADERS)
 #  include <__cxx03/__config>

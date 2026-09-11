@@ -51,6 +51,7 @@
 
 #include <concepts>
 #include <atomic>
+#include <print>
 
 #define LOG(...)
 //#define LOG(...) printf(__VA_ARGS__)
@@ -258,13 +259,11 @@ union HCDHost::Registers
 void HCDHost::HandlePortInterrupt()
 {
     HostPort port = registers.PORT;
-    Uart::Raw::Puts("registers.PORT: ");
-    Uart::Raw::PutBin(port.Raw32);
-    Uart::Raw::Puts("\n");
+    std::println("registers.PORT: {:#b}", port.Raw32);
 
-    if (port.ConnectChanged    ) { Uart::Raw::Puts("ConnectChanged    : "); Uart::Raw::PutDec(port.Connect    ); Uart::Raw::Puts("\n"); }
-    if (port.EnableChanged     ) { Uart::Raw::Puts("EnableChanged     : "); Uart::Raw::PutDec(port.Enable     ); Uart::Raw::Puts("\n"); }
-    if (port.OverCurrentChanged) { Uart::Raw::Puts("OverCurrentChanged: "); Uart::Raw::PutDec(port.OverCurrent); Uart::Raw::Puts("\n"); }
+    if (port.ConnectChanged    ) { std::println("ConnectChanged    : {}", static_cast<int>(port.Connect    )); }
+    if (port.EnableChanged     ) { std::println("EnableChanged     : {}", static_cast<int>(port.Enable     )); }
+    if (port.OverCurrentChanged) { std::println("OverCurrentChanged: {}", static_cast<int>(port.OverCurrent)); }
 
     port.Enable = false;
 

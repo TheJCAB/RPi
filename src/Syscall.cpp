@@ -6,6 +6,7 @@
 
 #include "Uart.h"
 
+#include <print>
 #include <stdint.h>
 #include <stddef.h>
 
@@ -27,26 +28,22 @@ Exception::Spark SyscallDispatcher(ThreadContext* threadContext, uint32_t code)
     auto threadInfo = &Scheduler::GetCurrentThreadInfo();
 
     auto const func = static_cast<Function>(Cpu::esr_el1->ISS);
-    Uart::Puts("Syscall function ");
-    Uart::PutDec(static_cast<uint32_t>(func));
-    Uart::Puts("\n");
+    std::println("Syscall function {}", static_cast<uint32_t>(func));
 
     switch (func)
     {
     case Function::YieldToThread:
     {
-        Uart::Puts("YieldToThread from ");
-        Uart::PutHex(reinterpret_cast<uintptr_t>(&Scheduler::GetCurrentThreadInfo()));
-        Uart::Puts(" to ");
-        Uart::PutHex(reinterpret_cast<uintptr_t>(threadContext->X[0]));
-        Uart::Puts("\n");
+        std::println("YieldToThread from {:#x} to {:#x}",
+            reinterpret_cast<uintptr_t>(&Scheduler::GetCurrentThreadInfo()),
+            reinterpret_cast<uintptr_t>(threadContext->X[0]));
 
         auto newThreadInfo = reinterpret_cast<Scheduler::ThreadInfo*>(threadContext->X[0]);
         return Exception::MakeSpark(std::exchange(newThreadInfo->ContextWhenSuspended, nullptr));
     }
 
     case Function::HelloFromISS1:
-        Uart::Puts("Hello from ISS 1\n");
+        std::println("Hello from ISS 1");
         break;
 
     default:

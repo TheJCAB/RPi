@@ -42,7 +42,7 @@ concept __fmt_char_type =
 template <class _CharT>
 using __fmt_iter_for _LIBCPP_NODEBUG = _CharT*;
 
-template <class _Tp, class _Context, class _Formatter = typename _Context::template formatter_type<remove_const_t<_Tp>>>
+template <class _Tp, class _Context, class _Formatter = typename _Context::template formatter_type<remove_cv_t<_Tp>>>
 concept __formattable_with =
     semiregular<_Formatter> &&
     requires(_Formatter& __f,

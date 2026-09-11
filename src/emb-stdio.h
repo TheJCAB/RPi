@@ -69,7 +69,7 @@ CHAR_OUTPUT_HANDLER Init_EmbStdio (CHAR_OUTPUT_HANDLER handler);
 .	   FAIL: -1
 . 19Oct17 LdB
 .--------------------------------------------------------------------------*/
-int printf (const char* fmt, ...);
+int printf (const char* restrict fmt, ...);
 
 /*-[ sprintf ]--------------------------------------------------------------}
 . Writes the C string formatted by fmt to the given buffer, replacing any
@@ -86,7 +86,7 @@ int printf (const char* fmt, ...);
 .	   FAIL: -1
 . 19Oct17 LdB
 .--------------------------------------------------------------------------*/
-int sprintf (char* buf, const char* fmt, ...);
+int sprintf (char* restrict buf, const char* restrict fmt, ...);
 
 /*-[ snprintf ]-------------------------------------------------------------}
 . Writes the C string formatted by fmt to the given buffer, replacing any
@@ -100,7 +100,7 @@ int sprintf (char* buf, const char* fmt, ...);
 . ending null character. Excess characters to the buffer size are discarded.
 . 19Oct17 LdB
 .--------------------------------------------------------------------------*/
-int snprintf (char *buf, size_t bufSize, const char *fmt, ...);
+int snprintf (char * restrict buf, size_t bufSize, const char * restrict fmt, ...);
 
 /*-[ vprintf ]--------------------------------------------------------------}
 . Writes the C string formatted by fmt to the standard console, replacing
@@ -111,7 +111,7 @@ int snprintf (char *buf, size_t bufSize, const char *fmt, ...);
 . The number of characters written to the standard console function
 . 19Oct17 LdB
 .--------------------------------------------------------------------------*/
-int vprintf (const char* fmt, va_list arg);
+int vprintf (const char* restrict fmt, va_list arg);
 
 /*-[ vsprintf ]-------------------------------------------------------------}
 . Writes the C string formatted by fmt to the given buffer, replacing any
@@ -127,7 +127,7 @@ int vprintf (const char* fmt, va_list arg);
 . The number of characters written to the provided buffer
 . 19Oct17 LdB
 .--------------------------------------------------------------------------*/
-int vsprintf (char* buf, const char* fmt, va_list arg);
+int vsprintf (char* restrict buf, const char* restrict fmt, va_list arg);
 
 /*-[ vsnprintf ]------------------------------------------------------------}
 . Writes the C string formatted by fmt to the given buffer, replacing any
@@ -141,12 +141,12 @@ int vsprintf (char* buf, const char* fmt, va_list arg);
 . ending null character. Excess characters to the buffer size are discarded.
 . 19Oct17 LdB
 .--------------------------------------------------------------------------*/
-int vsnprintf (char* buf, size_t bufSize, const char* fmt, va_list arg);
+int vsnprintf (char* restrict buf, size_t bufSize, const char* restrict fmt, va_list arg);
 
 
 
-int _snprintf (char* s, size_t n, const char* fmt, ...);
-int _vsnprintf (char* s, size_t n, const char* fmt, va_list arg);
+int _snprintf (char* restrict s, size_t n, const char* restrict fmt, ...);
+int _vsnprintf (char* restrict s, size_t n, const char* restrict fmt, va_list arg);
 
 
 

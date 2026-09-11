@@ -8,6 +8,8 @@
 
 #include <BootLib/RegisterProxy.h>
 
+#include <print>
+
 union SdCard::Registers
 {
     BootLib::Register<uint32_t, 0x00> ARG2       ;
@@ -139,17 +141,17 @@ int sd_cmd(auto& registers, unsigned int code, unsigned int arg)
     sd_err=SD_OK;
     if(code&CMD_NEED_APP) {
         r=sd_cmd(registers, CMD_APP_CMD|(sd_rca?CMD_RSPNS_48:0),sd_rca);
-        if(sd_rca && !r) { Uart::Puts("ERROR: failed to send SD APP command\n"); sd_err=SD_ERROR;return 0;}
+        if(sd_rca && !r) { std::println("ERROR: failed to send SD APP command"); sd_err=SD_ERROR;return 0;}
         code &= ~CMD_NEED_APP;
     }
-    if(sd_status(registers, SR_CMD_INHIBIT)) { Uart::Puts("ERROR: EMMC busy\n"); sd_err= SD_TIMEOUT;return 0;}
-    Uart::Puts("EMMC: Sending command ");Uart::PutHex(code);Uart::Puts(" arg ");Uart::PutHex(arg);Uart::Puts("\n");
+    if(sd_status(registers, SR_CMD_INHIBIT)) { std::println("ERROR: EMMC busy"); sd_err= SD_TIMEOUT;return 0;}
+    std::println("EMMC: Sending command {:#x} arg {:#x}", code, arg);
     registers.INTERRUPT = registers.INTERRUPT.get();
     registers.ARG1=arg;
     registers.CMDTM=code;
     if(code==CMD_SEND_OP_COND) Cpu::Delay(1000ms); else
     if(code==CMD_SEND_IF_COND || code==CMD_APP_CMD) Cpu::Delay(100ms);
-    if((r=sd_int(registers, INT_CMD_DONE))) {Uart::Puts("ERROR: failed to send EMMC command\n");sd_err=r;return 0;}
+    if((r=sd_int(registers, INT_CMD_DONE))) {std::println("ERROR: failed to send EMMC command");sd_err=r;return 0;}
     r=registers.RESP0;
     if(code==CMD_GO_IDLE || code==CMD_APP_CMD) return 0; else
     if(code==(CMD_APP_CMD|CMD_RSPNS_48)) return r&SR_APP_CMD; else
@@ -178,7 +180,7 @@ int sd_clk(auto& registers, unsigned int f)
     int cnt = 100000;
     while((registers.STATUS & (SR_CMD_INHIBIT|SR_DAT_INHIBIT)) && cnt--) Cpu::Delay(1ms);
     if(cnt<=0) {
-        Uart::Puts("ERROR: timeout waiting for inhibit flag\n");
+        std::println("ERROR: timeout waiting for inhibit flag");
         return SD_ERROR;
     }
 
@@ -195,7 +197,7 @@ int sd_clk(auto& registers, unsigned int f)
     }
     if(sd_hv>HOST_SPEC_V2) d=c; else d=(1<<s);
     if(d<=2) {d=2;s=0;}
-    Uart::Puts("sd_clk divisor ");Uart::PutHex(d);Uart::Puts(", shift ");Uart::PutHex(s);Uart::Puts("\n");
+    std::println("sd_clk divisor {:#x}, shift {:#x}", d, s);
     if(sd_hv>HOST_SPEC_V2) h=(d&0x300)>>2;
     d=(((d&0x0ff)<<8)|h);
     registers.CONTROL1=(registers.CONTROL1&0xffff003f)|d; Cpu::Delay(10ms);
@@ -203,7 +205,7 @@ int sd_clk(auto& registers, unsigned int f)
     Cpu::Delay(10ms);
     cnt=10000; while(!(registers.CONTROL1 & C1_CLK_STABLE) && cnt--) Cpu::Delay(10ms);
     if(cnt<=0) {
-        Uart::Puts("ERROR: failed to get stable clock\n");
+        std::println("ERROR: failed to get stable clock");
         return SD_ERROR;
     }
     return SD_OK;
@@ -253,12 +255,10 @@ bool SdCard::Init()
         Gpio::SetPullUpDown(53, Gpio::PullUpDown::PullUp);
     }
 
-    Uart::Puts("EMMC: GPIO set up\n");
+    std::println("EMMC: GPIO set up");
 
     sd_hv = (registers.SLOTISR_VER & HOST_SPEC_NUM) >> HOST_SPEC_NUM_SHIFT;
-    Uart::Puts("EMMC: Spec ");
-    Uart::PutDec(sd_hv);
-    Uart::Puts("\n");
+    std::println("EMMC: Spec {}", sd_hv);
 
     // Reset the card.
     registers.CONTROL0 = 0;
@@ -272,9 +272,9 @@ bool SdCard::Init()
     while((registers.CONTROL1 & C1_SRST_HC) && cnt--);
 
     if (cnt <= 0) {
-        Uart::Puts("ERROR: failed to reset EMMC\n");
+        std::println("ERROR: failed to reset EMMC");
     }
-    Uart::Puts("EMMC: reset OK\n");
+    std::println("EMMC: reset OK");
 
     registers.CONTROL1 |= C1_CLK_INTLEN | C1_TOUNIT_MAX;
     Cpu::Delay(10ms);
@@ -293,18 +293,14 @@ bool SdCard::Init()
     sd_cmd(registers, CMD_GO_IDLE,0);
     if (sd_err)
     {
-        Uart::Puts("Error: ");
-        Uart::PutHex(sd_err);
-        Uart::Puts("\n");
+        std::println("Error: {:#x}", sd_err);
         return false;
     }
 
     sd_cmd(registers, CMD_SEND_IF_COND,0x000001AA);
     if (sd_err)
     {
-        Uart::Puts("Error: ");
-        Uart::PutHex(sd_err);
-        Uart::Puts("\n");
+        std::println("Error: {:#x}", sd_err);
         return false;
     }
 
@@ -315,26 +311,21 @@ bool SdCard::Init()
         {
             Cpu::Delay(400us);
             result = sd_cmd(registers, CMD_SEND_OP_COND,ACMD41_ARG_HC);
-            Uart::Puts("EMMC: CMD_SEND_OP_COND returned ");
+            std::print("EMMC: CMD_SEND_OP_COND returned ");
             if (result & ACMD41_CMD_COMPLETE)
-                Uart::Puts("COMPLETE ");
+                std::print("COMPLETE ");
             if (result & ACMD41_VOLTAGE)
-                Uart::Puts("VOLTAGE ");
+                std::print("VOLTAGE ");
             if (result & ACMD41_CMD_CCS)
-                Uart::Puts("CCS ");
-            Uart::PutHex(result);
-            Uart::Puts("\n");
+                std::print("CCS ");
+            std::println("{:#x}", result);
             if (sd_err != SD_TIMEOUT && sd_err != SD_OK )
             {
-                Uart::Puts("ERROR: EMMC ACMD41 returned error ");
-                Uart::PutDec(sd_err);
-                Uart::Puts("\n");
+                std::println("ERROR: EMMC ACMD41 returned error {}", sd_err);
                 return false;
             }
         }
-        Uart::Puts("EMMC: CMD_SEND_OP_COND completed after ");
-        Uart::PutDec(6u - cnt);
-        Uart::Puts(" attempts\n");
+        std::println("EMMC: CMD_SEND_OP_COND completed after {} attempts", 6u - cnt);
         if (!(result & ACMD41_CMD_COMPLETE) || !cnt) return false; //SD_TIMEOUT;
         if (!(result & ACMD41_VOLTAGE)) return false; //SD_ERROR;
         if (result & ACMD41_CMD_CCS) ccs = SCR_SUPP_CCS;
@@ -343,9 +334,7 @@ bool SdCard::Init()
     sd_cmd(registers, CMD_ALL_SEND_CID, 0);
 
     sd_rca = sd_cmd(registers, CMD_SEND_REL_ADDR, 0);
-    Uart::Puts("EMMC: CMD_SEND_REL_ADDR returned ");
-    Uart::PutHex(sd_rca);
-    Uart::Puts("\n");
+    std::println("EMMC: CMD_SEND_REL_ADDR returned {:#x}", sd_rca);
     if (sd_err) return false;
 
     if (sd_clk(registers, 25'000'000)) return false;
@@ -376,12 +365,12 @@ bool SdCard::Init()
         registers.CONTROL0 |= C0_HCTL_DWITDH;
     }
     // add software flag
-    Uart::Puts("EMMC: supports ");
+    std::print("EMMC: supports ");
     if (sd_scr[0] & SCR_SUPP_SET_BLKCNT)
-        Uart::Puts("SET_BLKCNT ");
+        std::print("SET_BLKCNT ");
     if (ccs)
-        Uart::Puts("CCS ");
-    Uart::Puts("\n");
+        std::print("CCS ");
+    std::println();
     sd_scr[0] &= ~SCR_SUPP_CCS;
     sd_scr[0] |= ccs;
     return true;
@@ -395,7 +384,7 @@ bool SdCard::ReadBlock(uint32_t lba, void* buffer, uint32_t count)
 {
     int r,c=0,d;
     if(count < 1) count = 1;
-    Uart::Puts("sd_readblock lba ");Uart::PutHex(lba);Uart::Puts(" num ");Uart::PutHex(count);Uart::Puts("\n");
+    std::println("sd_readblock lba {:#x} num {:#x}", lba, count);
     if(sd_status(registers, SR_DAT_INHIBIT)) {sd_err=SD_TIMEOUT; return false;}
     unsigned int *buf=(unsigned int *)buffer;
     if(sd_scr[0] & SCR_SUPP_CCS) {
@@ -414,7 +403,7 @@ bool SdCard::ReadBlock(uint32_t lba, void* buffer, uint32_t count)
             sd_cmd(registers, CMD_READ_SINGLE,(lba+c)*512);
             if(sd_err) return false;
         }
-        if((r=sd_int(registers, INT_READ_RDY))){Uart::Puts("\rERROR: Timeout waiting for ready to read\n");sd_err=r;return false;}
+        if((r=sd_int(registers, INT_READ_RDY))){std::println("\rERROR: Timeout waiting for ready to read");sd_err=r;return false;}
         for(d=0;d<128;d++) buf[d] = registers.DATA;
         c++; buf+=128;
     }

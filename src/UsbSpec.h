@@ -33,6 +33,10 @@
 #include <stdint.h>
 #include <stddef.h>
 
+#include <format>
+#include <type_traits>
+#include <concepts>
+
 // Explicitly packing bitfields of different types keeps VSCode's IntelliSense happier.
 #define PACKED __attribute__((__packed__))
 
@@ -528,4 +532,18 @@ enum PacketId {
     USB_PID_DATA2 = 1,
     USB_PID_SETUP = 3,
     USB_MDATA = 3,
+};
+
+// std::format support for plain enum types, printed as their underlying integer value.
+template<class T>
+requires std::is_enum_v<T> && (std::same_as<T, UsbSpeed> || std::same_as<T, usb_descriptor_type> ||
+    std::same_as<T, UsbDeviceStatus> || std::same_as<T, InterfaceClass> ||
+    std::same_as<T, usb_transfer_type> || std::same_as<T, usb_transfer_size> ||
+    std::same_as<T, HubPortFeature> || std::same_as<T, DeviceClass> || std::same_as<T, PacketId>)
+struct std::formatter<T> : std::formatter<std::underlying_type_t<T>>
+{
+    auto format(T value, format_context& ctx) const
+    {
+        return std::formatter<std::underlying_type_t<T>>::format(static_cast<std::underlying_type_t<T>>(value), ctx);
+    }
 };

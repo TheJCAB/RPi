@@ -2,6 +2,8 @@
 
 #include "Uart.h"
 
+#include <print>
+
 namespace Processor
 {
 
@@ -47,7 +49,7 @@ inline void InvalidateDataCache(void const volatile* buffer, size_t size)
 
 [[noreturn]] inline void Halt()
 {
-    Uart::Puts("The processor has been halted.\n");
+    std::println("The processor has been halted.");
     for (;;)
     {
         asm volatile ("wfe"); // Wait for event

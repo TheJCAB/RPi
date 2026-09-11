@@ -12,6 +12,7 @@
 
 #include <stdint.h>
 #include <atomic>
+#include <print>
 
 namespace Interrupts
 {
@@ -303,9 +304,7 @@ void Init()
 {
     auto& registers = RefRegisters();
 
-    Uart::Puts("DistributorControl: ");
-    Uart::PutBin(registers.Control->Raw32);
-    Uart::Puts("\n");
+    std::println("DistributorControl: {:#b}", registers.Control->Raw32);
 
     registers.Enable  = { .VTimer = 1 };
 
@@ -544,9 +543,7 @@ extern "C" Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
         // Ensure we don't just loop indefinitely if some interrupt is defined but not handled.
         if (--retryCount == 0)
         {
-            Uart::Raw::Puts("Panic: Unhandled core interrupt: ");
-            Uart::Raw::PutBin(pendingCoreInterrupts.Raw32);
-            Uart::Raw::Puts("\n");
+            std::println("Panic: Unhandled core interrupt: {:#b}", pendingCoreInterrupts.Raw32);
             Cpu::Halt();
         }
     }
@@ -561,9 +558,7 @@ extern "C" Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
     retryCount = 100;
     while (auto basicPending = Rpi3::IrqBasicPending.get())
     {
-        Uart::Raw::Puts("Basic IRQs pending: ");
-        Uart::Raw::PutHex(basicPending.Raw32);
-        Uart::Raw::Puts("\n");
+        std::println("Basic IRQs pending: {:#x}", basicPending.Raw32);
 
         // Handle basic IRQs
         if (basicPending.USB)
@@ -579,9 +574,7 @@ extern "C" Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
         if (basicPending.IRQs1)
         {
             auto irq1 = Rpi3::IrqPending1.get();
-            Uart::Raw::Puts("IRQs 1 pending: ");
-            Uart::Raw::PutHex(irq1.Raw32);
-            Uart::Raw::Puts("\n");
+            std::println("IRQs 1 pending: {:#x}", irq1.Raw32);
 
             // Handle IRQ1
         }
@@ -590,18 +583,14 @@ extern "C" Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
         if (basicPending.IRQs2)
         {
             auto irq2 = Rpi3::IrqPending2.get();
-            Uart::Raw::Puts("IRQs 2 pending: ");
-            Uart::Raw::PutHex(irq2.Raw32);
-            Uart::Raw::Puts("\n");
+            std::println("IRQs 2 pending: {:#x}", irq2.Raw32);
 
             // Handle IRQ2
         }
 
         if (--retryCount == 0)
         {
-            Uart::Raw::Puts("Panic: Unhandled SoC interrupt: ");
-            Uart::Raw::PutBin(basicPending.Raw32);
-            Uart::Raw::Puts("\n");
+            std::println("Panic: Unhandled SoC interrupt: {:#b}", basicPending.Raw32);
             Cpu::Halt();
         }
     }

@@ -52,9 +52,10 @@
 #include "emb-stdio.h"                // Needed for printf
 
 #include <concepts>
+#include <print>
 
 //#define LOG(...)
-#define LOG(...) printf(__VA_ARGS__)
+#define LOG(...) std::print(__VA_ARGS__)
 #define LOG_DEBUG(...)
 //#define LOG_DEBUG(...) printf(__VA_ARGS__)
 
@@ -675,36 +676,36 @@ Interrupts::Spark InterruptHandler()
 
     if (todo.Raw32 != 0)
     {
-        if (interrupts.CurrentMode                 ) { Uart::Raw::Puts("CurrentMode\n"                 ); }
-        if (interrupts.ModeMismatch                ) { Uart::Raw::Puts("ModeMismatch\n"                ); }
-        if (interrupts.Otg                         ) { Uart::Raw::Puts("Otg\n"                         ); }
-        if (interrupts.DmaStartOfFrame             ) { Uart::Raw::Puts("DmaStartOfFrame\n"             ); }
-        if (interrupts.ReceiveStatusLevel          ) { Uart::Raw::Puts("ReceiveStatusLevel\n"          ); }
-        if (interrupts.NpTransmitFifoEmpty         ) { Uart::Raw::Puts("NpTransmitFifoEmpty\n"         ); }
-        if (interrupts.ginnakeff                   ) { Uart::Raw::Puts("ginnakeff\n"                   ); }
-        if (interrupts.goutnakeff                  ) { Uart::Raw::Puts("goutnakeff\n"                  ); }
-        if (interrupts.ulpick                      ) { Uart::Raw::Puts("ulpick\n"                      ); }
-        if (interrupts.I2c                         ) { Uart::Raw::Puts("I2c\n"                         ); }
-        if (interrupts.EarlySuspend                ) { Uart::Raw::Puts("EarlySuspend\n"                ); }
-        if (interrupts.UsbSuspend                  ) { Uart::Raw::Puts("UsbSuspend\n"                  ); }
-        if (interrupts.UsbReset                    ) { Uart::Raw::Puts("UsbReset\n"                    ); }
-        if (interrupts.EnumerationDone             ) { Uart::Raw::Puts("EnumerationDone\n"             ); }
-        if (interrupts.IsochronousOutDrop          ) { Uart::Raw::Puts("IsochronousOutDrop\n"          ); }
-        if (interrupts.eopframe                    ) { Uart::Raw::Puts("eopframe\n"                    ); }
-        if (interrupts.RestoreDone                 ) { Uart::Raw::Puts("RestoreDone\n"                 ); }
-        if (interrupts.EndPointMismatch            ) { Uart::Raw::Puts("EndPointMismatch\n"            ); }
-        if (interrupts.InEndPoint                  ) { Uart::Raw::Puts("InEndPoint\n"                  ); }
-        if (interrupts.OutEndPoint                 ) { Uart::Raw::Puts("OutEndPoint\n"                 ); }
-        if (interrupts.IncompleteIsochronousIn     ) { Uart::Raw::Puts("IncompleteIsochronousIn\n"     ); }
-        if (interrupts.IncompleteIsochronousOut    ) { Uart::Raw::Puts("IncompleteIsochronousOut\n"    ); }
-        if (interrupts.fetsetup                    ) { Uart::Raw::Puts("fetsetup\n"                    ); }
-        if (interrupts.ResetDetect                 ) { Uart::Raw::Puts("ResetDetect\n"                 ); }
-        if (interrupts.HpTransmitFifoEmpty         ) { Uart::Raw::Puts("HpTransmitFifoEmpty\n"         ); }
-        if (interrupts.LowPowerModeTransmitReceived) { Uart::Raw::Puts("LowPowerModeTransmitReceived\n"); }
-        if (interrupts.ConnectionIdStatusChange    ) { Uart::Raw::Puts("ConnectionIdStatusChange\n"    ); }
-        if (interrupts.Disconnect                  ) { Uart::Raw::Puts("Disconnect\n"                  ); }
-        if (interrupts.SessionRequest              ) { Uart::Raw::Puts("SessionRequest\n"              ); }
-        if (interrupts.Wakeup                      ) { Uart::Raw::Puts("Wakeup\n"                      ); }
+        if (interrupts.CurrentMode                 ) { std::println("CurrentMode"                 ); }
+        if (interrupts.ModeMismatch                ) { std::println("ModeMismatch"                ); }
+        if (interrupts.Otg                         ) { std::println("Otg"                         ); }
+        if (interrupts.DmaStartOfFrame             ) { std::println("DmaStartOfFrame"             ); }
+        if (interrupts.ReceiveStatusLevel          ) { std::println("ReceiveStatusLevel"          ); }
+        if (interrupts.NpTransmitFifoEmpty         ) { std::println("NpTransmitFifoEmpty"         ); }
+        if (interrupts.ginnakeff                   ) { std::println("ginnakeff"                   ); }
+        if (interrupts.goutnakeff                  ) { std::println("goutnakeff"                  ); }
+        if (interrupts.ulpick                      ) { std::println("ulpick"                      ); }
+        if (interrupts.I2c                         ) { std::println("I2c"                         ); }
+        if (interrupts.EarlySuspend                ) { std::println("EarlySuspend"                ); }
+        if (interrupts.UsbSuspend                  ) { std::println("UsbSuspend"                  ); }
+        if (interrupts.UsbReset                    ) { std::println("UsbReset"                    ); }
+        if (interrupts.EnumerationDone             ) { std::println("EnumerationDone"             ); }
+        if (interrupts.IsochronousOutDrop          ) { std::println("IsochronousOutDrop"          ); }
+        if (interrupts.eopframe                    ) { std::println("eopframe"                    ); }
+        if (interrupts.RestoreDone                 ) { std::println("RestoreDone"                 ); }
+        if (interrupts.EndPointMismatch            ) { std::println("EndPointMismatch"            ); }
+        if (interrupts.InEndPoint                  ) { std::println("InEndPoint"                  ); }
+        if (interrupts.OutEndPoint                 ) { std::println("OutEndPoint"                 ); }
+        if (interrupts.IncompleteIsochronousIn     ) { std::println("IncompleteIsochronousIn"     ); }
+        if (interrupts.IncompleteIsochronousOut    ) { std::println("IncompleteIsochronousOut"    ); }
+        if (interrupts.fetsetup                    ) { std::println("fetsetup"                    ); }
+        if (interrupts.ResetDetect                 ) { std::println("ResetDetect"                 ); }
+        if (interrupts.HpTransmitFifoEmpty         ) { std::println("HpTransmitFifoEmpty"         ); }
+        if (interrupts.LowPowerModeTransmitReceived) { std::println("LowPowerModeTransmitReceived"); }
+        if (interrupts.ConnectionIdStatusChange    ) { std::println("ConnectionIdStatusChange"    ); }
+        if (interrupts.Disconnect                  ) { std::println("Disconnect"                  ); }
+        if (interrupts.SessionRequest              ) { std::println("SessionRequest"              ); }
+        if (interrupts.Wakeup                      ) { std::println("Wakeup"                      ); }
     }
 
     DWC_CORE->INTERRUPT = interrupts;
@@ -728,9 +729,9 @@ Async::task<std::expected<std::shared_ptr<HCDHost>, DWCRESULT>> HCDInitialize()
 
     auto vendorId = *DWC_CORE->VENDORID;
     auto userId   = *DWC_CORE->USERID;
-    LOG("HCD: Hardware: %c%c%x.%03x (BCM%.5x).\n",
-        vendorId.O, vendorId.T, vendorId.Version, vendorId.Revision,
-        userId.Id
+    LOG("HCD: Hardware: {}{}{:x}.{:03x} (BCM{:05x}).\n",
+        static_cast<char>(vendorId.O), static_cast<char>(vendorId.T), static_cast<unsigned>(vendorId.Version), static_cast<unsigned>(vendorId.Revision),
+        static_cast<unsigned>(userId.Id)
     );
 
     if (vendorId.O != 'O' || vendorId.T != 'T' || vendorId.Version != 2)

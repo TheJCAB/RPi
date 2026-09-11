@@ -69,6 +69,15 @@ enum class RESULT : int
     ErrorStall          = -16,
 };
 
+template<>
+struct std::formatter<RESULT> : std::formatter<std::underlying_type_t<RESULT>>
+{
+    auto format(RESULT value, format_context& ctx) const
+    {
+        return std::formatter<std::underlying_type_t<RESULT>>::format(static_cast<std::underlying_type_t<RESULT>>(value), ctx);
+    }
+};
+
 class UsbDriver;
 class UsbDevice;
 
