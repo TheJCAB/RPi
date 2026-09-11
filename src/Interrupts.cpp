@@ -338,10 +338,10 @@ union ControlReg
 union Registers
 {
     // Enable CPU interface
-    BootLib::Register<ControlReg, 0   > Control;
-    BootLib::Register<uint32_t  , 0x04> PriorityMask;
-    BootLib::Register<Source    , 0x0C> Acknowledge;
-    BootLib::Register<Source    , 0x10> EndOfInterrupt;
+    BootLib::Register<ControlReg      , 0   > Control;
+    BootLib::Register<uint32_t        , 0x04> PriorityMask;
+    BootLib::Register<Source     const, 0x0C> Acknowledge;
+    BootLib::Register<Source          , 0x10> EndOfInterrupt;
 };
 
 Registers& RefRegisters()
@@ -400,9 +400,184 @@ Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
 }
 // namespace Rpi4
 
+namespace Qemu
+{
+
+enum class Source : uint32_t
+{
+    VTimer = 27,
+    //PCIe   = 32,
+};
+
+namespace Distributor
+{
+
+union ControlReg
+{
+    struct
+    {
+        uint32_t Enable    :  1;
+        uint32_t Reserved0 : 31;
+    };
+    uint32_t Raw32;
+};
+
+union Irqs0
+{
+    struct
+    {
+        uint32_t Reserved0    : 26;
+        uint32_t HPTimer      :  1;
+        uint32_t VTimer       :  1;
+        uint32_t LegacyFiq    :  1;
+        uint32_t PSTimer      :  1;
+        uint32_t PNSTimer     :  1;
+        uint32_t LegacyIrq    :  1;
+    };
+    uint32_t Raw32;
+};
+
+union CpuTarget6
+{
+    struct
+    {
+        uint8_t Reserved0;
+        uint8_t Reserved1;
+        uint8_t HPTimer;
+        uint8_t VTimer;
+    };
+    uint32_t Raw32;
+};
+
+union CpuTarget7
+{
+    struct
+    {
+        uint8_t LegacyFiq;
+        uint8_t PSTimer;
+        uint8_t PNSTimer;
+        uint8_t LegacyIrq;
+    };
+    uint32_t Raw32;
+};
+
+union Registers
+{
+    BootLib::Register<ControlReg    , 0x00         > Control;
+    BootLib::Register<Irqs0         , 0x100        > Enable;
+    BootLib::Register<Irqs0         , 0x180        > Disable;
+    BootLib::Register<CpuTarget6    , 0x800 + 6 * 4> Target6;
+    BootLib::Register<CpuTarget7    , 0x800 + 7 * 4> Target7;
+};
+
+Registers& RefRegisters()
+{
+    return *reinterpret_cast<Registers*>(0x800'0000u);
+}
+
+void Init()
+{
+    auto& registers = RefRegisters();
+
+    fmt::println("DistributorControl: {:#b}", registers.Control->Raw32);
+
+    registers.Enable  = { .VTimer = 1 };
+
+    // Not needed (hardcoded to the current CPU up to Target7 inclusive)
+    //registers.Target6 = [](auto& reg){ reg.VTimer = Cpu::mpidr_el1->CoreId; };
+
+    //// Set priority (optional, default is fine)
+    //reg = GICD_BASE + 0x400 + IRQ_VTIMER;
+    //mmio_write(reg, 0xA0);  // Medium priority
+
+    // Enable distributor
+    registers.Control = { .Enable = 1 };
+}
+
+}
+// namespace Distributor
+
+namespace Core
+{
+
+union ControlReg
+{
+    struct
+    {
+        uint32_t Enable    :  1;
+        uint32_t Reserved0 : 31;
+    };
+    uint32_t Raw32;
+};
+
+union Registers
+{
+    // Enable CPU interface
+    BootLib::Register<ControlReg      , 0   > Control;
+    BootLib::Register<uint32_t        , 0x04> PriorityMask;
+    BootLib::Register<Source     const, 0x0C> Acknowledge;
+    BootLib::Register<Source          , 0x10> EndOfInterrupt;
+};
+
+Registers& RefRegisters()
+{
+    return *reinterpret_cast<Registers*>(0x801'0000u);
+}
+
+void Init()
+{
+    auto& registers = RefRegisters();
+
+    registers.Control  = { .Enable = 1 };
+    registers.PriorityMask = 0xF0;
+}
+
+}
+// namespace Core
+
+//extern "C" void irq_handler() {
+//    uint32_t int_id = mmio_read(GICC_BASE + 0xC);  // GICC_IAR
+//
+//    if (int_id == IRQ_VTIMER) {
+//        // Acknowledge and clear the timer interrupt
+//        // (Timer auto-clears on read/write to cntv_tval_el0)
+//        timer_init();  // Re-arm the timer
+//
+//        // Your handler logic here
+//        // e.g., toggle an LED or increment a counter
+//    }
+//
+//    // Signal end of interrupt
+//    mmio_write(GICC_BASE + 0x10, int_id);  // GICC_EOIR
+//}
+
+Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
+{
+    Spark result;
+
+    auto const coreId = Cpu::mpidr_el1->CoreId;
+
+    auto& registers = Core::RefRegisters();
+    Source const interrupt = registers.Acknowledge;
+
+    switch (interrupt)
+    {
+    case Source::VTimer: result = CoreInterruptsData[coreId].VirtualTimerHandler(); break;
+    default:
+        break;
+    }
+
+    registers.EndOfInterrupt = interrupt;
+
+    return result;
+}
+
+}
+// namespace Qemu
+
 void EnableUsb(HandlerFunction handler)
 {
-    if (BootLib::Cpu::IsRpi4())
+    if (BootLib::Cpu::IsRpi4() || BootLib::Cpu::IsQemu())
     {
         return;
     }
@@ -424,7 +599,7 @@ void EnableUsb(HandlerFunction handler)
 
 void EnableXhci(HandlerFunction handler)
 {
-    if (!BootLib::Cpu::IsRpi4())
+    if (!BootLib::Cpu::IsRpi4() || BootLib::Cpu::IsQemu())
     {
         return;
     }
@@ -456,7 +631,11 @@ void EnableCoreVirtualTimerInterrupt(HandlerFunction handler)
 
     CoreInterruptsData[coreId].VirtualTimerHandler = handler;
 
-    if (BootLib::Cpu::IsRpi4())
+    if (BootLib::Cpu::IsQemu())
+    {
+        Qemu::Distributor::RefRegisters().Enable = { .VTimer = true };
+    }
+    else if (BootLib::Cpu::IsRpi4())
     {
         Rpi4::Distributor::RefRegisters().Enable = { .VTimer = true };
     }
@@ -479,7 +658,11 @@ void DisableCoreVirtualTimerInterrupt()
         .IMASK = 1,
     };
 
-    if (BootLib::Cpu::IsRpi4())
+    if (BootLib::Cpu::IsQemu())
+    {
+        Qemu::Distributor::RefRegisters().Disable = { .VTimer = true };
+    }
+    else if (BootLib::Cpu::IsRpi4())
     {
         Rpi4::Distributor::RefRegisters().Disable = { .VTimer = true };
     }
@@ -494,6 +677,10 @@ void DisableCoreVirtualTimerInterrupt()
 
 extern "C" Spark InterruptDispatcher(ThreadContext* context, uint32_t code)
 {
+    if (BootLib::Cpu::IsQemu())
+    {
+        return Qemu::InterruptDispatcher(context, code);
+    }
     if (BootLib::Cpu::IsRpi4())
     {
         return Rpi4::InterruptDispatcher(context, code);
@@ -647,7 +834,12 @@ void HandlePeriodicInterrupt()
 
 void Init()
 {
-    if (BootLib::Cpu::IsRpi4())
+    if (BootLib::Cpu::IsQemu())
+    {
+        Qemu::Distributor::Init();
+        Qemu::Core::Init();
+    }
+    else if (BootLib::Cpu::IsRpi4())
     {
         Rpi4::Distributor::Init();
         Rpi4::Core::Init();

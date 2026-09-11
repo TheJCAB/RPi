@@ -328,6 +328,45 @@ bool ParseMemoryNode(ParseState& state)
     return true;
 }
 
+bool ParsePsciNode(ParseState& state)
+{
+    std::span<BE<uint32_t> const> method;
+    if (!ParseNode(state,
+            [](ParseState& state, std::string_view name, std::string_view address)
+            {
+                Puts(state.log, "Unknown PSCI node: ");
+                Puts(state.log, name);
+                if (!address.empty())
+                {
+                    Puts(state.log, "  Address: ");
+                    Puts(state.log, address);
+                }
+                Puts(state.log, "\n");
+                return SkipNode(state);
+            },
+            [&](ParseState& state, std::string_view name, std::span<BE<uint32_t> const> value)
+            {
+                if (name == "method")
+                {
+                    // Handle memory region
+                    Puts(state.log, "  Method found\n");
+                    method = value;
+                }
+                return true;
+            }
+        ))
+    {
+        return false;
+    }
+    if (!method.empty())
+    {
+        Puts(state.log, "  Method: ");
+        Puts(state.log, reinterpret_cast<char const*>(method.data()));
+        Puts(state.log, "\n");
+    }
+    return true;
+}
+
 bool ParseRootNode(ParseState& state)
 {
     return ParseNode(state,
@@ -335,9 +374,13 @@ bool ParseRootNode(ParseState& state)
         {
             if (name == "memory")
             {
-                // Handle memory node
                 Puts(state.log, "Memory node found\n");
                 return ParseMemoryNode(state);
+            }
+            else if (name == "psci")
+            {
+                Puts(state.log, "PSCI node found\n");
+                return ParsePsciNode(state);
             }
             else
             {
@@ -436,57 +479,6 @@ void ParseDeviceTree(uintptr_t dtb, Stream::Out const& log)
             Puts(log, "\n");
             break;
         }
-
-//        } else if (token == FDT_END_NODE) {
-//            in_root_node = false;
-//            in_memory_node = false;
-//        } else if (token == FDT_PROP) {
-//            uint32_t len = *state.struct_block++;
-//            uint32_t nameoff = *state.struct_block++;
-//            char const* prop_name = strings + nameoff;
-//            auto* value = state.struct_block;
-//            //printf(" Property: %s (%u bytes)\n", prop_name, len);
-//
-//            if (in_root_node || in_memory_node) {
-//                if (strcmp(prop_name, "#address-cells") == 0) {
-//                    Puts(log, "Address cells found: ");
-//                    PutDec(log, static_cast<uint32_t>(*value));
-//                    Puts(log, "\n");
-//                } else if (strcmp(prop_name, "#size-cells") == 0) {
-//                    Puts(log, "Size cells found: ");
-//                    PutDec(log, static_cast<uint32_t>(*value));
-//                    Puts(log, "\n");
-//                } else if (strcmp(prop_name, "memreserve") == 0) {
-//                    Puts(log, "Memory reservation found: ");
-//                    PutHex(log, static_cast<uint32_t>(value[0]));
-//                    Puts(log, " ");
-//                    PutHex(log, static_cast<uint32_t>(value[1]));
-//                    Puts(log, "\n");
-//                }
-//            }
-//
-//            if (in_memory_node && strcmp(prop_name, "reg") == 0) {
-//                Puts(log, "Memory reg found. Length: ");
-//                PutDec(log, len);
-//                Puts(log, "\n");
-//                while (len >= 12) {
-//                    uint64_t base = (static_cast<uint64_t>(value[0]) << 32) |
-//                                    value[1];
-//                    uint64_t size = value[2];
-//
-//                    Puts(log, "Memory base: ");
-//                    PutHex(log, base);
-//                    Puts(log, "\nMemory size: ");
-//                    PutHex(log, size);
-//                    Puts(log, "\n");
-//
-//                    value += 3;
-//                    len -= 12;
-//                }
-//                return;
-//            }
-//
-//            state.struct_block += (len + 3) / 4;
     }
 }
 

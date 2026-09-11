@@ -12,6 +12,7 @@
 #include "Mmu.h"
 #include "Scheduler.h"
 #include "Debugger.h"
+#include "Psci.h"
 #include "Syscall.h"
 #include "Timer.h"
 #include "Run.h"
@@ -45,7 +46,7 @@ extern uint64_t _data_end;
 extern void (*_init_array_start[])();
 extern void (*_init_array_end[])();
 
-void _start();
+void _start(uintptr_t dtb);
 void el2_to_el1_return();
 
 void InitCore()
@@ -77,15 +78,17 @@ volatile bool Core3Ready = false;
 
 void Core1()
 {
+    bool const isQemu = reinterpret_cast<uintptr_t>(&Mmio::Base) >= 0x4000'0000u;
+
     {
         // Without MMU, we need to use physical addresses to access peripherals.
-        BootLib::PL011Uart uart{ BootLib::Mmio::GetPeripheralsPhysicalBase() + BootLib::PL011Uart::Uart0RegistersOffset };
+        BootLib::PL011Uart uart{ isQemu ? 0x900'0000u : BootLib::Mmio::GetPeripheralsPhysicalBase() + BootLib::PL011Uart::Uart0RegistersOffset };
         Puts(uart, "Core 1 starting\n");
     }
 
     InitCore();
 
-    BootLib::PL011Uart uart{ Mmio::Base + BootLib::PL011Uart::Uart0RegistersOffset };
+    BootLib::PL011Uart uart{ isQemu ? 0x900'0000u : Mmio::Base + BootLib::PL011Uart::Uart0RegistersOffset };
     Puts(uart, "Core 1 says hello\n");
 
 #if 0
@@ -156,15 +159,17 @@ void Core1()
 
 void Core2()
 {
+    bool const isQemu = reinterpret_cast<uintptr_t>(&Mmio::Base) >= 0x4000'0000u;
+
     {
         // Without MMU, we need to use physical addresses to access peripherals.
-        BootLib::PL011Uart uart{ BootLib::Mmio::GetPeripheralsPhysicalBase() + BootLib::PL011Uart::Uart0RegistersOffset };
+        BootLib::PL011Uart uart{ isQemu ? 0x900'0000u : BootLib::Mmio::GetPeripheralsPhysicalBase() + BootLib::PL011Uart::Uart0RegistersOffset };
         Puts(uart, "Core 2 starting\n");
     }
 
     InitCore();
 
-    BootLib::PL011Uart uart{ Mmio::Base + BootLib::PL011Uart::Uart0RegistersOffset };
+    BootLib::PL011Uart uart{ isQemu ? 0x900'0000u : Mmio::Base + BootLib::PL011Uart::Uart0RegistersOffset };
     Puts(uart, "Core 2 says hello\n");
     Core2Ready = true; // Signal that core 2 is ready
 
@@ -186,15 +191,17 @@ void Core2()
 
 void Core3()
 {
+    bool const isQemu = reinterpret_cast<uintptr_t>(&Mmio::Base) >= 0x4000'0000u;
+
     {
         // Without MMU, we need to use physical addresses to access peripherals.
-        BootLib::PL011Uart uart{ BootLib::Mmio::GetPeripheralsPhysicalBase() + BootLib::PL011Uart::Uart0RegistersOffset };
+        BootLib::PL011Uart uart{ isQemu ? 0x900'0000u : BootLib::Mmio::GetPeripheralsPhysicalBase() + BootLib::PL011Uart::Uart0RegistersOffset };
         Puts(uart, "Core 3 starting\n");
     }
 
     InitCore();
 
-    BootLib::PL011Uart uart{ Mmio::Base + BootLib::PL011Uart::Uart0RegistersOffset };
+    BootLib::PL011Uart uart{ isQemu ? 0x900'0000u : Mmio::Base + BootLib::PL011Uart::Uart0RegistersOffset };
     Puts(uart, "Core 3 says hello\n");
     Core3Ready = true; // Signal that core 3 is ready
 
@@ -389,133 +396,122 @@ void Core0(uintptr_t dtb)
                : Mmio::Base + Uart::PL011Uart::Uart0RegistersOffset
     });
 
-    Uart::Puts("Performance Frequency from the global: ");
-    Uart::PutDec(Cpu::PerformanceFrequency);
-    Uart::Puts("\n");
+    fmt::println("Performance Frequency from the global: {}", Cpu::PerformanceFrequency);
 
-    Uart::Puts("\n\n\n");
+    fmt::println("\n\n");
 
 //    Exception::Init();
     Interrupts::Init();
 
     //Uart::useMutex = true;
 
-    Uart::Puts("Spinning up the cores...\n");
+    fmt::println("Spinning up the cores...");
 
-    ((void* volatile*)(0xD8 + GpuMemBase))[1] = (void*)_start;
-    asm volatile ("dmb ish;sev");
-    while (!Core1Ready) asm volatile ("dmb ish;sev" ::: "memory");
-    Uart::Puts("Core 1 is going\n");
-    
-    ((void* volatile*)(0xD8 + GpuMemBase))[2] = (void*)_start;
-    asm volatile ("dmb ish;sev");
-    while (!Core2Ready) asm volatile ("wfe;dmb ish;sev" ::: "memory");
-    Uart::Puts("Core 2 is going\n");
-
-    ((void* volatile*)(0xD8 + GpuMemBase))[3] = (void*)_start;
-    asm volatile ("dmb ish;sev");
-    while (!Core3Ready) asm volatile ("wfe;dmb ish;sev" ::: "memory");
-    Uart::Puts("Core 3 is going\n");
-
-    Uart::Puts("\n\n\n");
-
-    Mailbox::TagMessage<Mailbox::Tag::GET_BOARD_MODEL, 1> modelTag{{ 0 }};
-    Mailbox::TagMessage<Mailbox::Tag::GET_BOARD_REVISION, 1> revisionTag{{ 0 }};
-    Mailbox::TagMessage<Mailbox::Tag::GET_BOARD_MAC_ADDRESS, 2> macAddressTag{{ 0, 0 }};
-    Mailbox::TagMessage<Mailbox::Tag::GET_VC_MEMORY, 2> vcMemoryTag{{ 0, 0 }};
-    Mailbox::TagMessage<Mailbox::Tag::GET_ARM_MEMORY, 2> armMemoryTag{{ 0, 0 }};
-    if (Mailbox::SendTags(modelTag, revisionTag, armMemoryTag, vcMemoryTag, macAddressTag))
+    if (BootLib::Cpu::IsQemu())
     {
-        Uart::Puts("Board model: ");
-        Uart::PutHex(modelTag.args[0]);
-        Uart::Puts("\n");
-        Uart::Puts("Board revision: ");
-        Uart::PutHex(revisionTag.args[0]);
-        Uart::Puts("\n");
-        Uart::Puts("ARM Memory: ");
-        Uart::PutHex(armMemoryTag.args[0]);
-        Uart::Puts(" ");
-        Uart::PutHex(armMemoryTag.args[1]);
-        Uart::Puts("\n");
-        Uart::Puts("VC Memory: ");
-        Uart::PutHex(vcMemoryTag.args[0]);
-        Uart::Puts(" ");
-        Uart::PutHex(vcMemoryTag.args[1]);
-        Uart::Puts("\n");
-        Uart::Puts("MAC address: ");
-        Uart::PutHex(macAddressTag.args[0]);
-        Uart::Puts(" ");
-        Uart::PutHex(macAddressTag.args[1]);
-        Uart::Puts("\n");
+        Psci::StartCore(1, &_start, 0);
+        while (!Core1Ready) asm volatile ("dmb ish;sev" ::: "memory");
+        fmt::println("Core 1 is going");
     }
     else
     {
-        Uart::Puts("Failed to get VC Memory info.\n");
-    }
+        ((void* volatile*)(0xD8 + GpuMemBase))[1] = (void*)_start;
+        asm volatile ("dmb ish;sev");
+        while (!Core1Ready) asm volatile ("dmb ish;sev" ::: "memory");
+        fmt::println("Core 1 is going");
+        
+        ((void* volatile*)(0xD8 + GpuMemBase))[2] = (void*)_start;
+        asm volatile ("dmb ish;sev");
+        while (!Core2Ready) asm volatile ("wfe;dmb ish;sev" ::: "memory");
+        fmt::println("Core 2 is going");
 
-    Uart::Puts("\n\n\n");
+        ((void* volatile*)(0xD8 + GpuMemBase))[3] = (void*)_start;
+        asm volatile ("dmb ish;sev");
+        while (!Core3Ready) asm volatile ("wfe;dmb ish;sev" ::: "memory");
+        fmt::println("Core 3 is going");
+        
+        fmt::println("\n\n");
 
-    Mailbox::TagMessage<Mailbox::Tag::GET_CLOCK_RATE, 2> clockRateTag{{ 0, 0 }};
-    Mailbox::TagMessage<Mailbox::Tag::GET_MEASURED_CLOCK_RATE, 2> measuredClockRateTag{{ 0, 0 }};
-    Mailbox::TagMessage<Mailbox::Tag::GET_MAX_CLOCK_RATE, 2> maxClockRateTag{{ 0, 0 }};
-    Mailbox::TagMessage<Mailbox::Tag::GET_POWER_STATE, 2> powerStateTag{{ 0, 0 }};
-
-    // Get various clock rates
-    uint32_t clockIds[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}; // Common clock IDs
-    for (uint32_t clockId : clockIds)
-    {
-        clockRateTag.args[0] = clockId;
-        clockRateTag.args[1] = 0;
-        maxClockRateTag.args[0] = clockId;
-        maxClockRateTag.args[1] = 0;
-        measuredClockRateTag.args[0] = clockId;
-        measuredClockRateTag.args[1] = 0;
-        if (Mailbox::SendTags(clockRateTag, measuredClockRateTag, maxClockRateTag))
+        Mailbox::TagMessage<Mailbox::Tag::GET_BOARD_MODEL, 1> modelTag{{ 0 }};
+        Mailbox::TagMessage<Mailbox::Tag::GET_BOARD_REVISION, 1> revisionTag{{ 0 }};
+        Mailbox::TagMessage<Mailbox::Tag::GET_BOARD_MAC_ADDRESS, 2> macAddressTag{{ 0, 0 }};
+        Mailbox::TagMessage<Mailbox::Tag::GET_VC_MEMORY, 2> vcMemoryTag{{ 0, 0 }};
+        Mailbox::TagMessage<Mailbox::Tag::GET_ARM_MEMORY, 2> armMemoryTag{{ 0, 0 }};
+        if (Mailbox::SendTags(modelTag, revisionTag, armMemoryTag, vcMemoryTag, macAddressTag))
         {
-            printf("Clock %2u rate: %10u Hz max: %10u Hz measured: %10u Hz\n", clockId, clockRateTag.args[1], maxClockRateTag.args[1], measuredClockRateTag.args[1]);
+            fmt::println("Board model: {:x}", modelTag.args[0]);
+            fmt::println("Board revision: {:x}", revisionTag.args[0]);
+            fmt::println("ARM Memory: {:x} {:x}", armMemoryTag.args[0], armMemoryTag.args[1]);
+            fmt::println("VC Memory: {:x} {:x}", vcMemoryTag.args[0], vcMemoryTag.args[1]);
+            fmt::println("MAC address: {:x} {:x}", macAddressTag.args[0], macAddressTag.args[1]);
         }
         else
         {
-            Uart::Puts("Clock ");
-            Uart::PutDec(clockId);
-            Uart::Puts(" not available.\n");
+            fmt::println("Failed to get VC Memory info.");
+            
+            fmt::println("\n\n");
+            
+            Mailbox::TagMessage<Mailbox::Tag::GET_CLOCK_RATE, 2> clockRateTag{{ 0, 0 }};
+            Mailbox::TagMessage<Mailbox::Tag::GET_MEASURED_CLOCK_RATE, 2> measuredClockRateTag{{ 0, 0 }};
+            Mailbox::TagMessage<Mailbox::Tag::GET_MAX_CLOCK_RATE, 2> maxClockRateTag{{ 0, 0 }};
+            Mailbox::TagMessage<Mailbox::Tag::GET_POWER_STATE, 2> powerStateTag{{ 0, 0 }};
+            
+            // Get various clock rates
+            uint32_t clockIds[] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10}; // Common clock IDs
+            for (uint32_t clockId : clockIds)
+            {
+                clockRateTag.args[0] = clockId;
+                clockRateTag.args[1] = 0;
+                maxClockRateTag.args[0] = clockId;
+                maxClockRateTag.args[1] = 0;
+                measuredClockRateTag.args[0] = clockId;
+                measuredClockRateTag.args[1] = 0;
+                if (Mailbox::SendTags(clockRateTag, measuredClockRateTag, maxClockRateTag))
+                {
+                    fmt::println("Clock {:2} rate: {:10} Hz max: {:10} Hz measured: {:10} Hz", clockId, clockRateTag.args[1], maxClockRateTag.args[1], measuredClockRateTag.args[1]);
+                }
+                else
+                {
+                    fmt::println("Clock {} not available.", clockId);
+                }
+            }
+            
+            fmt::println("\n\n");
+            
+            // Get various power states
+            uint32_t powerIds[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}; // Common power domain IDs
+            for (uint32_t powerId : powerIds)
+            {
+                powerStateTag.args[0] = powerId;
+                powerStateTag.args[1] = 0;
+                if (Mailbox::SendTags(powerStateTag))
+                {
+                    fmt::println("Power domain {:2} state: {}", powerId, powerStateTag.args[1]);
+                }
+            }
+            
+            fmt::println("\n\n");
         }
     }
-
-    Uart::Puts("\n\n\n");
-
-    // Get various power states
-    uint32_t powerIds[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}; // Common power domain IDs
-    for (uint32_t powerId : powerIds)
-    {
-        powerStateTag.args[0] = powerId;
-        powerStateTag.args[1] = 0;
-        if (Mailbox::SendTags(powerStateTag))
-        {
-            printf("Power domain %2u state: %u\n", powerId, powerStateTag.args[1]);
-        }
-    }
-
-    Uart::Puts("\n\n\n");
 
     Scheduler::Init();
-    printf("Scheduler initialized. Main thread ThreadInfo: 0x%0X\n", reinterpret_cast<uintptr_t>(&Scheduler::GetCurrentThreadInfo()));
-
+    fmt::println("Scheduler initialized. Main thread ThreadInfo: 0x{:X}", reinterpret_cast<uintptr_t>(&Scheduler::GetCurrentThreadInfo()));
+    
     auto const debuggerThread = Debugger::Init();
-
+    
     Debugger::DebuggerThread = debuggerThread;
-
+    
     if (Debugger::DebuggerThread == nullptr)
     {
-        Uart::Puts("Debugger thread not initialized.\n");
+        fmt::println("Debugger thread not initialized.");
     }
     else
     {
-        Uart::Puts("Debugger thread initialized.\n");
+        fmt::println("Debugger thread initialized.");
     }
 
-    Scheduler::AddSpark(Scheduler::MakeUserModeSpark([](uintptr_t){ Uart::Raw::Puts("Core 0 Spark running\n"); return Scheduler::Spark{}; }, 0));
-    Uart::Puts("Core 0 Spark is scheduled\n");
+    Scheduler::AddSpark(Scheduler::MakeUserModeSpark([](uintptr_t){ fmt::println("Core 0 Spark running"); return Scheduler::Spark{}; }, 0));
+    fmt::println("Core 0 Spark is scheduled");
 
     // A naked syscall.
     asm volatile ("svc #1");
@@ -524,117 +520,118 @@ void Core0(uintptr_t dtb)
     auto& mainThread = Scheduler::GetCurrentThreadInfo();
 
     auto& newThread = Scheduler::CreateThread([](uintptr_t mainThread){
-        Uart::Puts("Core 0 New Thread running\n");
+        fmt::println("Core 0 New Thread running");
         Syscall::YieldToThread(*reinterpret_cast<Scheduler::ThreadInfo*>(mainThread));
-        Uart::Puts("Core 0 New Thread finished\n");
+        fmt::println("Core 0 New Thread finished");
         Syscall::YieldToThread(*reinterpret_cast<Scheduler::ThreadInfo*>(mainThread));
     }, reinterpret_cast<uintptr_t>(&mainThread));
 
     Syscall::YieldToThread(newThread);
-    Uart::Puts("Core 0 Back to Main Thread\n");
+    fmt::println("Core 0 Back to Main Thread");
     Syscall::YieldToThread(newThread);
-    Uart::Puts("Core 0 Back to Main Thread again\n");
+    fmt::println("Core 0 Back to Main Thread again");
 
-    Uart::Puts("\n\n\n");
+    fmt::println("\n\n");
 
     Async::task<void> asyncTask = []() -> Async::task<void> {
         for (int i = 0; i < 20; ++i)
         {
-            Uart::Puts("Async task is running\n");
+            fmt::println("Async task is running");
             co_await Async::Delay(1000ms);
         }
-        Uart::Puts("Async task is done\n");
+        fmt::println("Async task is done");
         co_return;
     }();
 
-    Uart::Puts("\n\n\n");
-    
-    Mailbox::Send(0, 0x80); // UART 1 and USB enabled?
-    Uart::Puts("UART1 and USB enabled\n\n");
+    fmt::println("\n\n");
 
-    SdCard sdCard{ Mmio::Base + SdCard::RegistersOffset };
-    if (sdCard.Init())
+    if (BootLib::Cpu::IsQemu())
     {
-        Uart::Puts("SD Card initialized successfully.\n");
-
-        uint8_t buffer[512];
-        if (sdCard.ReadBlock(0, buffer, 1))
-        {
-            Uart::Puts("Read block 0 successfully.\n");
-            Uart::Puts("Data: ");
-            for (size_t i = 0; i < sizeof(buffer) / 16; ++i)
-            {
-                for (size_t j = 0; j < 16; ++j)
-                {
-                    Uart::PutHex(buffer[i * 16 + j]);
-                    Uart::Puts(" ");
-                    if (j == 7)
-                    {
-                        Uart::Puts("- ");
-                    }
-                }
-                Uart::Puts("\n");
-            }
-            Uart::Puts("\n");
-        }
-        else
-        {
-            Uart::Puts("Failed to read block 0.\n");
-        }
-        if (sdCard.ReadBlock(0x800, buffer, 1))
-        {
-            Uart::Puts("Read block 0x800 successfully.\n");
-            Uart::Puts("Data: ");
-            for (size_t i = 0; i < sizeof(buffer) / 16; ++i)
-            {
-                for (size_t j = 0; j < 16; ++j)
-                {
-                    Uart::PutHex(buffer[i * 16 + j]);
-                    Uart::Puts(" ");
-                    if (j == 7)
-                    {
-                        Uart::Puts("- ");
-                    }
-                }
-                Uart::Puts("\n");
-            }
-            Uart::Puts("\n");
-        }
-        else
-        {
-            Uart::Puts("Failed to read block 0x800.\n");
-        }
     }
     else
     {
-        Uart::Puts("Failed to initialize SD Card.\n");
-        Cpu::Halt();
-    }
+        Mailbox::Send(0, 0x80); // UART 1 and USB enabled?
+        fmt::println("UART1 and USB enabled\n");
 
-    Uart::Puts("\n\n\n");
+        SdCard sdCard{ Mmio::Base + SdCard::RegistersOffset };
+        if (sdCard.Init())
+        {
+            fmt::println("SD Card initialized successfully.");
+
+            uint8_t buffer[512];
+            if (sdCard.ReadBlock(0, buffer, 1))
+            {
+                fmt::println("Read block 0 successfully.");
+                fmt::print("Data: ");
+                for (size_t i = 0; i < sizeof(buffer) / 16; ++i)
+                {
+                    for (size_t j = 0; j < 16; ++j)
+                    {
+                        fmt::print("{:x} ", buffer[i * 16 + j]);
+                        if (j == 7)
+                        {
+                            fmt::print("- ");
+                        }
+                    }
+                    fmt::println("");
+                }
+                fmt::println("");
+            }
+            else
+            {
+                fmt::println("Failed to read block 0.");
+            }
+            if (sdCard.ReadBlock(0x800, buffer, 1))
+            {
+                fmt::println("Read block 0x800 successfully.");
+                fmt::print("Data: ");
+                for (size_t i = 0; i < sizeof(buffer) / 16; ++i)
+                {
+                    for (size_t j = 0; j < 16; ++j)
+                    {
+                        fmt::print("{:x} ", buffer[i * 16 + j]);
+                        if (j == 7)
+                        {
+                            fmt::print("- ");
+                        }
+                    }
+                    fmt::println("");
+                }
+                fmt::println("");
+            }
+            else
+            {
+                fmt::println("Failed to read block 0x800.");
+            }
+        }
+        else
+        {
+            fmt::println("Failed to initialize SD Card.");
+            Cpu::Halt();
+        }
+
+        fmt::println("\n\n");
+    }
 
     std::shared_ptr<UsbDriver> usbDriver;
 
-    if (BootLib::Cpu::IsRpi4())
+    if (BootLib::Cpu::IsQemu())
+    {
+    }
+    else if (BootLib::Cpu::IsRpi4())
     {
         //PCIe::examples::demonstrate_enumeration();
         PCIe::Bcm2711Driver pcie{};
 
         for (auto& device : pcie.devices_)
         {
-            Uart::Puts("Device found: ");
-            Uart::PutHex(device.Address.Bus);
-            Uart::Puts(":");
-            Uart::PutHex(device.Address.Device);
-            Uart::Puts(".");
-            Uart::PutHex(device.Address.Function);
-            Uart::Puts("\n Vendor ID: ");
-            Uart::PutHex(device.VendorId);
-            Uart::Puts("\n Device ID: ");
-            Uart::PutHex(device.DeviceId);
-            Uart::Puts("\n Class Code: ");
-            Uart::PutHex(device.ClassCode);
-            Uart::Puts("\n");
+            fmt::println("Device found: {:x}:{:x}.{:x}\n Vendor ID: {:x}\n Device ID: {:x}\n Class Code: {:x}",
+                static_cast<uint32_t>(device.Address.Bus),
+                static_cast<uint32_t>(device.Address.Device),
+                static_cast<uint32_t>(device.Address.Function),
+                device.VendorId,
+                device.DeviceId,
+                device.ClassCode);
 
             if (device.ClassCode == 0x0c0330) // USB xHCI controller
             {
@@ -653,12 +650,23 @@ void Core0(uintptr_t dtb)
     if (usbDriver)
     {
         (void)WaitOnTask(usbDriver->UsbCheckForChange());
-        printf("\n");
+        fmt::println("");
         usbDriver->UsbShowTree();
-        printf("\n");
+        fmt::println("");
     }
 
     fmt::println("Initializing framebuffer...");
+
+    if (BootLib::Cpu::IsQemu())
+    {
+        // QEMU specific framebuffer initialization if needed
+        for (int i = 0; i < 5; ++i)
+        {
+            Cpu::Delay(1s);
+            fmt::println("QEMU stub framebuffer loop...");
+        }
+        Psci::SystemOff();
+    }
 
     uint32_t const w = 1280;
     uint32_t const h =  720;
