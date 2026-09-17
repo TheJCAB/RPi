@@ -100,6 +100,7 @@ struct ParseState
         uint32_t                          sizeCells    = 1;
         ArrayVector<MemoryRange      , 4> reg          {};
         ArrayVector<DeviceMemoryRange, 4> ranges       {};
+        ArrayVector<DeviceMemoryRange, 4> dmaRanges    {};
     };
     ArrayVector<Level, 8> levels
     {
@@ -172,6 +173,23 @@ void ParseRangesProperty(ParseState& state, std::span<BE<uint32_t> const> ranges
     }
 }
 
+void ParseDmaRangesProperty(ParseState& state, std::span<BE<uint32_t> const> ranges, auto&& callback)
+{
+    Puts(state.log, "Parsing 'dma-ranges'. Current("); PutDec(state.log, state.CurrentLevel().addressCells); Puts(state.log, ", Size"); PutDec(state.log, state.CurrentLevel().sizeCells); Puts(state.log, ") Parent("); PutDec(state.log, state.ParentLevel().addressCells); Puts(state.log, ", Size"); PutDec(state.log, state.ParentLevel().sizeCells); Puts(state.log, ")\n");
+    for (size_t i = 0; i < ranges.size();)
+    {
+        auto const parentPos = std::min(i         + state.CurrentLevel().addressCells, ranges.size());
+        auto const sizePos   = std::min(parentPos + state.ParentLevel ().addressCells, ranges.size());
+        auto const sizeEnd   = std::min(sizePos   + state.CurrentLevel().sizeCells   , ranges.size());
+        callback(
+            ranges.subspan(i        , parentPos - i        ),
+            ranges.subspan(parentPos, sizePos   - parentPos),
+            ranges.subspan(sizePos  , sizeEnd   - sizePos  )
+        );
+        i = sizeEnd;
+    }
+}
+
 std::string_view ParseStringProperty(std::span<BE<uint32_t> const> data)
 {
     std::string_view value{ reinterpret_cast<char const*>(data.data()), data.size() * sizeof(data[0]) };
@@ -219,6 +237,7 @@ bool ParseNode(ParseState& state, NodeFunction auto&& node, PropertyFunction aut
     uint32_t phandle = UINT32_MAX;
     std::span<BE<uint32_t> const> reg;
     std::span<BE<uint32_t> const> ranges;
+    std::span<BE<uint32_t> const> dmaRanges;
     for (;;)
     {
         uint32_t const token = *state.struct_block++;
@@ -259,6 +278,7 @@ bool ParseNode(ParseState& state, NodeFunction auto&& node, PropertyFunction aut
             else if (name == "linux,phandle" ) phandle = value[0];
             else if (name == "reg"           ) reg    = value;
             else if (name == "ranges"        ) ranges = value;
+            else if (name == "dma-ranges"    ) dmaRanges = value;
             else if (name == "#address-cells") state.CurrentLevel().addressCells = value[0];
             else if (name == "#size-cells"   ) state.CurrentLevel().sizeCells    = value[0];
             else
@@ -346,6 +366,51 @@ bool ParseNode(ParseState& state, NodeFunction auto&& node, PropertyFunction aut
                         if (levelRanges.size() < levelRanges.capacity())
                         {
                             levelRanges.push_back({
+                                .range{
+                                    .base = parent,
+                                    .size = size,
+                                    .type = MemoryType::Invalid, // We just don't know here. To be determined at a higher level.
+                                },
+                                .deviceAddress = base,
+                                .dmaAddress    = base,
+                            });
+                        }
+                    }
+                );
+            }
+
+            if (!dmaRanges.empty())
+            {
+                Puts(state.log, "  dma-ranges:");
+                for (auto value : dmaRanges)
+                {
+                    Puts(state.log, " ");
+                    PutHex(state.log, value);
+                }
+                Puts(state.log, "\n");
+                auto& levelDmaRanges = state.CurrentLevel().dmaRanges;
+                ParseDmaRangesProperty(state, dmaRanges,
+                    [&](std::span<BE<uint32_t> const> const baseArray, std::span<BE<uint32_t> const> const parentArray, std::span<BE<uint32_t> const> const sizeArray)
+                    {
+                        uintptr_t base = 0;
+                        uintptr_t parent = 0;
+                        uintptr_t size = 0;
+                        for (auto&& value : baseArray)
+                        {
+                            base = (base << 32) + value;
+                        }
+                        for (auto&& value : parentArray)
+                        {
+                            parent = (parent << 32) + value;
+                        }
+                        for (auto&& value : sizeArray)
+                        {
+                            size = (size << 32) + value;
+                        }
+                        Puts(state.log, "  'dma-ranges' -- Base: "); PutHex(state.log, base); Puts(state.log, " Parent: "); PutHex(state.log, parent); Puts(state.log, " Size: "); PutHex(state.log, size); Puts(state.log, "\n");
+                        if (levelDmaRanges.size() < levelDmaRanges.capacity())
+                        {
+                            levelDmaRanges.push_back({
                                 .range{
                                     .base = parent,
                                     .size = size,
