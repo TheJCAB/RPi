@@ -61,6 +61,11 @@ CoreFunctionTable:
     .quad Core2
     .quad Core3
 
+.global _elfstart
+_elfstart:
+    mov x0,#0x40000000
+    b _start
+
 // Goes down from EL2 to EL1 and returns straight to the calling code.
 .global el2_to_el1_return
 el2_to_el1_return:

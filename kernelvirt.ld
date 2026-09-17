@@ -1,10 +1,10 @@
 /* kernel.ld - Simple linker script for Raspberry Pi kernel */
 
-ENTRY(_start)
+ENTRY(_elfstart)
 
 SECTIONS
 {
-    . = 0x40080000; /* Kernel load address for QEMU virt */
+    . = 0x40100000; /* Kernel load address for QEMU virt */
 
     .text : {
         KEEP(*(.text.boot))

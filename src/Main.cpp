@@ -214,23 +214,6 @@ void Core3()
     }
 }
 
-inline uint32_t AtomicAdd(uint32_t volatile& value, uint32_t increment)
-{
-    uint32_t old_value;
-    uint32_t new_value;
-    uint32_t status;
-    asm volatile (
-        "1:     ldxr %w0, [%3]\n"        // Load exclusive
-        "       add %w1, %w0, %w4\n"     // Add increment
-        "       stxr %w2, %w1, [%3]\n"   // Store exclusive  
-        "       cbnz %w2, 1b\n"          // Retry if store failed
-        : "=&r"(old_value), "=&r"(new_value), "=&r"(status)
-        : "r"(&value), "r"(increment)
-        : "memory"
-    );
-    return old_value;
-}
-
 void Core0(uintptr_t dtb)
 {
     // Clear the BSS soonest.
@@ -332,8 +315,12 @@ void Core0(uintptr_t dtb)
         Puts(out, "\n");
 
         BootLib::DeviceTree::ParseDeviceTree(dtb, out);
-
+        
         printf("Device tree complete.\n");
+        
+        printf("\n\n\n");
+        BootLib::DeviceTree::Dump(out);
+        printf("\n\n\n");
 
         for (uintptr_t addr = 0xA00'0000u; addr < 0xA004000u; addr += 0x200u)
         {
@@ -567,7 +554,7 @@ void Core0(uintptr_t dtb)
                 {
                     for (size_t j = 0; j < 16; ++j)
                     {
-                        fmt::print("{:x} ", buffer[i * 16 + j]);
+                        fmt::print("{:02x} ", buffer[i * 16 + j]);
                         if (j == 7)
                         {
                             fmt::print("- ");
@@ -589,7 +576,7 @@ void Core0(uintptr_t dtb)
                 {
                     for (size_t j = 0; j < 16; ++j)
                     {
-                        fmt::print("{:x} ", buffer[i * 16 + j]);
+                        fmt::print("{:02x} ", buffer[i * 16 + j]);
                         if (j == 7)
                         {
                             fmt::print("- ");
