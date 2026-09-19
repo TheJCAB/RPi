@@ -607,10 +607,9 @@ void Core0(uintptr_t dtb)
     }
     else if (BootLib::Cpu::IsRpi4())
     {
-        //PCIe::examples::demonstrate_enumeration();
-        PCIe::Bcm2711Driver pcie{};
+        auto pcie = PCIe::CreateBcm2711Driver(PCIe::Rpi4_PCIE_REGS_BASE_HI + Mmio::Base - Mmio::Rpi4BaseHi);
 
-        for (auto& device : pcie.devices_)
+        for (auto device : pcie->EnumerateDevices())
         {
             fmt::println("Device found: {:x}:{:x}.{:x}\n Vendor ID: {:x}\n Device ID: {:x}\n Class Code: {:x}",
                 static_cast<uint32_t>(device.Address.Bus),
@@ -622,7 +621,7 @@ void Core0(uintptr_t dtb)
 
             if (device.ClassCode == 0x0c0330) // USB xHCI controller
             {
-                auto usbInitTask = Usb::Xhci::UsbInitializeXhci(pcie, device.Address);
+                auto usbInitTask = Usb::Xhci::UsbInitializeXhci(*pcie, device.Address);
                 usbDriver = WaitOnTask(std::move(usbInitTask));
             }
         }

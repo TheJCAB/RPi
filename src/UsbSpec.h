@@ -36,6 +36,7 @@
 #include <fmt/format.h>
 #include <type_traits>
 #include <concepts>
+#include <utility>
 
 // Explicitly packing bitfields of different types keeps VSCode's IntelliSense happier.
 #define PACKED __attribute__((__packed__))
@@ -544,6 +545,6 @@ struct fmt::formatter<T> : fmt::formatter<std::underlying_type_t<T>>
 {
     auto format(T value, format_context& ctx) const
     {
-        return fmt::formatter<std::underlying_type_t<T>>::format(static_cast<std::underlying_type_t<T>>(value), ctx);
+        return fmt::formatter<std::underlying_type_t<T>>::format(std::to_underlying(value), ctx);
     }
 };

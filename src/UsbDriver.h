@@ -35,7 +35,7 @@
 #include "Async.h"
 
 namespace PCIe {
-    struct Bcm2711Driver;
+    struct Driver;
     struct DeviceAddress;
 }
 
@@ -44,6 +44,7 @@ namespace PCIe {
 #include <memory>
 #include <span>
 #include <vector>
+#include <utility>
 
 #include <stdint.h>
 #include <wchar.h>
@@ -74,7 +75,7 @@ struct fmt::formatter<RESULT> : fmt::formatter<std::underlying_type_t<RESULT>>
 {
     auto format(RESULT value, format_context& ctx) const
     {
-        return fmt::formatter<std::underlying_type_t<RESULT>>::format(static_cast<std::underlying_type_t<RESULT>>(value), ctx);
+        return fmt::formatter<std::underlying_type_t<RESULT>>::format(std::to_underlying(value), ctx);
     }
 };
 
@@ -345,5 +346,5 @@ Async::task<RESULT> HCDGetDescriptor (UsbDevice&,
 Async::task<std::shared_ptr<UsbDriver>> UsbInitializeDesignWare();
 
 namespace Usb::Xhci {
-    Async::task<std::shared_ptr<UsbDriver>> UsbInitializeXhci(PCIe::Bcm2711Driver& pcie, PCIe::DeviceAddress const& deviceAddress);
+    Async::task<std::shared_ptr<UsbDriver>> UsbInitializeXhci(PCIe::Driver& pcie, PCIe::DeviceAddress const& deviceAddress);
 } // namespace Usb::Xhci

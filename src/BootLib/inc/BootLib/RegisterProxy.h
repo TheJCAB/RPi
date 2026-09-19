@@ -2,6 +2,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <cstddef>
 
 #include <type_traits>
 #include <concepts>
@@ -56,6 +57,8 @@ struct Register
 
     Register(Register&&) = delete;
     Register& operator=(Register&&) = delete;
+
+    static constexpr uint32_t GetOffset() noexcept { return Offset; }
 
     inline auto& RefRaw()       requires(sizeof(T) <= sizeof(uint32_t)) { return *(reinterpret_cast<Raw       volatile*>(reinterpret_cast<uintptr_t>(this) + Offset)); }
     inline auto& RefRaw() const requires(sizeof(T) <= sizeof(uint32_t)) { return *(reinterpret_cast<Raw const volatile*>(reinterpret_cast<uintptr_t>(this) + Offset)); }
@@ -136,6 +139,30 @@ struct Register
     inline T operator-=(T const& value) requires (!std::is_const_v<T>) { return set(get() - value); }
 };
 
+template < RegisterType T, uint32_t Stride = sizeof(T) >
+struct RegisterSpan
+{
+    using Raw = RawRegisterType<sizeof(T)>;
+
+    Raw*     Base   = nullptr;
+    uint32_t Count  = 0;
+
+    Register<T>& operator[](uint32_t index)
+    {
+        // assert(index < Count)
+        return *reinterpret_cast<Register<T>*>(Base + (index * Stride) / sizeof(Raw));
+    }
+
+    auto SubSpan(uint32_t startIndex, uint32_t count)
+    {
+        // assert(startIndex + count < Count)
+        return RegisterSpan<T>{
+            .Base   = Base + (startIndex * Stride) / sizeof(Raw),
+            .Count  = count,
+        };
+    }
+};
+
 template < RegisterType T, uint32_t Offset, uint32_t Count, uint32_t Stride = sizeof(T) >
 struct RegisterArray
 {
@@ -147,14 +174,39 @@ struct RegisterArray
 
     Register<T>& operator[](uint32_t index)
     {
-        // assert(index >= Count)
+        // assert(index < Count)
         return *reinterpret_cast<Register<T>*>(reinterpret_cast<Raw*>(this) + (Offset + index * Stride) / sizeof(Raw));
     }
     Register<T> const& operator[](uint32_t index) const
     {
-        // assert(index >= Count)
+        // assert(index < Count)
         return *reinterpret_cast<Register<T> const*>(reinterpret_cast<Raw const*>(this) + (Offset + index * Stride) / sizeof(Raw));
     }
+
+    template < typename Array >
+    auto SubSpan(this Array& array, uint32_t startIndex, uint32_t count)
+    {
+        using ConstT   = std::conditional_t<std::is_const_v<Array>, T const  , T  >;
+        using ConstRaw = std::conditional_t<std::is_const_v<Array>, Raw const, Raw>;
+
+        // assert(startIndex + count < Count)
+        return RegisterSpan<ConstT, Stride>{
+            .Base   = reinterpret_cast<ConstRaw*>(&array) + (Offset + startIndex * Stride) / sizeof(Raw),
+            .Count  = count,
+        };
+    }
+};
+
+// Just position a set of registers (grouped into a union) at a specific offset.
+template < RegisterType T, uint32_t Offset = 0 >
+struct RegisterSet
+{
+    std::byte padding[Offset];
+    T         registers;
+
+    inline auto operator->(this auto& a) { return &a.registers; }
+
+    inline auto& operator()(this auto& a) { return a.registers; }
 };
 
 }

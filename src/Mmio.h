@@ -39,7 +39,9 @@ extern uintptr_t QA7Base;
 using BootLib::RegisterType;
 using BootLib::RawRegisterType;
 using BootLib::Register;
+using BootLib::RegisterSpan;
 using BootLib::RegisterArray;
+using BootLib::RegisterSet;
 
 // The internal access proxy for a register defined as a constant offset from its MMIO base.
 template < uintptr_t const& Base, bool isConst, uint32_t Offset = static_cast<uint32_t>(-1) >

@@ -391,7 +391,7 @@ public:
     std::vector<DeviceInfo> discovered_devices_;
 
 
-    void set_command_ring_control(uint64_t value) {
+    void SetCommand_ring_control(uint64_t value) {
         operationalRegisters_.CommandRingControl = value;
     }
 
@@ -700,7 +700,7 @@ public:
         }
         
         // Setup command ring control register
-        set_command_ring_control(get_physical_address(command_ring.data()) | 1); // Set ring cycle state
+        SetCommand_ring_control(get_physical_address(command_ring.data()) | 1); // Set ring cycle state
         
         // Setup device context base address array pointer
         set_dcbaap(get_physical_address(device_context_base_array.data()));
@@ -1655,14 +1655,14 @@ public:
         uint8_t  const bDeviceSubClass    = descriptor[5];
         uint8_t  const bDeviceProtocol    = descriptor[6];
         uint8_t  const bMaxPacketSize0    = descriptor[7];
-        uint16_t const vendor_id          = static_cast<uint16_t>(descriptor[8] | (descriptor[9] << 8));
+        uint16_t const GetVendorId          = static_cast<uint16_t>(descriptor[8] | (descriptor[9] << 8));
         uint16_t const product_id         = static_cast<uint16_t>(descriptor[10] | (descriptor[11] << 8));
         uint8_t  const bNumConfigurations = descriptor[17];
 
         fmt::println("XHCI: Port {} -> device slot {} identified", port, slotId);
         fmt::println("XHCI:   Function: {} (class=0x{:02X}, subclass=0x{:02X}, protocol=0x{:02X})",
                describe_device_class(bDeviceClass), bDeviceClass, bDeviceSubClass, bDeviceProtocol);
-        fmt::println("XHCI:   Vendor/Product: 0x{:04X} / 0x{:04X}", vendor_id, product_id);
+        fmt::println("XHCI:   Vendor/Product: 0x{:04X} / 0x{:04X}", GetVendorId, product_id);
         fmt::println("XHCI:   Capabilities: max-packet-size0=0x{:02X}, configurations={}",
                bMaxPacketSize0, bNumConfigurations);
 
@@ -2329,9 +2329,9 @@ private:
 };
 
 // Factory function to create XHCI controller
-CapabilityRegisters& CreateController(PCIe::Bcm2711Driver& pcie, PCIe::DeviceAddress const& devAddress)
+CapabilityRegisters& CreateController(PCIe::Driver& pcie, PCIe::DeviceAddress const& devAddress)
 {
-    PCIe::Configuration config{ pcie, devAddress };
+    auto config = pcie.ConfigureDevice(devAddress);
 
     // TODO: To make this more generic, we need to verify the controller model and (RPi4) environment
     // and only do these things when appropriate.
@@ -2354,7 +2354,7 @@ CapabilityRegisters& CreateController(PCIe::Bcm2711Driver& pcie, PCIe::DeviceAdd
 
     // Display BARs if any and find Bar0
     PCIe::BarInfo bar0{};
-    for (auto&& bar : config.enumerate_bars())
+    for (auto&& bar : config.EnumerateBars())
     {
         if (bar0.size == 0)
         {
@@ -2366,7 +2366,7 @@ CapabilityRegisters& CreateController(PCIe::Bcm2711Driver& pcie, PCIe::DeviceAdd
 
     // Display capabilities if any
     //printf("  Capabilities:\n");
-    for (auto const& cap : config.enumerate_capabilities())
+    for (auto const& cap : config.EnumerateCapabilities())
     {
         //PrintCapability(cap, config.Common());
     }
@@ -2379,12 +2379,12 @@ CapabilityRegisters& CreateController(PCIe::Bcm2711Driver& pcie, PCIe::DeviceAdd
         Cpu::Halt();
     }
     
-    auto bar0Memory = config.map_bar(bar0);
+    auto bar0Memory = pcie.MapBar(bar0);
 
     fmt::println("    Configured BAR 0: CPU=0x{:016x} Size = 0x{:X}", bar0.physical_address, bar0.size);
     
     // Verify the BAR was written correctly
-    //auto const rebar0 = config.get_bar(0);
+    //auto const rebar0 = config.GetBar(0);
 
     //printf("    BAR 0 readback: CPU=0x%016llx\n", rebar0.physical_address);
 
@@ -2399,7 +2399,7 @@ CapabilityRegisters& CreateController(PCIe::Bcm2711Driver& pcie, PCIe::DeviceAdd
     return *reinterpret_cast<CapabilityRegisters*>(bar0Memory.data());
 }
 
-Async::task<std::shared_ptr<UsbDriver>> UsbInitializeXhci(PCIe::Bcm2711Driver& pcie, PCIe::DeviceAddress const& deviceAddress)
+Async::task<std::shared_ptr<UsbDriver>> UsbInitializeXhci(PCIe::Driver& pcie, PCIe::DeviceAddress const& deviceAddress)
 {
     fmt::println("Initializing xHCI USB Driver");
     auto& capabilityRegisters = CreateController(pcie, deviceAddress);
