@@ -24,6 +24,16 @@ extern uintptr_t GpuMemBase;
 
 HidDevice* AllocateHidPayload();
 
+#define LOG(...) fmt::print(__VA_ARGS__)
+#define LOGln(...) fmt::println(__VA_ARGS__)
+/*
+#define LOG_DEBUG(...) fmt::print(__VA_ARGS__)
+#define LOG_DEBUGln(...) fmt::println(__VA_ARGS__)
+/*/
+#define LOG_DEBUG(...) ((void)0)
+#define LOG_DEBUGln(...) ((void)0)
+//*/
+
 namespace Usb::Xhci
 {
 
@@ -33,7 +43,7 @@ namespace Usb::Xhci
 // Get physical address for DMA (assuming identity mapping for now)
 uint64_t get_physical_address(void* virtual_addr)
 {
-    return reinterpret_cast<uintptr_t>(virtual_addr) - GpuMemBase + 0x4'0000'0000ull;
+    return reinterpret_cast<uintptr_t>(virtual_addr) - GpuMemBase + (BootLib::Cpu::IsRpi4() ? 0x4'0000'0000ull : 0);
 }    
 
 uint32_t endpoint0_max_packet_size(uint32_t speed) {
@@ -453,15 +463,15 @@ public:
             }
 
             if (!printed) {
-                fmt::println("XHCI: input context nonzero DWORDs:");
+                LOG_DEBUGln("XHCI: input context nonzero DWORDs:");
                 printed = true;
             }
 
-            fmt::println("XHCI:   [{}] = 0x{:08X}", i, dwords[i]);
+            LOG_DEBUGln("XHCI:   [{}] = 0x{:08X}", i, dwords[i]);
         }
 
         if (!printed) {
-            fmt::println("XHCI: input context is all-zero");
+            LOG_DEBUGln("XHCI: input context is all-zero");
         }
 
         if (context_words > context_size_bytes() / 4)
@@ -480,31 +490,31 @@ public:
             }
 
             if (!printed) {
-                fmt::println("XHCI: device context nonzero DWORDs:");
+                LOG_DEBUGln("XHCI: device context nonzero DWORDs:");
                 printed = true;
             }
 
-            fmt::println("XHCI:   [{}] = 0x{:08X}", i, dwords[i]);
+            LOG_DEBUGln("XHCI:   [{}] = 0x{:08X}", i, dwords[i]);
         }
 
         if (!printed) {
-            fmt::println("XHCI: device context is all-zero");
+            LOG_DEBUGln("XHCI: device context is all-zero");
         }
     }
 
     bool address_device(uint32_t const slotId, uint32_t port, uint32_t port_speed, uint32_t route, uint32_t parentHubSlotId, uint32_t parentHubPort, bool bsr)
     {
-        fmt::println("XHCI: Addressing device on slot {}, port {}, speed {}", slotId, port, port_speed);
+        LOG_DEBUGln("XHCI: Addressing device on slot {}, port {}, speed {}", slotId, port, port_speed);
 
         auto* slot = deviceSlots_[slotId];
         if (slot == nullptr)
         {
-            fmt::println("XHCI: Invalid slot {} for Address Device", slotId);
+            LOG_DEBUGln("XHCI: Invalid slot {} for Address Device", slotId);
             return false;
         }
 
         if (!ensure_transfer_ring(slotId)) {
-            fmt::println("XHCI: Transfer ring unavailable for Address Device (slot {})", slotId);
+            LOG_DEBUGln("XHCI: Transfer ring unavailable for Address Device (slot {})", slotId);
             return false;
         }
 
@@ -515,7 +525,7 @@ public:
         if (!device_context) {
             device_context = Mmu::AllocateGpuMemory(page_count_for_two_context_pages);
             if (!device_context) {
-                fmt::println("XHCI: Failed to allocate device context for slot {}", slotId);
+                LOG_DEBUGln("XHCI: Failed to allocate device context for slot {}", slotId);
                 return false;
             }
             slot->device_context = device_context;
@@ -529,7 +539,7 @@ public:
         if (!input_context) {
             input_context = Mmu::AllocateGpuMemory(page_count_for_two_context_pages);
             if (!input_context) {
-                fmt::println("XHCI: Failed to allocate input context for slot {}", slotId);
+                LOG_DEBUGln("XHCI: Failed to allocate input context for slot {}", slotId);
                 return false;
             }
             slot->input_context = input_context;
@@ -586,17 +596,17 @@ public:
         address_device_cmd.control = (TRB_TYPE_ADDRESS_DEV << 10) | (slotId << 24) | (bsr ? 0x200 : 0);
 
         if (!send_command(address_device_cmd)) {
-            fmt::println("XHCI: Failed to submit Address Device for slot {}", slotId);
+            LOG_DEBUGln("XHCI: Failed to submit Address Device for slot {}", slotId);
             return false;
         }
 
         uint32_t completed_slot = 0;
         if (!wait_for_command_completion(completed_slot) || completed_slot != slotId) {
-            fmt::println("XHCI: Address Device did not complete for slot {} (completed slot {})", slotId, completed_slot);
+            LOG_DEBUGln("XHCI: Address Device did not complete for slot {} (completed slot {})", slotId, completed_slot);
             return false;
         }
 
-        fmt::println("XHCI: Address Device completed for slot {} (port {} speed {} MPS {})", slotId, port, port_speed, mps);
+        LOG_DEBUGln("XHCI: Address Device completed for slot {} (port {} speed {} MPS {})", slotId, port, port_speed, mps);
 
         dump_device_context(device_context, 2u * (ctx_size / sizeof(uint32_t)));
 
@@ -605,13 +615,13 @@ public:
 
     bool setup_rings()
     {
-        fmt::println("XHCI: Setting up rings...");
+        LOG_DEBUGln("XHCI: Setting up rings...");
         
         // Allocate command ring (64-byte aligned)
         command_ring = { Mmu::AllocateGpuMemory<TRB>((COMMAND_RING_SIZE * sizeof(TRB) + Mmu::PageSize - 1) / Mmu::PageSize), COMMAND_RING_SIZE };
         if (!command_ring.data()) {
             command_ring = {};
-            fmt::println("XHCI: Failed to allocate command ring");
+            LOG_DEBUGln("XHCI: Failed to allocate command ring");
             return false;
         }
         std::fill(command_ring.begin(), command_ring.end(), TRB{});
@@ -628,7 +638,7 @@ public:
         event_ring = { Mmu::AllocateGpuMemory<TRB>((EVENT_RING_SIZE * sizeof(TRB) + Mmu::PageSize - 1) / Mmu::PageSize), EVENT_RING_SIZE };
         if (!event_ring.data()) {
             event_ring = {};
-            fmt::println("XHCI: Failed to allocate event ring");
+            LOG_DEBUGln("XHCI: Failed to allocate event ring");
             return false;
         }
         std::fill(event_ring.begin(), event_ring.end(), TRB{});
@@ -638,7 +648,7 @@ public:
         event_ring_segment_table = { Mmu::AllocateGpuMemory<EventRingSegment>(1), 1 };
         if (!event_ring_segment_table.data()) {
             event_ring_segment_table = {};
-            fmt::println("XHCI: Failed to allocate event ring segment table");
+            LOG_DEBUGln("XHCI: Failed to allocate event ring segment table");
             return false;
         }
         
@@ -653,7 +663,7 @@ public:
         device_context_base_array = { Mmu::AllocateGpuMemory<uint64_t>((dcbaa_size + Mmu::PageSize - 1) / Mmu::PageSize), deviceSlots_.size() + 1 };
         if (!device_context_base_array.data()) {
             device_context_base_array = {};
-            fmt::println("XHCI: Failed to allocate device context base array");
+            LOG_DEBUGln("XHCI: Failed to allocate device context base array");
             return false;
         }
         std::fill(device_context_base_array.begin(), device_context_base_array.end(), 0);
@@ -662,7 +672,7 @@ public:
         if (maxScratchpadBuffers > 0)
         {
             if (maxScratchpadBuffers > scratchpad_buffers.size()) {
-                fmt::println("XHCI: Scratchpad count {} exceeds supported max {}",
+                LOG_DEBUGln("XHCI: Scratchpad count {} exceeds supported max {}",
                        maxScratchpadBuffers,
                        scratchpad_buffers.size());
                 return false;
@@ -674,7 +684,7 @@ public:
             };
             if (!scratchpad_buffer_array.data()) {
                 scratchpad_buffer_array = {};
-                fmt::println("XHCI: Failed to allocate scratchpad buffer pointer array");
+                LOG_DEBUGln("XHCI: Failed to allocate scratchpad buffer pointer array");
                 return false;
             }
 
@@ -684,7 +694,7 @@ public:
             for (uint32_t i = 0; i < maxScratchpadBuffers; ++i) {
                 void* const scratch = Mmu::AllocateGpuMemory(1);
                 if (!scratch) {
-                    fmt::println("XHCI: Failed to allocate scratchpad buffer {}", i);
+                    LOG_DEBUGln("XHCI: Failed to allocate scratchpad buffer {}", i);
                     return false;
                 }
                 scratchpad_buffers[i] = scratch;
@@ -696,7 +706,7 @@ public:
             Processor::FlushDataCache(scratchpad_buffer_array.data(), scratchpad_buffer_array.size_bytes());
             device_context_base_array[0] = get_physical_address(scratchpad_buffer_array.data());
             Processor::FlushDataCache(&device_context_base_array[0], sizeof(device_context_base_array[0]));
-            fmt::println("XHCI: Programmed {} scratchpad buffers", maxScratchpadBuffers);
+            LOG_DEBUGln("XHCI: Programmed {} scratchpad buffers", maxScratchpadBuffers);
         }
         
         // Setup command ring control register
@@ -714,7 +724,7 @@ public:
         runtimeRegisters_.InterrupterManagement = 2; // Interrupt Enable (IE)
         runtimeRegisters_.InterrupterModeration = 0x00004000; // 1ms moderation
 
-        fmt::println("XHCI: Rings setup complete");
+        LOG_DEBUGln("XHCI: Rings setup complete");
         return true;
     }
     
@@ -733,7 +743,7 @@ public:
             uint32_t trb_type = (event->control >> 10) & 0x3F;
             uint32_t completion_code = (event->status >> 24) & 0xFF;
             
-            fmt::println("XHCI: Event TRB type={} completion={}", trb_type, completion_code);
+            LOG_DEBUGln("XHCI: Event TRB type={} completion={}", trb_type, completion_code);
             
             // Advance dequeue pointer
             uint32_t new_dequeue = advance_ring_pointer(event_ring_dequeue.load(), EVENT_RING_SIZE);
@@ -752,7 +762,7 @@ public:
     static Exception::Spark xhci_interrupt_handler() {
         // This would be called by the interrupt system
         // For now, just a placeholder
-        fmt::println("XHCI: Interrupt received");
+        LOG_DEBUGln("XHCI: Interrupt received");
 
         return {};
     }
@@ -771,7 +781,7 @@ public:
 
         slot->transfer_ring = Mmu::AllocateGpuMemory<TRB>((TRANSFER_RING_SIZE * sizeof(TRB) + Mmu::PageSize - 1) / Mmu::PageSize);
         if (!slot->transfer_ring) {
-            fmt::println("XHCI: Failed to allocate transfer ring for slot {}", slotId);
+            LOG_DEBUGln("XHCI: Failed to allocate transfer ring for slot {}", slotId);
             return false;
         }
 
@@ -802,7 +812,7 @@ public:
         control_dma_buffer = static_cast<uint8_t*>(Mmu::AllocateGpuMemory(pages));
         if (!control_dma_buffer) {
             control_dma_buffer_size = 0;
-            fmt::println("XHCI: Failed to allocate control DMA buffer ({} bytes)", size);
+            LOG_DEBUGln("XHCI: Failed to allocate control DMA buffer ({} bytes)", size);
             return false;
         }
 
@@ -886,7 +896,7 @@ public:
                 bool const dirIn = (event.control & TRB_CTRL_DIR_IN) != 0;
                 uint32_t const endpointId = (event.control >> 16) & 0x1Fu;
                 uint32_t const residualLength = event.status & 0x00FF'FFFFu;
-                fmt::println(
+                LOG_DEBUGln(
                     "XHCI: Transfer Event: type={} ({}), slot={}, endpoint={}, completion={} ({}), residualLength={}, IOC={}, chain={}, IDT={}, direction={}, status=0x{:08X}, parameter=0x{:016X}, control=0x{:08X}",
                     GetTrbTypeName(trbType), trbType,
                     slotId, endpointId,
@@ -901,7 +911,7 @@ public:
             case TRB_TYPE_CMD_COMPLETION_EVENT: {
                 uint64_t const commandTrbPointer = event.parameter;
                 uint32_t const completionFlags = event.status & 0x00FF'FFFFu;
-                fmt::println(
+                LOG_DEBUGln(
                     "XHCI: Command Completion Event: type={} ({}), slot={}, completion={} ({}), completionFlags=0x{:06X}, commandTRB=0x{:016X}, status=0x{:08X}, control=0x{:08X}",
                     GetTrbTypeName(trbType), trbType,
                     slotId,
@@ -914,7 +924,7 @@ public:
 
             case 34u: { // Port Status Change Event
                 uint32_t const portId = (event.control >> 24) & 0xFFu;
-                fmt::println(
+                LOG_DEBUGln(
                     "XHCI: Port Status Change Event: type={} ({}), port={}, completion={} ({}), status=0x{:08X}, parameter=0x{:016X}, control=0x{:08X}",
                     GetTrbTypeName(trbType), trbType,
                     portId,
@@ -924,7 +934,7 @@ public:
             }
 
             default: {
-                fmt::println(
+                LOG_DEBUGln(
                     "XHCI: {} TRB: type={} ({}), status=0x{:08X}, parameter=0x{:016X}, control=0x{:08X}",
                     name,
                     GetTrbTypeName(trbType), trbType,
@@ -951,8 +961,8 @@ public:
     {
         uint32_t const usbsts = operationalRegisters_.UsbStatus;
         if (usbsts & XHCI_STS_HSE) {
-            fmt::println("XHCI: Host system error while waiting for transfer event");
-            fmt::println("XHCI: USBCMD=0x{:08X} USBSTS=0x{:08X} CRCR=0x{:016X} ERSTBA=0x{:016X} ERDP=0x{:016X}",
+            LOG_DEBUGln("XHCI: Host system error while waiting for transfer event");
+            LOG_DEBUGln("XHCI: USBCMD=0x{:08X} USBSTS=0x{:08X} CRCR=0x{:016X} ERSTBA=0x{:016X} ERDP=0x{:016X}",
                     operationalRegisters_.UsbCommand.get(),
                     usbsts,
                     get_command_ring_control(),
@@ -992,7 +1002,7 @@ public:
     {
         if (event_ring.empty())
         {
-            fmt::println("XHCI: Event ring is not initialized");
+            LOG_DEBUGln("XHCI: Event ring is not initialized");
             return Status::Error;
         }
 
@@ -1020,22 +1030,22 @@ public:
                     }
 
                     if (event.Completion == CompletionCode::EndpointNotEnabled) {
-                        fmt::println("XHCI: Transfer event failed, completion={} (endpoint not enabled)", static_cast<uint32_t>(event.Completion));
+                        LOG_DEBUGln("XHCI: Transfer event failed, completion={} (endpoint not enabled)", static_cast<uint32_t>(event.Completion));
                         return Status::Error;
                     }
 
-                    fmt::println("XHCI: Transfer event failed, completion={}", static_cast<uint32_t>(event.Completion));
+                    LOG_DEBUGln("XHCI: Transfer event failed, completion={}", static_cast<uint32_t>(event.Completion));
                     return Status::Error;
                 }
 
                 if (event.Type == TrbType::CmdCompletionEvent) {
                     if (event.Completion != CompletionCode::Success) {
-                        fmt::println("XHCI: Command completion failed, completion={}", static_cast<uint32_t>(event.Completion));
+                        LOG_DEBUGln("XHCI: Command completion failed, completion={}", static_cast<uint32_t>(event.Completion));
                     }
                     return std::nullopt;
                 }
 
-                fmt::println("XHCI: Ignoring event type={} completion={}", static_cast<uint32_t>(event.Type), static_cast<uint32_t>(event.Completion));
+                LOG_DEBUGln("XHCI: Ignoring event type={} completion={}", static_cast<uint32_t>(event.Type), static_cast<uint32_t>(event.Completion));
                 return std::nullopt;
             }
         );
@@ -1044,12 +1054,12 @@ public:
             return result.value();
         }
 
-        fmt::println("XHCI: Timed out waiting for transfer completion event");
+        LOG_DEBUGln("XHCI: Timed out waiting for transfer completion event");
         size_t i = 0;
         for (auto& trb : event_ring)
         {
             if (trb != TRB{}) {
-                fmt::println("Event TRB[{}]: parameter=0x{:016X} status=0x{:08X} control=0x{:08X}", i, trb.parameter, trb.status, trb.control);
+                LOG_DEBUGln("Event TRB[{}]: parameter=0x{:016X} status=0x{:08X} control=0x{:08X}", i, trb.parameter, trb.status, trb.control);
             }
             ++i;
         }
@@ -1076,7 +1086,7 @@ public:
                 }
 
                 if (event.Completion != CompletionCode::Success) {
-                    fmt::println("XHCI: Command completion failed, completion={}", static_cast<uint32_t>(event.Completion));
+                    LOG_DEBUGln("XHCI: Command completion failed, completion={}", static_cast<uint32_t>(event.Completion));
                     return false;
                 }
 
@@ -1089,8 +1099,8 @@ public:
             return result.value();
         }
 
-        fmt::println("XHCI: Timed out waiting for command completion event");
-        fmt::println("XHCI: USBSTS=0x{:08X} IMAN=0x{:08X} ERDP=0x{:016X}",
+        LOG_DEBUGln("XHCI: Timed out waiting for command completion event");
+        LOG_DEBUGln("XHCI: USBSTS=0x{:08X} IMAN=0x{:08X} ERDP=0x{:016X}",
             operationalRegisters_.UsbStatus.get(),
             runtimeRegisters_.InterrupterManagement.get(),
             get_erdp()
@@ -1104,12 +1114,12 @@ public:
         uint32_t const usbsts_before = operationalRegisters_.UsbStatus;
         uint32_t usbcmd_before = operationalRegisters_.UsbCommand;
         if (usbsts_before & XHCI_STS_HSE) {
-            fmt::println("XHCI: Refusing command submit while HSE is set (USBSTS=0x{:08X})", usbsts_before);
+            LOG_DEBUGln("XHCI: Refusing command submit while HSE is set (USBSTS=0x{:08X})", usbsts_before);
             return false;
         }
 
         if (usbsts_before & XHCI_STS_HCH) {
-            fmt::println("XHCI: Controller halted before command submit, attempting restart");
+            LOG_DEBUGln("XHCI: Controller halted before command submit, attempting restart");
             operationalRegisters_.UsbCommand |= XHCI_CMD_RUN;
             Cpu::Delay(100us);
             usbcmd_before = operationalRegisters_.UsbCommand;
@@ -1136,7 +1146,7 @@ public:
         // Ring doorbell 0 (command ring)
         ring_doorbell(0, 0);
 
-         fmt::println("XHCI: Command submitted Control=0x{:08X} Status=0x{:08X} Parameter=0x{:016X} (USBCMD=0x{:08X} USBSTS=0x{:08X} CRCR=0x{:016X})",
+         LOG_DEBUGln("XHCI: Command submitted Control=0x{:08X} Status=0x{:08X} Parameter=0x{:016X} (USBCMD=0x{:08X} USBSTS=0x{:08X} CRCR=0x{:016X})",
             command_trb.control,
             command_trb.status,
             command_trb.parameter,
@@ -1154,20 +1164,20 @@ public:
         {
             return 0;
         }
-        fmt::println("XHCI: Enable slot command sent");
+        LOG_DEBUGln("XHCI: Enable slot command sent");
 
         uint32_t slotId = 0;
         if (!wait_for_command_completion(slotId) || slotId == 0) {
-            fmt::println("XHCI: Enable slot command did not complete successfully");
+            LOG_DEBUGln("XHCI: Enable slot command did not complete successfully");
             return false;
         }
 
-        fmt::println("XHCI: Enabled slot {}", slotId);
+        LOG_DEBUGln("XHCI: Enabled slot {}", slotId);
 
         auto* slot = deviceSlots_[slotId];
         if (slot == nullptr)
         {
-            fmt::println("XHCI: Invalid slot {} for allocation", slotId);
+            LOG_DEBUGln("XHCI: Invalid slot {} for allocation", slotId);
             return 0;
         }
 
@@ -1178,7 +1188,7 @@ public:
             return slotId;
         }
 
-        fmt::println("XHCI: Failed to enable slot {} in the slot table", slotId);
+        LOG_DEBUGln("XHCI: Failed to enable slot {} in the slot table", slotId);
 
         return 0; // No available slots
     }
@@ -1188,7 +1198,7 @@ public:
         auto* slot = deviceSlots_[slotId];
         if (slot == nullptr)
         {
-            fmt::println("XHCI: Invalid slot {} for free_device_slot", slotId);
+            LOG_DEBUGln("XHCI: Invalid slot {} for free_device_slot", slotId);
             return;
         }
         slot->in_use.store(false);
@@ -1266,7 +1276,7 @@ public:
                 return !(status & XHCI_STS_CNR);
             }))
         {
-            fmt::println("Timed out waiting for ready state. Command: {:#X}, Status: {:#X}", operationalRegisters_.UsbCommand.get(), status);
+            LOG_DEBUGln("Timed out waiting for ready state. Command: {:#X}, Status: {:#X}", operationalRegisters_.UsbCommand.get(), status);
             return false;
         }
         else
@@ -1279,9 +1289,9 @@ public:
     {
         wait_for_ready(5s);
 
-        fmt::println("Command: {:#X}, Status: {:#X}", operationalRegisters_.UsbCommand.get(), operationalRegisters_.UsbStatus.get());
+        LOG_DEBUGln("Command: {:#X}, Status: {:#X}", operationalRegisters_.UsbCommand.get(), operationalRegisters_.UsbStatus.get());
 
-        fmt::println("XHCI: Resetting controller...");
+        LOG_DEBUGln("XHCI: Resetting controller...");
         
         // Stop the controller first
         operationalRegisters_.UsbCommand &= ~XHCI_CMD_RUN;
@@ -1293,10 +1303,10 @@ public:
                 return (status & XHCI_STS_HCH) != 0;
             }))
         {
-            fmt::println("Timed out waiting for halt state. Command: {:#X}, Status: {:#X}", operationalRegisters_.UsbCommand.get(), status);
+            LOG_DEBUGln("Timed out waiting for halt state. Command: {:#X}, Status: {:#X}", operationalRegisters_.UsbCommand.get(), status);
         }
         
-        fmt::println("XHCI: Controller halted...");
+        LOG_DEBUGln("XHCI: Controller halted...");
 
         // Reset the controller
         operationalRegisters_.UsbCommand |= XHCI_CMD_HCRST;
@@ -1308,8 +1318,8 @@ public:
                 return !(cmd & XHCI_CMD_HCRST);
             }))
         {
-            fmt::println("XHCI: Reset timeout");
-            fmt::println("Command: {:#X}, Status: {:#X}", cmd, status);
+            LOG_DEBUGln("XHCI: Reset timeout");
+            LOG_DEBUGln("Command: {:#X}, Status: {:#X}", cmd, status);
             return false;
         }
         
@@ -1318,7 +1328,7 @@ public:
 
     Status shutdown()
     {
-        fmt::println("XHCI: Shutting down controller...");
+        LOG_DEBUGln("XHCI: Shutting down controller...");
         
         // Stop the controller
         operationalRegisters_.UsbCommand &= ~XHCI_CMD_RUN;
@@ -1327,7 +1337,7 @@ public:
         if (!Cpu::WaitUntilWithTimeout(1s, [&]{
                 uint32_t status = operationalRegisters_.UsbStatus;
                 if (status & XHCI_STS_HCH) {
-                    fmt::println("XHCI: Controller halted");
+                    LOG_DEBUGln("XHCI: Controller halted");
                     return true;
                 }
                 else
@@ -1336,7 +1346,7 @@ public:
                 }
             }))
         {
-            fmt::println("XHCI: Shutdown timeout");
+            LOG_DEBUGln("XHCI: Shutdown timeout");
             return Status::Timeout;
         }
 
@@ -1345,7 +1355,7 @@ public:
 
     Status read(DeviceSlot& slot, uint8_t endpoint, std::span<uint8_t> buffer)
     {
-        fmt::println("XHCI: Read from endpoint {} (buffer size: {} bytes)", endpoint, buffer.size());
+        LOG_DEBUGln("XHCI: Read from endpoint {} (buffer size: {} bytes)", endpoint, buffer.size());
 
         if (buffer.empty()) {
             return Status::Error;
@@ -1392,7 +1402,7 @@ public:
 
     Status write(DeviceSlot& slot, uint8_t endpoint, std::span<uint8_t const> data)
     {
-        fmt::println("XHCI: Write to endpoint {} (data size: {} bytes)", endpoint, data.size());
+        LOG_DEBUGln("XHCI: Write to endpoint {} (data size: {} bytes)", endpoint, data.size());
 
         if (data.empty()) {
             return Status::Error;
@@ -1435,7 +1445,7 @@ public:
                            uint16_t value, uint16_t index,
                            std::span<uint8_t> data = {})
     {
-        fmt::println("XHCI: Control transfer on slot {} - Type: 0x{:02X}, Request: 0x{:02X}, Value: 0x{:04X}, Index: 0x{:04X}, Length: {}",
+        LOG_DEBUGln("XHCI: Control transfer on slot {} - Type: 0x{:02X}, Request: 0x{:02X}, Value: 0x{:04X}, Index: 0x{:04X}, Length: {}",
                slotId, requestType, request, value, index, data.size()
         );
 
@@ -1450,7 +1460,7 @@ public:
         auto* slot = deviceSlots_[slotId];
         if (slot == nullptr)
         {
-            fmt::println("XHCI: Invalid device slot");
+            LOG_DEBUGln("XHCI: Invalid device slot");
             return Status::Error;
         }
 
@@ -1489,7 +1499,7 @@ public:
                 TRB_CTRL_CHAIN |
                 TRB_CTRL_IDT |
                 (slot->transfer_ring_cycle_state ? TRB_CTRL_CYCLE : 0);
-            fmt::print("XHCI: Setup TRB - ");
+            LOG_DEBUG("XHCI: Setup TRB - ");
             PrintTrb(setup_trb);
             //printf("XHCI: Setup TRB - 0x%016X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n", &setup_trb,
             //    reinterpret_cast<uint8_t*>(&setup_trb)[0], reinterpret_cast<uint8_t*>(&setup_trb)[1], reinterpret_cast<uint8_t*>(&setup_trb)[2], reinterpret_cast<uint8_t*>(&setup_trb)[3],
@@ -1514,7 +1524,7 @@ public:
                 if (data_stage_in) {
                     data_trb.control |= TRB_CTRL_DIR_IN;
                 }
-                fmt::print("XHCI: Data TRB - ");
+                LOG_DEBUG("XHCI: Data TRB - ");
                 PrintTrb(data_trb);
                 //printf("XHCI: Data TRB - 0x%016X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n", &data_trb,
                 //    reinterpret_cast<uint8_t*>(&data_trb)[0], reinterpret_cast<uint8_t*>(&data_trb)[1], reinterpret_cast<uint8_t*>(&data_trb)[2], reinterpret_cast<uint8_t*>(&data_trb)[3],
@@ -1541,7 +1551,7 @@ public:
             TRB_CTRL_IOC |
             ((!data_stage_present || !data_stage_in) ? TRB_CTRL_DIR_IN : 0) |
             (slot->transfer_ring_cycle_state ? TRB_CTRL_CYCLE : 0);
-            fmt::print("XHCI: Status TRB - ");
+            LOG_DEBUG("XHCI: Status TRB - ");
             PrintTrb(status_trb);
             //printf("XHCI: Status TRB - 0x%016X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X\n", &status_trb,
             //    reinterpret_cast<uint8_t*>(&status_trb)[0], reinterpret_cast<uint8_t*>(&status_trb)[1], reinterpret_cast<uint8_t*>(&status_trb)[2], reinterpret_cast<uint8_t*>(&status_trb)[3],
@@ -1562,7 +1572,7 @@ public:
         ring_doorbell(slotId, 1);
 
         Status const transfer_status = wait_for_transfer_event(slotId);
-        fmt::println("XHCI: Control transfer completed with status {}",
+        LOG_DEBUGln("XHCI: Control transfer completed with status {}",
             transfer_status == Status::Success  ? "Success" :
             transfer_status == Status::Timeout  ? "Timeout" :
             transfer_status == Status::Error    ? "Error" :
@@ -1571,11 +1581,11 @@ public:
             Processor::InvalidateDataCache(dma_data_ptr, data.size());
             std::memcpy(data.data(), dma_data_ptr, data.size());
 
-            fmt::print("Data:");
+            LOG_DEBUG("Data:");
             for (auto data_byte : data) {
-                fmt::print(" {:02X}", data_byte);
+                LOG_DEBUG(" {:02X}", data_byte);
             }
-            fmt::println("");
+            LOG_DEBUGln("");
         }
         return transfer_status;
     }
@@ -1601,7 +1611,7 @@ public:
             return;
         }
         
-        fmt::println("XHCI: Resetting port {}", port);
+        LOG_DEBUGln("XHCI: Resetting port {}", port);
         
         auto& portscReg = operationalRegisters_.PortStatusControl[port - 1];
 
@@ -1619,7 +1629,7 @@ public:
         }
 
         uint32_t const final_portsc = portscReg;
-        fmt::println("XHCI: Port {} reset timeout, PORTSC=0x{:08X}", port, final_portsc);
+        LOG_DEBUGln("XHCI: Port {} reset timeout, PORTSC=0x{:08X}", port, final_portsc);
     }
     
     static char const* describe_device_class(uint8_t device_class) {
@@ -1645,7 +1655,7 @@ public:
 
     void print_device_summary(uint32_t port, uint32_t slotId, std::span<uint8_t const> descriptor, std::span<uint8_t const> config_descriptor) {
         if (descriptor.size() < 18) {
-            fmt::println("XHCI: Port {} slot {}: descriptor too small to parse", port, slotId);
+            LOG_DEBUGln("XHCI: Port {} slot {}: descriptor too small to parse", port, slotId);
             return;
         }
 
@@ -1659,21 +1669,21 @@ public:
         uint16_t const product_id         = static_cast<uint16_t>(descriptor[10] | (descriptor[11] << 8));
         uint8_t  const bNumConfigurations = descriptor[17];
 
-        fmt::println("XHCI: Port {} -> device slot {} identified", port, slotId);
-        fmt::println("XHCI:   Function: {} (class=0x{:02X}, subclass=0x{:02X}, protocol=0x{:02X})",
+        LOG_DEBUGln("XHCI: Port {} -> device slot {} identified", port, slotId);
+        LOG_DEBUGln("XHCI:   Function: {} (class=0x{:02X}, subclass=0x{:02X}, protocol=0x{:02X})",
                describe_device_class(bDeviceClass), bDeviceClass, bDeviceSubClass, bDeviceProtocol);
-        fmt::println("XHCI:   Vendor/Product: 0x{:04X} / 0x{:04X}", GetVendorId, product_id);
-        fmt::println("XHCI:   Capabilities: max-packet-size0=0x{:02X}, configurations={}",
+        LOG_DEBUGln("XHCI:   Vendor/Product: 0x{:04X} / 0x{:04X}", GetVendorId, product_id);
+        LOG_DEBUGln("XHCI:   Capabilities: max-packet-size0=0x{:02X}, configurations={}",
                bMaxPacketSize0, bNumConfigurations);
 
-        fmt::print("XHCI:   Descriptor length: {}, type: 0x{:02X}", bLength, bDescriptorType);
+        LOG_DEBUG("XHCI:   Descriptor length: {}, type: 0x{:02X}", bLength, bDescriptorType);
         for (size_t i = 0; i < std::min<size_t>(descriptor.size(), 18); ++i) {
             if (i % 16 == 0) {
-                fmt::print("\nXHCI:   ");
+                LOG_DEBUG("\nXHCI:   ");
             }
-            fmt::print(" {:02X}", descriptor[i]);
+            LOG_DEBUG(" {:02X}", descriptor[i]);
         }
-        fmt::println("");
+        LOG_DEBUGln("");
 
         if (config_descriptor.size() >= 9) {
             uint8_t const config_length  = config_descriptor[0];
@@ -1681,18 +1691,18 @@ public:
             uint8_t const num_interfaces = config_descriptor[4];
             uint8_t const config_value   = config_descriptor[5];
             uint8_t const max_power      = config_descriptor[8];
-            fmt::println("XHCI:   Configuration: value=0x{:02X}, interfaces={}, max-power={}mA, attrs=0x{:02X}",
+            LOG_DEBUGln("XHCI:   Configuration: value=0x{:02X}, interfaces={}, max-power={}mA, attrs=0x{:02X}",
                    config_value, num_interfaces, max_power * 2u, config_descriptor[7]);
             if (config_length < 9) {
-                fmt::println("XHCI:   Interface data is incomplete");
+                LOG_DEBUGln("XHCI:   Interface data is incomplete");
             }
         }
         else {
-            fmt::println("XHCI:   Configuration descriptor unavailable");
+            LOG_DEBUGln("XHCI:   Configuration descriptor unavailable");
         }
 
         if (bLength < 18) {
-            fmt::println("XHCI:   Descriptor length is shorter than expected ({})", bLength);
+            LOG_DEBUGln("XHCI:   Descriptor length is shorter than expected ({})", bLength);
         }
     }
 
@@ -1704,11 +1714,11 @@ public:
         bool     const over_current = (portsc & (1u << 3)) != 0;
         uint32_t const speed        = (portsc >> 10) & 0x0F;
 
-        fmt::println("XHCI: Port {} status: 0x{:08X} [connected={} enabled={} speed={} over-current={}]",
+        LOGln("XHCI: Port {} status: 0x{:08X} [connected={} enabled={} speed={} over-current={}]",
                 port, portsc, connected ? 1u : 0u, enabled ? 1u : 0u, speed, over_current ? 1u : 0u);
 
         if (!connected) {
-            fmt::println("XHCI: Port {} has no device attached", port);
+            LOGln("XHCI: Port {} has no device attached", port);
             return false;
         }
 
@@ -1720,16 +1730,16 @@ public:
     {
         if (hubSlotId == 0)
         {
-            fmt::println("XHCI: Enumerating device in root port {}", rootPort);
+            LOG_DEBUGln("XHCI: Enumerating device in root port {}", rootPort);
         }
         else
         {
-            fmt::println("XHCI: Enumerating device in hub at slot {} port {} using root port {}", hubSlotId, hubPort, rootPort);
+            LOG_DEBUGln("XHCI: Enumerating device in hub at slot {} port {} using root port {}", hubSlotId, hubPort, rootPort);
         }
 
         if (!address_device(slotId, rootPort, speed, 0, 0, 0, true))
         {
-            fmt::println("XHCI: Failed to address device on root port {} (slot {})", rootPort, slotId);
+            LOG_DEBUGln("XHCI: Failed to address device on root port {} (slot {})", rootPort, slotId);
             free_device_slot(slotId);
             return false;
         }
@@ -1803,7 +1813,7 @@ public:
         // Check 3a: Driver execution status
         if (result != Status::Success) {
             // Test failed: The driver reported an internal error during the transfer.
-            fmt::println("Test Failed: Control transfer returned status {}.", static_cast<int>(result));
+            LOG_DEBUGln("Test Failed: Control transfer returned status {}.", static_cast<int>(result));
             return false;
         }
 
@@ -1813,13 +1823,13 @@ public:
         
         // Check if the buffer is non-empty and contains a valid descriptor length (e.g., > 18 bytes)
         if (data_buffer[0] < 18) {
-            fmt::println("Test Failed: Received descriptor length is too short or zero.");
+            LOG_DEBUGln("Test Failed: Received descriptor length is too short or zero.");
             return false;
         }
         
         // Check a specific field, e.g., bDescriptorType (should be 1 for Device Descriptor)
         if (data_buffer[1] != 1) {
-            fmt::println("Test Failed: Descriptor type mismatch. Expected 1, got {}.", data_buffer[1]);
+            LOG_DEBUGln("Test Failed: Descriptor type mismatch. Expected 1, got {}.", data_buffer[1]);
             return false;
         }
         
@@ -1830,7 +1840,7 @@ public:
         
         // If the test reaches this point, the command was sent, the hardware responded, 
         // the driver processed the event, and the data was correctly received.
-        fmt::println("Test Succeeded: Minimal control transfer completed successfully.");
+        LOG_DEBUGln("Test Succeeded: Minimal control transfer completed successfully.");
         return true;
     }
 
@@ -1872,7 +1882,7 @@ public:
     {
         auto const slotId = allocate_device_slot();
 
-        fmt::println("XHCI: UsbAllocateDevice: allocate slot completion returned slot ID {}", slotId);
+        LOG_DEBUGln("XHCI: UsbAllocateDevice: allocate slot completion returned slot ID {}", slotId);
         if (slotId == 0)
         {
             return std::unexpected(RESULT::ErrorMemory);
@@ -1927,7 +1937,7 @@ public:
 
         if (!address_device(slotId, rootPort, speed, route, parentHubSlotId, parentHubPort, false))
         {
-            fmt::println("XHCI: Failed to address device on root port {} (slot {}) route {:05X} parentHubSlotId {} parentHubPort {}", rootPort, slotId, route, parentHubSlotId, parentHubPort);
+            LOG_DEBUGln("XHCI: Failed to address device on root port {} (slot {}) route {:05X} parentHubSlotId {} parentHubPort {}", rootPort, slotId, route, parentHubSlotId, parentHubPort);
             return std::unexpected(RESULT::ErrorDevice);
         }
 
@@ -2021,18 +2031,18 @@ public:
 
     Async::task<> Initialize()
     {
-        fmt::println("XHCI: Initializing controller...");
+        LOG_DEBUGln("XHCI: Initializing controller...");
 
         // Test memory access first
-        fmt::println("XHCI: Testing memory access...");
+        LOG_DEBUGln("XHCI: Testing memory access...");
         uint32_t test_value = *reinterpret_cast<uint32_t volatile*>(&capabilityRegisters_);
-        fmt::println("XHCI: First word: 0x{:X}", test_value);
+        LOG_DEBUGln("XHCI: First word: 0x{:X}", test_value);
         if (test_value == 0xdeaddead || test_value == 0xffffffff || test_value == 0x00000000) {
-            fmt::println("XHCI: Invalid response, device not accessible");
+            LOG_DEBUGln("XHCI: Invalid response, device not accessible");
             error_ = RESULT::ErrorHardware;
             co_return;
         }
-        fmt::println("XHCI: Valid response, proceeding with initialization");
+        LOG_DEBUGln("XHCI: Valid response, proceeding with initialization");
 
         // Read the controller parameters
         HcsParams1 hcsparams1 = capabilityRegisters_.StructuralParams1;
@@ -2044,29 +2054,29 @@ public:
         maxRootPorts           = hcsparams1.MaxPorts;
         maxScratchpadBuffers   = (hcsparams2.MaxScratchpadBuffersHi << 5) + hcsparams2.MaxScratchpadBuffersLo;
 
-        fmt::println("XHCI: Capability length: 0x{:X}", capabilityRegisters_.CapLength.get());
-        fmt::println("XHCI: HCI Version      : 0x{:X}", capabilityRegisters_.InterfaceVersion.get());
-        fmt::println("XHCI: StructuralParams1: 0x{:X}", hcsparams1.Raw32);
-        fmt::println("XHCI: StructuralParams2: 0x{:X}", hcsparams2.Raw32);
-        fmt::println("XHCI: StructuralParams3: 0x{:X}", capabilityRegisters_.StructuralParams3.get().Raw32);
-        fmt::println("XHCI: CapabilityParams1: 0x{:X}", hccparams1.Raw32);
-        fmt::println("XHCI: DoorbellOffset   : 0x{:X}", capabilityRegisters_.DoorbellOffset.get());
-        fmt::println("XHCI: RuntimeOffset    : 0x{:X}", capabilityRegisters_.RuntimeOffset.get());
-        fmt::println("XHCI: CapabilityParams2: 0x{:X}", capabilityRegisters_.CapabilityParams2.get());
+        LOGln("XHCI: Capability length: 0x{:X}", capabilityRegisters_.CapLength.get());
+        LOGln("XHCI: HCI Version      : 0x{:X}", capabilityRegisters_.InterfaceVersion.get());
+        LOGln("XHCI: StructuralParams1: 0x{:X}", hcsparams1.Raw32);
+        LOGln("XHCI: StructuralParams2: 0x{:X}", hcsparams2.Raw32);
+        LOGln("XHCI: StructuralParams3: 0x{:X}", capabilityRegisters_.StructuralParams3.get().Raw32);
+        LOGln("XHCI: CapabilityParams1: 0x{:X}", hccparams1.Raw32);
+        LOGln("XHCI: DoorbellOffset   : 0x{:X}", capabilityRegisters_.DoorbellOffset.get());
+        LOGln("XHCI: RuntimeOffset    : 0x{:X}", capabilityRegisters_.RuntimeOffset.get());
+        LOGln("XHCI: CapabilityParams2: 0x{:X}", capabilityRegisters_.CapabilityParams2.get());
 
-        fmt::println("XHCI: Max device slots: {}", maxDeviceSlots);
-        fmt::println("XHCI: Max interrupters: {}" , maxInterrupters);
-        fmt::println("XHCI: Max root ports  : {}" , maxRootPorts);
+        LOGln("XHCI: Max device slots: {}", maxDeviceSlots);
+        LOGln("XHCI: Max interrupters: {}" , maxInterrupters);
+        LOGln("XHCI: Max root ports  : {}" , maxRootPorts);
 
-        fmt::println("XHCI: Isochronous scheduling threshold: {} {}", static_cast<uint32_t>(hcsparams2.IsoSchedThreshold), hcsparams2.IsoSchedThresholdIsInFrames ? "frames" : "microframes");
-        fmt::println("XHCI: Event ring segment table max: {}", static_cast<uint32_t>(hcsparams2.EventRingSegmentTableMax));
-        fmt::println("XHCI: Max scratchpad buffers: {}", maxScratchpadBuffers);
-        fmt::println("XHCI: Save/restore uses scratchpad: {}", static_cast<bool>(hcsparams2.SaveRestoreUsesScratchpad));
-        fmt::println("XHCI: Doorbells offset: 0x{:X}", capabilityRegisters_.DoorbellOffset.get());
-        fmt::println("XHCI: Runtime offset: 0x{:X}", capabilityRegisters_.RuntimeOffset.get());
-        fmt::println("");
+        LOGln("XHCI: Isochronous scheduling threshold: {} {}", static_cast<uint32_t>(hcsparams2.IsoSchedThreshold), hcsparams2.IsoSchedThresholdIsInFrames ? "frames" : "microframes");
+        LOGln("XHCI: Event ring segment table max: {}", static_cast<uint32_t>(hcsparams2.EventRingSegmentTableMax));
+        LOGln("XHCI: Max scratchpad buffers: {}", maxScratchpadBuffers);
+        LOGln("XHCI: Save/restore uses scratchpad: {}", static_cast<bool>(hcsparams2.SaveRestoreUsesScratchpad));
+        LOGln("XHCI: Doorbells offset: 0x{:X}", capabilityRegisters_.DoorbellOffset.get());
+        LOGln("XHCI: Runtime offset: 0x{:X}", capabilityRegisters_.RuntimeOffset.get());
+        LOGln("");
 
-        fmt::println("Command: 0x{:X}, Status: 0x{:X}", operationalRegisters_.UsbCommand.get(), operationalRegisters_.UsbStatus.get());
+        LOGln("Command: 0x{:X}, Status: 0x{:X}", operationalRegisters_.UsbCommand.get(), operationalRegisters_.UsbStatus.get());
 
         deviceSlots_.Init(maxDeviceSlots);
         // TODO: Also these:
@@ -2077,7 +2087,7 @@ public:
         // Reset the controller
         if (!reset_controller())
         {
-            fmt::println("XHCI: Controller reset failed");
+            LOG_DEBUGln("XHCI: Controller reset failed");
             error_ = RESULT::ErrorHardware;
             co_return;
         }
@@ -2085,7 +2095,7 @@ public:
         // Setup memory structures
         if (!setup_rings())
         {
-            fmt::println("XHCI: Ring setup failed");
+            LOG_DEBUGln("XHCI: Ring setup failed");
             error_ = RESULT::ErrorHardware;
             co_return;
         }
@@ -2131,17 +2141,17 @@ public:
 
         if (!running)
         {
-            fmt::println("XHCI: Controller did not enter running state");
-            fmt::println("XHCI: USBCMD=0x{:08X} USBSTS=0x{:08X}",
+            LOG_DEBUGln("XHCI: Controller did not enter running state");
+            LOG_DEBUGln("XHCI: USBCMD=0x{:08X} USBSTS=0x{:08X}",
                    operationalRegisters_.UsbCommand.get(),
                    operationalRegisters_.UsbStatus.get());
             error_ = RESULT::ErrorHardware;
             co_return;
         }
         
-        fmt::println("XHCI: Controller initialized successfully");
+        LOGln("XHCI: Controller initialized successfully");
         // Start device enumeration
-        fmt::println("XHCI: Enumerating devices...");
+        LOGln("XHCI: Enumerating devices...");
         
         for (uint32_t port = 1; port <= maxRootPorts; ++port)
         {
@@ -2181,7 +2191,7 @@ public:
             }
         }
         
-        fmt::println("discovered devices: {}", deviceTable_.size());
+        LOG_DEBUGln("discovered devices: {}", deviceTable_.size());
 
         error_ = RESULT::Ok;
         co_return;
@@ -2258,7 +2268,7 @@ public:
         }
 
         auto slot = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(ioHandle.get()));
-        fmt::println("ioHandle slot = {}, device slot = {}", slot, LookupSlot(device));
+        LOG_DEBUGln("ioHandle slot = {}, device slot = {}", slot, LookupSlot(device));
         if (slot == 0 || slot != LookupSlot(device)) {
             co_return RESULT::ErrorDevice;
         }
@@ -2338,14 +2348,17 @@ CapabilityRegisters& CreateController(PCIe::Driver& pcie, PCIe::DeviceAddress co
     // Also provide an abstracted interface for platform-specific functionality needed in the driver
     // (DMA memory management and max packet size per speed, that sort of thing).
 
-    fmt::println("XHCI    Loading USB firmware...");
-    Mailbox::TagMessage<Mailbox::Tag::RPI4_PCIE_XHCI_USB_RESET, 1> resetTag{{ 1u << 20 }};
-    if (!Mailbox::SendTags(resetTag)) {
-        fmt::println("XHCI    ✗ Failed to load USB firmware");
-    }
-    else
+    if (BootLib::Cpu::IsRpi4())
     {
-        fmt::println("XHCI    New state: {}", resetTag.args[0]);
+        LOG_DEBUGln("XHCI    Loading USB firmware...");
+        Mailbox::TagMessage<Mailbox::Tag::RPI4_PCIE_XHCI_USB_RESET, 1> resetTag{{ 1u << 20 }};
+        if (!Mailbox::SendTags(resetTag)) {
+            LOG_DEBUGln("XHCI    ✗ Failed to load USB firmware");
+        }
+        else
+        {
+            LOG_DEBUGln("XHCI    New state: {}", resetTag.args[0]);
+        }
     }
 
     auto& common = config.Common();
@@ -2372,16 +2385,16 @@ CapabilityRegisters& CreateController(PCIe::Driver& pcie, PCIe::DeviceAddress co
     }
     
     // Enable BAR 0 at the beginning of PCIe aperture
-    fmt::println("XHCI    Configuring BAR 0: CPU=0x{:016x} Size = 0x{:X}", bar0.physical_address, bar0.size);
+    LOG_DEBUGln("XHCI    Configuring BAR 0: CPU=0x{:016x} Size = 0x{:X}", bar0.physical_address, bar0.size);
     if (bar0.size == 0)
     {
-        fmt::println("    BAR 0 size is zero. Halting...");
+        LOG_DEBUGln("    BAR 0 size is zero. Halting...");
         Cpu::Halt();
     }
     
     auto bar0Memory = pcie.MapBar(bar0);
 
-    fmt::println("    Configured BAR 0: CPU=0x{:016x} Size = 0x{:X}", bar0.physical_address, bar0.size);
+    LOG_DEBUGln("    Configured BAR 0: CPU=0x{:016x} Size = 0x{:X}", bar0.physical_address, bar0.size);
     
     // Verify the BAR was written correctly
     //auto const rebar0 = config.GetBar(0);
@@ -2401,7 +2414,7 @@ CapabilityRegisters& CreateController(PCIe::Driver& pcie, PCIe::DeviceAddress co
 
 Async::task<std::shared_ptr<UsbDriver>> UsbInitializeXhci(PCIe::Driver& pcie, PCIe::DeviceAddress const& deviceAddress)
 {
-    fmt::println("Initializing xHCI USB Driver");
+    LOG_DEBUGln("Initializing xHCI USB Driver");
     auto& capabilityRegisters = CreateController(pcie, deviceAddress);
     auto driver = std::make_shared<XhciUsbDriver>(capabilityRegisters);
     co_await driver->Initialize();

@@ -52,7 +52,8 @@ set(KernelSources
 
     # PCIe bus.
     PCIe.cpp            PCIe.h
-    Bcm2711Pcie.cpp     Bcm2711Pcie.h
+    Bcm2711Pcie.cpp
+    GenericPcie.cpp
 
     # Raspberry Pi 3 (and 4, connected to the power socket) USB controller.
     DesignWareUsb.cpp   DesignWareUsb.h

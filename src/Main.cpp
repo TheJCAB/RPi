@@ -600,15 +600,26 @@ void Core0(uintptr_t dtb)
         fmt::println("\n\n");
     }
 
-    std::shared_ptr<UsbDriver> usbDriver;
+    std::shared_ptr<PCIe::Driver> pcie;
+    std::shared_ptr<UsbDriver>    usbDriver;
 
     if (BootLib::Cpu::IsQemu())
     {
+        pcie = PCIe::CreateGenericDriver(0x5'1000'0000ull, 0x6'0000'0000ull, 0x80'0000'0000ull, 0x1'0000'0000);
     }
     else if (BootLib::Cpu::IsRpi4())
     {
-        auto pcie = PCIe::CreateBcm2711Driver(PCIe::Rpi4_PCIE_REGS_BASE_HI + Mmio::Base - Mmio::Rpi4BaseHi);
+        pcie = PCIe::CreateBcm2711Driver(PCIe::Rpi4_PCIE_REGS_BASE_HI + Mmio::Base - Mmio::Rpi4BaseHi);
+    }
+    else
+    {
+        auto usbInitTask = UsbInitializeDesignWare();
 
+        usbDriver = WaitOnTask(std::move(usbInitTask));
+    }
+
+    if (pcie)
+    {
         for (auto device : pcie->EnumerateDevices())
         {
             fmt::println("Device found: {:x}:{:x}.{:x}\n Vendor ID: {:x}\n Device ID: {:x}\n Class Code: {:x}",
@@ -625,12 +636,6 @@ void Core0(uintptr_t dtb)
                 usbDriver = WaitOnTask(std::move(usbInitTask));
             }
         }
-    }
-    else
-    {
-        auto usbInitTask = UsbInitializeDesignWare();
-
-        usbDriver = WaitOnTask(std::move(usbInitTask));
     }
 
     if (usbDriver)

@@ -388,6 +388,7 @@ void PrintExtendedCapability(ExtendedCapability const&, CommonConfigHeader const
 void PrintCapability        (Capability const&        , CommonConfigHeader const&);
 
 std::shared_ptr<Driver> CreateBcm2711Driver(PhysicalAddress mmioBase);
+std::shared_ptr<Driver> CreateGenericDriver(PhysicalAddress mmioBase, PhysicalAddress memBase, uintptr_t pciBaseAddress, size_t memSize);
 
 // Utility functions
 namespace utils {
