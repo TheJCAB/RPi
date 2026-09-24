@@ -37,6 +37,16 @@ enum class Status {
     NotFound
 };
 
+inline std::string_view GetStatusName(Status status)
+{
+    switch (status) {
+        case Status::Success  : return "Success";
+        case Status::Error    : return "Error";
+        case Status::Timeout  : return "Timeout";
+        case Status::NotFound : return "NotFound";
+        default               : return "Unknown";
+    }
+}
 
 }
 // namespace Usb

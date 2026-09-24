@@ -112,16 +112,13 @@ struct ExtendedCapabilityHeader
 {
     ExtendedCapabilityId Id;
     uint16_t             Version         :  4;
-    uint16_t             NextPtr         :  2;
+    uint16_t                             :  2;
     uint16_t             NextPtrInDwords : 10;
 };
 
 static_assert(sizeof(ExtendedCapabilityHeader) == sizeof(uint32_t));
 
-union ExtendedCapabilityEntry
-{
-    BootLib::Register<ExtendedCapabilityHeader const, 0x00> Header;
-};
+using ExtendedCapabilityEntry = BootLib::Register<ExtendedCapabilityHeader const, 0x00>;
 
 // Forward declarations
 class Configuration;
@@ -219,12 +216,10 @@ struct Capability
 struct ExtendedCapability
 {
     ExtendedCapabilityId Id;
-    uint16_t             Version         :  4;
-    uint16_t             Reserved        :  2;
-    uint16_t             OffsetInDwords  : 10;
+    uint16_t             Version :  4;
+    uint16_t             Offset  : 12;
 
-    template < typename StructT > auto& GetStruct(CommonConfigHeader&       header) const { return *reinterpret_cast<StructT*      >(reinterpret_cast<ExtendedCapabilityHeader      *>(&header) + OffsetInDwords); }
-    template < typename StructT > auto& GetStruct(CommonConfigHeader const& header) const { return *reinterpret_cast<StructT const*>(reinterpret_cast<ExtendedCapabilityHeader const*>(&header) + OffsetInDwords); }
+    template < typename StructT > auto& GetStruct(uintptr_t const base) const { return *reinterpret_cast<StructT*>(base + Offset); }
 };
 
 union ClassAndRevision
@@ -295,9 +290,11 @@ concept PCIeRegisterType = std::integral<T> && (sizeof(T) <= 4);
 class Configuration
 {
 public:
+    explicit Configuration() = default;
+
     explicit Configuration(DeviceAddress address, CommonConfigHeader& header) noexcept 
         : address_{ address }
-        , header_ { header  }
+        , header_ { &header  }
     {}
 
     ~Configuration();
@@ -306,18 +303,15 @@ public:
     Configuration& operator=(Configuration&& other) = delete;
 
     [[nodiscard]] DeviceAddress GetAddress() const noexcept { return address_; }
-    [[nodiscard]] bool          IsValid   () const noexcept { return address_ != InvalidDeviceAddress; }
-    [[nodiscard]] explicit   operator bool() const noexcept { return address_ != InvalidDeviceAddress; }
+    [[nodiscard]] bool          IsValid   () const noexcept { return header_ != nullptr; }
+    [[nodiscard]] explicit   operator bool() const noexcept { return header_ != nullptr; }
 
     // Convenience methods for standard registers
     [[nodiscard]] VendorID  GetVendorId () const noexcept { return Common().VendorId; }
     [[nodiscard]] DeviceID  GetDeviceId () const noexcept { return Common().DeviceId; }
     [[nodiscard]] ClassCode GetClassCode() const noexcept { return Common().Class->ClassCode; }
 
-    void SetCommand(std::uint16_t command) noexcept;
-
-    void enable_device();
-    void disable_device();
+    void SetCommand(std::uint16_t command) noexcept { header_->Command = command; }
 
     // BAR access
     [[nodiscard]] size_t MaxBars() const;
@@ -328,14 +322,19 @@ public:
     [[nodiscard]] std::generator<Capability> EnumerateCapabilities() const;
     [[nodiscard]] std::optional<Capability> FindCapability(CapabilityId cap_id) const;
 
-    CommonConfigHeader& Common () const { return header_; }
-    ConfigHeader0&      Header0() const { return *reinterpret_cast<ConfigHeader0*>(&header_); }
-    ConfigHeader1&      Header1() const { return *reinterpret_cast<ConfigHeader1*>(&header_); }
-    XhciConfig&         Xhci   () const { return *reinterpret_cast<XhciConfig*   >(&header_); }
+    [[nodiscard]] std::generator<ExtendedCapability> EnumerateExtendedCapabilities() const noexcept;
+
+    // TODO: Make this configurable, for the case where there's a RCRB, in which case this is located there.
+    [[nodiscard]] ExtendedCapabilityEntry& GetFirstExtendedCapability() const { return *reinterpret_cast<ExtendedCapabilityEntry*>(reinterpret_cast<uintptr_t>(header_) + 0x100); }
+
+    CommonConfigHeader& Common () const { return *header_; }
+    ConfigHeader0&      Header0() const { return *reinterpret_cast<ConfigHeader0*>(header_); }
+    ConfigHeader1&      Header1() const { return *reinterpret_cast<ConfigHeader1*>(header_); }
+    XhciConfig&         Xhci   () const { return *reinterpret_cast<XhciConfig*   >(header_); }
 
 private:
     DeviceAddress                address_ = InvalidDeviceAddress;
-    CommonConfigHeader&          header_; // Base address for configuration space registers
+    CommonConfigHeader*          header_  = nullptr; // Base address for configuration space registers
 };
 
 // Main PCIe device information class
@@ -347,11 +346,11 @@ struct DeviceInfo
     PCIe::ClassCode     ClassCode;
 };
 
-union BridgeRegisters
+struct BusInfo
 {
-    ConfigHeader1 BridgeConfig;
-
-    Mmio::Register<ExtendedCapabilityHeader const, 0x100> FirstExtendedCapabilityHeader;
+    BusNumber     Number        = 0;
+    bool          SingleDevice  = true;
+    DeviceAddress BridgeAddress = InvalidDeviceAddress;
 };
 
 // PCIe bus manager/driver
@@ -363,24 +362,32 @@ constexpr PhysicalAddress Rpi4_PCIE_REGS_BASE_HI = 0x4'7D50'0000;
 class Driver
 {
 public:
-    explicit Driver(uintptr_t pciBaseAddress, uintptr_t memBaseAddress)
+    explicit Driver(uintptr_t pciBaseAddress, uintptr_t memBaseAddress, size_t memSize)
         : PciBaseAddress(pciBaseAddress)
         , MemBaseAddress(memBaseAddress)
+        , MemSize       (memSize)
     {}
 
     virtual ~Driver() = 0;
 
+    virtual bool Initialize(); // Step-2 initialization.
+
     virtual Configuration ConfigureDevice(DeviceAddress addr) noexcept = 0;
 
-    virtual std::generator<ExtendedCapability> EnumerateExtendedCapabilities() const noexcept = 0;
-
-    virtual std::generator<DeviceInfo> EnumerateDevices() const noexcept = 0;
+    std::generator<DeviceInfo> EnumerateDevices() const noexcept;
 
     std::span<std::byte> MapBar(BarInfo& bar);
 
 private:
     uintptr_t PciBaseAddress;
     uintptr_t MemBaseAddress;
+    size_t    MemSize;
+
+    PcieCapabilities*            pcieCapabilities_ = nullptr; // Pointer to the root device's PCIe capabilities structure if present
+    PowerManagementCapabilities* pmCapabilities_   = nullptr; // Pointer to the root device's Power Management capabilities structure if present
+    DeviceInfo                   rootDeviceInfo_{};
+    std::vector<BusInfo>         buses_;
+    std::vector<DeviceInfo>      devices_;
 };
 
 void PrintBar               (BarInfo const&);
@@ -392,9 +399,9 @@ std::shared_ptr<Driver> CreateGenericDriver(PhysicalAddress mmioBase, PhysicalAd
 
 // Utility functions
 namespace utils {
-    [[nodiscard]] constexpr std::string_view GetClassCode_to_string(ClassCode GetClassCode) noexcept
+    [[nodiscard]] constexpr std::string_view GetClassCodeDescription(ClassCode classCode) noexcept
     {
-        switch (GetClassCode >> 16) {
+        switch (classCode >> 16) {
             case 0x00: return "Unclassified";
             case 0x01: return "Mass Storage Controller";
             case 0x02: return "Network Controller";
@@ -416,10 +423,10 @@ namespace utils {
             default: return "Unknown";
         }
     }
-    
-    [[nodiscard]] constexpr bool is_bridge_device(ClassCode GetClassCode) noexcept
+
+    [[nodiscard]] constexpr bool is_bridge_device(ClassCode classCode) noexcept
     {
-        return (GetClassCode >> 16) == 0x06;
+        return (classCode >> 16) == 0x06;
     }
 }
 

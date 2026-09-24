@@ -499,20 +499,12 @@ class DesignWareUsbDriver : public UsbDriver
         error_ = RESULT::Ok;
     }
 
-    /*-UsbGetRootHub ------------------------------------------------------------
-    On a Universal Serial Bus, there exists a root hub. This if often a virtual
-    device, and typically represents a one port hub, which is the physical
-    universal serial bus for this computer. It is always address 1. It is present
-    to allow uniform software manipulation of the universal serial bus itself.
-    This will return that FAKE rootHub or NULL on failure. Reason for failure is
-    generally not having called USBInitialize to start the USB system.          
-    11Apr17 LdB
-    --------------------------------------------------------------------------*/
-    struct UsbDevice * UsbGetRootHub() override
-    { 
+    std::generator<UsbDevice*> EnumerateRootDevices() override
+    {
 		if (!DeviceTable.empty() && DeviceTable[0])
-			return DeviceTable[0].get();
-                return nullptr;
+        {
+			co_yield DeviceTable[0].get();
+        }
     }
 
     /*-UsbDeviceAtAddress -------------------------------------------------------

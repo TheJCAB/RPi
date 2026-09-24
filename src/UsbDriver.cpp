@@ -8,7 +8,11 @@
 #include <fmt/format.h>
 
 #define LOG(...) fmt::print(__VA_ARGS__)
+/*
 #define LOG_DEBUG(...) LOG(__VA_ARGS__)
+/*/
+#define LOG_DEBUG(...)
+//*/
 
 uint8_t GetHidCount(HidDevice* device);
 void PrintHid(HidDevice* device, uint8_t hidIndex, char const* indent);
@@ -484,8 +488,6 @@ const char* UsbDriver::UsbGetDescription(UsbDevice& device)
         return "New Device (Not Ready)";
     else if (device.Config.Status == USB_STATUS_POWERED)
         return "Unknown Device (Not Ready)";
-    else if (!device.ParentHub.Device)
-        return "USB Root device (Hub?)";
 
     switch (device.Descriptor.bDeviceClass) {
     case DeviceClassHub:
@@ -975,13 +977,9 @@ Async::task<void> HubCheckForChange(UsbDevice& device)
 // any physical changes.
 Async::task<void> UsbDriver::UsbCheckForChange()
 {
-    if (auto* const hub = UsbGetRootHub())
+    for (auto const device : EnumerateRootDevices())
     {
-        return HubCheckForChange(*hub);
-    }
-    else
-    {
-        return {};
+        co_await HubCheckForChange(*device);
     }
 }
 
@@ -1210,5 +1208,8 @@ static void UsbShowTree(UsbDevice *root, const int level, const char tee)
 
 void UsbDriver::UsbShowTree()
 {
-    ::UsbShowTree(UsbGetRootHub(), 1, '+');
+    for (auto const device : EnumerateRootDevices())
+    {
+        ::UsbShowTree(device, 1, '+');
+    }
 }

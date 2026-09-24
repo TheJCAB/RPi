@@ -520,15 +520,15 @@ void Core0(uintptr_t dtb)
 
     fmt::println("\n\n");
 
-    Async::task<void> asyncTask = []() -> Async::task<void> {
-        for (int i = 0; i < 20; ++i)
-        {
-            fmt::println("Async task is running");
-            co_await Async::Delay(1000ms);
-        }
-        fmt::println("Async task is done");
-        co_return;
-    }();
+//    Async::task<void> asyncTask = []() -> Async::task<void> {
+//        for (int i = 0; i < 20; ++i)
+//        {
+//            fmt::println("Async task is running");
+//            co_await Async::Delay(1000ms);
+//        }
+//        fmt::println("Async task is done");
+//        co_return;
+//    }();
 
     fmt::println("\n\n");
 

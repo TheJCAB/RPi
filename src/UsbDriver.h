@@ -199,16 +199,7 @@ public:
 
     virtual std::generator<UsbDevice&> EnumerateDevices() = 0;
 
-    /*-UsbGetRootHub ------------------------------------------------------------
-    On a Universal Serial Bus, there exists a root hub. This if often a virtual
-    device, and typically represents a one port hub, which is the physical
-    universal serial bus for this computer. It is always address 1. It is present 
-    to allow uniform software manipulation of the universal serial bus itself.
-    This will return that FAKE rootHub or NULL on failure. Reason for failure is
-    generally not having called USBInitialize to start the USB system.         
-    11Apr17 LdB
-    --------------------------------------------------------------------------*/
-    virtual UsbDevice *UsbGetRootHub() = 0;
+    virtual std::generator<UsbDevice*> EnumerateRootDevices() = 0;
 
     /*-UsbDeviceAtAddress -------------------------------------------------------
     Given the unique USB address this will return the pointer to the USB device

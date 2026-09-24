@@ -1030,17 +1030,17 @@ public:
                     }
 
                     if (event.Completion == CompletionCode::EndpointNotEnabled) {
-                        LOG_DEBUGln("XHCI: Transfer event failed, completion={} (endpoint not enabled)", static_cast<uint32_t>(event.Completion));
+                        LOGln("XHCI: Transfer event failed, completion={} (endpoint not enabled)", static_cast<uint32_t>(event.Completion));
                         return Status::Error;
                     }
 
-                    LOG_DEBUGln("XHCI: Transfer event failed, completion={}", static_cast<uint32_t>(event.Completion));
+                    LOGln("XHCI: Transfer event failed, completion={}", static_cast<uint32_t>(event.Completion));
                     return Status::Error;
                 }
 
                 if (event.Type == TrbType::CmdCompletionEvent) {
                     if (event.Completion != CompletionCode::Success) {
-                        LOG_DEBUGln("XHCI: Command completion failed, completion={}", static_cast<uint32_t>(event.Completion));
+                        LOGln("XHCI: Command completion failed, completion={}", static_cast<uint32_t>(event.Completion));
                     }
                     return std::nullopt;
                 }
@@ -1054,12 +1054,12 @@ public:
             return result.value();
         }
 
-        LOG_DEBUGln("XHCI: Timed out waiting for transfer completion event");
+        LOGln("XHCI: Timed out waiting for transfer completion event");
         size_t i = 0;
         for (auto& trb : event_ring)
         {
             if (trb != TRB{}) {
-                LOG_DEBUGln("Event TRB[{}]: parameter=0x{:016X} status=0x{:08X} control=0x{:08X}", i, trb.parameter, trb.status, trb.control);
+                LOGln("Event TRB[{}]: parameter=0x{:016X} status=0x{:08X} control=0x{:08X}", i, trb.parameter, trb.status, trb.control);
             }
             ++i;
         }
@@ -1572,11 +1572,14 @@ public:
         ring_doorbell(slotId, 1);
 
         Status const transfer_status = wait_for_transfer_event(slotId);
-        LOG_DEBUGln("XHCI: Control transfer completed with status {}",
-            transfer_status == Status::Success  ? "Success" :
-            transfer_status == Status::Timeout  ? "Timeout" :
-            transfer_status == Status::Error    ? "Error" :
-            /*transfer_status == Status::NotFound ?*/ "NotFound");
+        if (transfer_status == Status::Success)
+        {
+            LOG_DEBUGln("XHCI: Control transfer completed with status {}", GetStatusName(transfer_status));
+        }
+        else
+        {
+            LOGln("XHCI: Control transfer completed with status {}", GetStatusName(transfer_status));
+        }
         if (/*transfer_status == Status::Success &&*/ data_stage_in && !data.empty()) {
             Processor::InvalidateDataCache(dma_data_ptr, data.size());
             std::memcpy(data.data(), dma_data_ptr, data.size());
@@ -2223,7 +2226,16 @@ public:
         }
     }
 
-    UsbDevice* UsbGetRootHub() override { return deviceTable_.empty() ? nullptr : deviceTable_.front().get(); }
+    std::generator<UsbDevice*> EnumerateRootDevices() override
+    {
+        for (auto const& device : deviceTable_)
+        {
+            if (!device->ParentHub.Device)
+            {
+                co_yield device.get();
+            }
+        }
+    }
 
     UsbDevice* UsbDeviceAtAddress(uint8_t devNumber) override
     {
